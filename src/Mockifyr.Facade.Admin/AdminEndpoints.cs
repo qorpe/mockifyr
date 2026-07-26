@@ -222,6 +222,9 @@ public static class AdminEndpoints
         {
             var unmatchedOnly = request.Query.TryGetValue("unmatched", out var u) && u == "true";
             var result = await sender.Send(new GetServeEventsQuery(TenantOf(request), unmatchedOnly));
+            // The journal classifies like the stub list (ADR 0010): computed per response, never
+            // stored — so gRPC calls, GraphQL posts and SMS-profile sends read as what they are.
+            var probe = request.HttpContext.RequestServices.GetService(typeof(IStubProtocolProbe)) as IStubProtocolProbe;
             return Results.Json(new
             {
                 requests = result.Value.Select(e => new
@@ -229,6 +232,7 @@ public static class AdminEndpoints
                     id = e.Id,
                     method = e.Request.Method,
                     url = e.Request.Url,
+                    protocol = JournalProtocol(e, probe),
                     status = e.Response?.Status,
                     wasMatched = e.MatchedStub is not null,
                     stubId = e.MatchedStub?.Id,
@@ -398,7 +402,10 @@ public static class AdminEndpoints
         admin.MapGet("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new GetMessageQuery(id, TenantOf(request)));
-            return result.IsSuccess ? Results.Json(MessageJson(result.Value)) : Results.NotFound();
+            // The detail carries the raw wire payload (Mailpit-style, #194); the list stays lean.
+            return result.IsSuccess
+                ? Results.Json(new { message = MessageJson(result.Value), raw = result.Value.Raw })
+                : Results.NotFound();
         });
 
         // Behavior directives (G18e): SMTP fault/delay, simulated SMS provider errors, and the
@@ -753,6 +760,50 @@ public static class AdminEndpoints
             "sms" => MessageChannel.Sms,
             _ => null,
         };
+
+    // Twilio's send-message path (G18d) — an SMS-profile request even when a stub answered it.
+    private static readonly System.Text.RegularExpressions.Regex TwilioMessagesPath =
+        new(@"^/2010-04-01/Accounts/[^/]+/Messages\.json$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Classifies a journal entry (G18 follow-up, ADR 0010): <c>sms</c> by the provider path,
+    /// <c>grpc</c> by descriptor lookup, <c>graphql</c> by the matched stub's custom matcher —
+    /// same decision table as the stub list, computed at query time.
+    /// </summary>
+    private static string JournalProtocol(ServeEvent e, IStubProtocolProbe? probe)
+    {
+        var url = e.Request.Url;
+        var query = url.IndexOf('?', StringComparison.Ordinal);
+        var path = query < 0 ? url : url[..query];
+
+        if (TwilioMessagesPath.IsMatch(path))
+        {
+            return "sms";
+        }
+
+        if (probe is not null && probe.IsGrpcPath(path))
+        {
+            return "grpc";
+        }
+
+        if (e.MatchedStub?.Source is { } source)
+        {
+            try
+            {
+                var node = JsonNode.Parse(source) as JsonObject;
+                if (node is not null && StubProtocols.Classify(node, probe: null) == "graphql")
+                {
+                    return "graphql";
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // An unparseable source stays http — classification is presentation, never a failure.
+            }
+        }
+
+        return "http";
+    }
 
     private static IResult OtpResult(Mediant.Results.Result<OtpExtraction> result) =>
         result.IsSuccess

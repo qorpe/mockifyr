@@ -6,7 +6,7 @@ import { Braces, Cable, Globe, Workflow } from 'lucide-react'
 import { fetchGrpcDescriptors, saveMessageMapping, saveStub } from '@/lib/api'
 import { useUi } from '@/components/providers'
 import { Button } from '@/components/ui/button'
-import { Input, Label, NativeSelect, Textarea } from '@/components/ui/field'
+import { Input, Label, NativeSelect } from '@/components/ui/field'
 import { JsonEditor, JsonField } from '@/components/ui/json-editor'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StubEditorForm } from '@/components/stubs/stub-editor'
@@ -219,8 +219,8 @@ function WsMappingForm({ onSaved }: { onSaved: (saved: boolean) => void }) {
       )}
       <div>
         <Label>{t('channels.wsReply')}</Label>
-        <Textarea rows={4} className="font-mono text-[12.5px]" value={reply}
-          onChange={(e) => { setReply(e.target.value); setOverride(null) }} />
+        {/* The framed JSON editor for consistency (#193); lint off — a reply may be plain text. */}
+        <JsonField height={120} lint={false} value={reply} onChange={(v) => { setReply(v); setOverride(null) }} />
         <p className="mt-1.5 text-xs text-muted-foreground">{t('channels.wsTemplating')}</p>
       </div>
       <div className="flex items-center gap-2">

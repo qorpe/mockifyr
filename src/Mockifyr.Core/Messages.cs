@@ -31,7 +31,8 @@ public sealed record MessageEnvelope(
     string? HtmlBody,
     IReadOnlyDictionary<string, string> Meta,
     IReadOnlyList<MessageAttachment> Attachments,
-    DateTimeOffset ReceivedAt);
+    DateTimeOffset ReceivedAt,
+    string? Raw = null);
 
 /// <summary>
 /// The tenant-scoped inbox of captured messages (G18). Bounded: the store holds at most its

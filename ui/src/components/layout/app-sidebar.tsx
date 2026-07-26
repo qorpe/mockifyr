@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
-import { clearAdminAuth, fetchJournal, fetchScenarios, fetchStubs, hasAdminAuth } from '@/lib/api'
+import { clearAdminAuth, fetchJournal, fetchMessages, fetchScenarios, fetchStubs, hasAdminAuth } from '@/lib/api'
 import { LOCALES } from '@/lib/i18n'
 import { BrandMark } from '@/components/ui/brand-mark'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -52,10 +52,12 @@ export function AppSidebar() {
   // Live per-tenant counts. Same query keys as the pages, so TanStack Query serves them from cache.
   const stubs = useQuery({ queryKey: ['stubs', tenant], queryFn: () => fetchStubs(tenant) })
   const journal = useQuery({ queryKey: ['journal', tenant, false], queryFn: () => fetchJournal(tenant, false) })
+  const messages = useQuery({ queryKey: ['messages', tenant], queryFn: () => fetchMessages(tenant) })
   const scenarios = useQuery({ queryKey: ['scenarios', tenant], queryFn: () => fetchScenarios(tenant) })
   const badges: Record<string, string | undefined> = {
     '/stubs': badgeCount(stubs.data?.stubs.length),
     '/journal': badgeCount(journal.data?.total),
+    '/messages': badgeCount(messages.data?.messages.length),
     '/scenarios': badgeCount(scenarios.data?.scenarios.length),
   }
 

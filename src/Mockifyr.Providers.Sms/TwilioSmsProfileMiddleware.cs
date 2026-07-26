@@ -52,6 +52,13 @@ public sealed partial class TwilioSmsProfileMiddleware(
         }
 
         context.Request.Body.Position = 0;
+        string rawBody;
+        using (var rawReader = new StreamReader(context.Request.Body, leaveOpen: true))
+        {
+            rawBody = await rawReader.ReadToEndAsync();
+        }
+
+        context.Request.Body.Position = 0;
         var form = await context.Request.ReadFormAsync();
         string? to = form["To"].FirstOrDefault();
         string? from = form["From"].FirstOrDefault();
@@ -95,7 +102,7 @@ public sealed partial class TwilioSmsProfileMiddleware(
             Guid.NewGuid(), MessageChannel.Sms,
             from ?? messagingServiceSid!, [to],
             Subject: null, body, HtmlBody: null,
-            meta, [], DateTimeOffset.UtcNow));
+            meta, [], DateTimeOffset.UtcNow, Raw: rawBody));
 
         var now = DateTimeOffset.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss zzz");
         context.Response.StatusCode = StatusCodes.Status201Created;
