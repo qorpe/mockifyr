@@ -478,7 +478,7 @@ behavior change.
   listener (EHLO/MAIL/RCPT/DATA/QUIT; AUTH accepted-unchecked), MimeKit parse at the edge →
   envelope → sink. Tenant from AUTH user, else recipient domain, else default. Self-test: MailKit
   sends; capture asserted through the admin API.
-- [ ] **G18c — Mail inbox UI**. Messages section: inbox list with search/filters, detail view
+- [x] **G18c — Mail inbox UI** (#187). Messages section: inbox list with search/filters, detail view
   (sandboxed HTML preview, source, headers, attachments), delete/clear. Verified in-browser.
 - [ ] **G18d — SMS provider profile: Twilio + UI**. Opt-in `--sms-profile twilio` mounts
   `POST /2010-04-01/Accounts/{sid}/Messages.json`: form body → SMS envelope → store; realistic

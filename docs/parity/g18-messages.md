@@ -101,3 +101,20 @@ serving follows).
   null-vs-empty address results that the caller's `{ Length: > 0 }` pattern collapses.
 - **Deferred (tracked):** STARTTLS; size limits/`SIZE` extension; SMTP fault directives (550
   reject, delay, drop) land in G18e.
+
+## G18c — Mail inbox UI (ADR 0009)
+
+- **Group / item:** G18c — verified **in-browser** against a live host (`--smtp-port`), with three
+  real mails sent by a real SMTP client: inbox list with channel chips (All/Email/SMS + counts),
+  text search, auto-refresh (5s), per-row and clear-all deletion (confirm dialog), detail view with
+  subject/from/envelope-recipients/received, attachment chips, and Preview/Text/Details tabs.
+- **Untrusted HTML is sandboxed.** The HTML preview renders in an `<iframe sandbox="">` — no
+  scripts, no navigation, no same-origin: captured mail is hostile input by definition.
+- **Attachment download** landed server-side with this vertical:
+  `GET /__admin/messages/{id}/attachments/{index}` serves the stored bytes with the original
+  content type + file name (verified: `application/pdf`, `Content-Disposition: attachment`).
+  Sizes render as `26 B` / `1.4 KB` — a tiny payload must not read as `0.0 KB`.
+- **Placement.** Messages sit in the *Mocking* nav group beside the Request journal — captured
+  traffic, not stubs. All six locales translated.
+- **Deferred (tracked):** SMS thread view + OTP badges (G18d); message webhooks and retention
+  controls (G18e); verify/OTP admin shapes (G18f).

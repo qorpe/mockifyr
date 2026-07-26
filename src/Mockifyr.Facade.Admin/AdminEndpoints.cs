@@ -379,6 +379,20 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Json(MessageJson(result.Value)) : Results.NotFound();
         });
 
+        // Attachment content is served on demand (it may be megabytes; the list carries only
+        // name/type/size). The index is the position in the message's attachments list.
+        admin.MapGet("/messages/{id:guid}/attachments/{index:int}", async (Guid id, int index, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessageQuery(id, TenantOf(request)));
+            if (!result.IsSuccess || index < 0 || index >= result.Value.Attachments.Count)
+            {
+                return Results.NotFound();
+            }
+
+            var attachment = result.Value.Attachments[index];
+            return Results.File(attachment.Content, attachment.ContentType, attachment.Name);
+        });
+
         admin.MapDelete("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new DeleteMessageCommand(id, TenantOf(request)));

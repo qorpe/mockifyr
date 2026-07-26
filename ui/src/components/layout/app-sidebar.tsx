@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Activity, Bug, ChevronsRight, Disc, Globe, LayoutDashboard, LayoutGrid,
+  Activity, Bug, ChevronsRight, Disc, Globe, Inbox, LayoutDashboard, LayoutGrid,
   ListTree, LogOut, Moon, Search, Settings, SlidersHorizontal, Waypoints,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
   { label: 'nav.mocking', items: [
     { to: '/stubs', key: 'nav.stubs', icon: ListTree },
     { to: '/journal', key: 'nav.journal', icon: Activity },
+    { to: '/messages', key: 'nav.messages', icon: Inbox },
     { to: '/scenarios', key: 'nav.scenarios', icon: Waypoints },
     { to: '/recordings', key: 'nav.recordings', icon: Disc },
     { to: '/environments', key: 'nav.environments', icon: Globe },

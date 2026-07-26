@@ -215,6 +215,64 @@ export async function deleteMessageMapping(tenant: string, id: string): Promise<
   }
 }
 
+// Captured messages (G18, ADR 0009): the tenant-scoped inbox the SMTP/SMS facades write into.
+export type MessageChannel = 'email' | 'sms'
+
+export interface CapturedMessage {
+  id: string
+  channel: MessageChannel
+  from: string
+  to: string[]
+  subject: string | null
+  body: string
+  htmlBody: string | null
+  meta: Record<string, string>
+  attachments: { name: string; contentType: string; size: number }[]
+  receivedAt: string
+}
+
+export async function fetchMessages(
+  tenant: string,
+  filters?: { channel?: MessageChannel; recipient?: string; contains?: string },
+): Promise<{ messages: CapturedMessage[]; mock: boolean }> {
+  const params = new URLSearchParams()
+  if (filters?.channel) params.set('channel', filters.channel)
+  if (filters?.recipient) params.set('recipient', filters.recipient)
+  if (filters?.contains) params.set('contains', filters.contains)
+  const query = params.size ? `?${params.toString()}` : ''
+  try {
+    const res = await adminFetch(`/messages${query}`, tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { messages?: CapturedMessage[] }
+    return { messages: body.messages ?? [], mock: false }
+  } catch {
+    return { messages: [], mock: true }
+  }
+}
+
+export async function deleteMessage(tenant: string, id: string): Promise<{ mock: boolean }> {
+  try {
+    const res = await adminFetch(`/messages/${id}`, tenant, { method: 'DELETE' })
+    if (!res.ok) throw new Error(String(res.status))
+    return { mock: false }
+  } catch {
+    return { mock: true }
+  }
+}
+
+export async function resetMessages(tenant: string): Promise<{ mock: boolean }> {
+  try {
+    const res = await adminFetch('/messages/reset', tenant, { method: 'POST' })
+    if (!res.ok) throw new Error(String(res.status))
+    return { mock: false }
+  } catch {
+    return { mock: true }
+  }
+}
+
+/** The per-attachment download URL (served with the stored content type and file name). */
+export const messageAttachmentUrl = (id: string, index: number) => `/__admin/messages/${id}/attachments/${index}`
+
 // gRPC descriptor management (G18-pre): host-level (not tenant-scoped) — descriptors live in
 // <root-dir>/grpc/ and uploads hot-reload the serving index.
 export interface GrpcDescriptors {

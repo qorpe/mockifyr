@@ -8,6 +8,7 @@ import { useUi } from '@/components/providers'
 const DashboardPage = lazy(() => import('@/pages/dashboard').then((m) => ({ default: m.DashboardPage })))
 const StubsPage = lazy(() => import('@/pages/stubs').then((m) => ({ default: m.StubsPage })))
 const JournalPage = lazy(() => import('@/pages/journal').then((m) => ({ default: m.JournalPage })))
+const MessagesPage = lazy(() => import('@/pages/messages').then((m) => ({ default: m.MessagesPage })))
 const ScenariosPage = lazy(() => import('@/pages/scenarios').then((m) => ({ default: m.ScenariosPage })))
 const RecordingsPage = lazy(() => import('@/pages/recordings').then((m) => ({ default: m.RecordingsPage })))
 const EnvironmentsPage = lazy(() => import('@/pages/environments').then((m) => ({ default: m.EnvironmentsPage })))
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { index: true, element: <Page><DashboardPage /></Page> },
       { path: 'stubs', element: <Page><StubsPage /></Page> },
       { path: 'journal', element: <Page><JournalPage /></Page> },
+      { path: 'messages', element: <Page><MessagesPage /></Page> },
       { path: 'scenarios', element: <Page><ScenariosPage /></Page> },
       { path: 'recordings', element: <Page><RecordingsPage /></Page> },
       { path: 'environments', element: <Page><EnvironmentsPage /></Page> },
