@@ -272,6 +272,48 @@ export async function resetMessages(tenant: string): Promise<{ mock: boolean }> 
   }
 }
 
+// Channel behavior directives (G18e): SMTP faults/delay, simulated SMS provider errors, and the
+// capture webhook — per tenant, applied by the facades like HTTP delay/fault directives.
+export interface MessageBehaviors {
+  smtpFault: 'none' | 'reject' | 'drop'
+  smtpDelayMs: number
+  smsErrorCode: number | null
+  webhookUrl: string | null
+}
+
+export const defaultBehaviors: MessageBehaviors = { smtpFault: 'none', smtpDelayMs: 0, smsErrorCode: null, webhookUrl: null }
+
+export async function fetchMessageBehaviors(tenant: string): Promise<{ behaviors: MessageBehaviors; mock: boolean }> {
+  try {
+    const res = await adminFetch('/messages/behaviors', tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    return { behaviors: (await res.json()) as MessageBehaviors, mock: false }
+  } catch {
+    return { behaviors: defaultBehaviors, mock: true }
+  }
+}
+
+/** PUT the tenant's behaviors; the server validates (negative delay, non-5-digit code → error). */
+export async function saveMessageBehaviors(tenant: string, behaviors: MessageBehaviors): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await adminFetch('/messages/behaviors', tenant, { method: 'PUT', body: JSON.stringify(behaviors) })
+    if (res.ok) return { ok: true }
+    const body = (await res.json().catch(() => null)) as { title?: string } | null
+    return { ok: false, error: body?.title }
+  } catch {
+    return { ok: false }
+  }
+}
+
+export async function resetMessageBehaviors(tenant: string): Promise<{ ok: boolean }> {
+  try {
+    const res = await adminFetch('/messages/behaviors', tenant, { method: 'DELETE' })
+    return { ok: res.ok }
+  } catch {
+    return { ok: false }
+  }
+}
+
 /** The per-attachment download URL (served with the stored content type and file name). */
 export const messageAttachmentUrl = (id: string, index: number) => `/__admin/messages/${id}/attachments/${index}`
 

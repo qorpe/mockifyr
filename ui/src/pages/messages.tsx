@@ -2,17 +2,22 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Inbox, Mail, MessageSquareText, Paperclip, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, Copy, Inbox, Mail, MessageSquareText, Paperclip, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import {
-  type CapturedMessage, deleteMessage, fetchMessages, messageAttachmentUrl, type MessageChannel, resetMessages,
+  type CapturedMessage, defaultBehaviors, deleteMessage, fetchMessageBehaviors, fetchMessages,
+  messageAttachmentUrl, type MessageBehaviors, type MessageChannel, resetMessageBehaviors, resetMessages,
+  saveMessageBehaviors,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { SearchBox } from '@/components/ui/search-box'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
+import { Input, Label, NativeSelect } from '@/components/ui/field'
+import { useState as useReactState, useEffect } from 'react'
 
 // "26 B" for tiny payloads, "1.4 KB" above — a 26-byte attachment must not read as "0.0 KB".
 const formatSize = (bytes: number) => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`)
@@ -46,6 +51,7 @@ export function MessagesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = messages.find((m) => m.id === selectedId) ?? null
   const [confirmClear, setConfirmClear] = useState(false)
+  const [behaviorsOpen, setBehaviorsOpen] = useState(false)
 
   // SMS mode is a thread view: one row per recipient number, the conversation on the right.
   const smsMode = channel === 'sms'
@@ -90,11 +96,14 @@ export function MessagesPage() {
             <h1 className="text-sm font-semibold">{t('nav.messages')}</h1>
             <span className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">{all.length}</span>
             <div className="ms-auto flex gap-0.5">
+              <Button variant="ghost" size="iconSm" aria-label={t('messages.behaviors')} onClick={() => setBehaviorsOpen(true)}><SlidersHorizontal /></Button>
               <Button variant="ghost" size="iconSm" aria-label={t('common.refresh')} onClick={() => void refetch()}><RefreshCw /></Button>
               <Button variant="ghost" size="iconSm" aria-label={t('messages.clearAll')} disabled={!all.length}
                 onClick={() => setConfirmClear(true)}><Trash2 /></Button>
             </div>
           </div>
+          {/* Positioning: this inbox holds OUTBOUND traffic — what the app under test sent. */}
+          <p className="text-[11.5px] leading-snug text-muted-foreground">{t('messages.positioning')}</p>
           <SearchBox value={search} onCommit={setSearch} placeholder={t('messages.filter')} className="flex-none bg-background" />
           <div className="flex gap-1.5">
             {([null, 'email', 'sms'] as const).map((c) => (
@@ -124,10 +133,19 @@ export function MessagesPage() {
               </div>
               <div className="mt-0.5 truncate ps-[22px] text-[11.5px] text-muted-foreground">{list[0].body}</div>
             </div>
-          )) : messages.map((m) => (
-            <MessageRow key={m.id} message={m} active={m.id === selectedId} locale={i18n.language}
-              onOpen={() => setSelectedId(m.id)} onDelete={() => void remove(m.id)} />
-          ))}
+          )) : messages.map((m, i) => {
+            const day = new Date(m.receivedAt).toLocaleDateString(i18n.language)
+            const prevDay = i > 0 ? new Date(messages[i - 1].receivedAt).toLocaleDateString(i18n.language) : null
+            return (
+              <div key={m.id}>
+                {day !== prevDay && (
+                  <div className="px-2.5 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-wide text-faint">{day}</div>
+                )}
+                <MessageRow message={m} active={m.id === selectedId} locale={i18n.language}
+                  onOpen={() => setSelectedId(m.id)} onDelete={() => void remove(m.id)} />
+              </div>
+            )
+          })}
         </div>
         {data?.mock && <div className="p-2 text-center"><span className="rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 text-[11px] font-medium text-warning">{t('stubs.sample')}</span></div>}
       </aside>
@@ -139,10 +157,14 @@ export function MessagesPage() {
           <SmsThread number={thread.number} list={thread.list} locale={i18n.language} onDelete={(id) => void remove(id)} />
         ) : !smsMode && selected ? (
           <MessageDetail message={selected} locale={i18n.language} onDelete={() => void remove(selected.id)} />
+        ) : all.length === 0 ? (
+          <QuickStart />
         ) : (
           <EmptyState art={<Inbox className="size-16 text-faint" />} title={t('messages.pick')} body={t('messages.pickBody')} />
         )}
       </section>
+
+      <BehaviorsSheet open={behaviorsOpen} onOpenChange={setBehaviorsOpen} tenant={tenant} />
 
       <ConfirmDialog open={confirmClear} onOpenChange={setConfirmClear}
         title={t('messages.clearConfirmTitle')} body={t('messages.clearConfirmBody')}
@@ -283,5 +305,138 @@ function MessageDetail({ message, locale, onDelete }: { message: CapturedMessage
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+// A copyable one-liner for the quick-start cards.
+function CommandLine({ text }: { text: string }) {
+  const [copied, setCopied] = useReactState(false)
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+      <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{text}</code>
+      <button
+        onClick={() => { void navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+        className="shrink-0 rounded p-1 text-faint transition-colors hover:bg-muted hover:text-foreground"
+        aria-label="Copy">
+        {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+      </button>
+    </div>
+  )
+}
+
+/**
+ * First-run guidance (G18c polish): this inbox captures OUTBOUND traffic — Mockifyr stands in for
+ * the real SMTP server / SMS provider, answers like the real thing, and delivers nothing. The two
+ * cards say exactly how to point an application here.
+ */
+function QuickStart() {
+  const { t } = useTranslation()
+  return (
+    <div className="scroll-area min-h-0 flex-1 overflow-y-auto p-8">
+      <div className="mx-auto max-w-[560px]">
+        <Inbox className="size-10 text-faint" />
+        <h2 className="mt-3 text-[17px] font-bold">{t('messages.qsTitle')}</h2>
+        <p className="mt-1.5 max-w-[52ch] text-sm text-muted-foreground">{t('messages.qsBody')}</p>
+
+        <div className="mt-6 space-y-5">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold"><Mail className="size-4 text-info" />{t('messages.qsMail')}</div>
+            <div className="space-y-1.5">
+              <CommandLine text="mockifyr --port 8080 --smtp-port 1025" />
+              <CommandLine text="Smtp Host=localhost Port=1025   # point your app's mail settings here" />
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">{t('messages.qsMailHint')}</p>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold"><MessageSquareText className="size-4 text-warning" />{t('messages.qsSms')}</div>
+            <div className="space-y-1.5">
+              <CommandLine text="mockifyr --port 8080 --sms-profile twilio" />
+              <CommandLine text="Twilio base URL -> http://localhost:8080   # the official SDK works" />
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">{t('messages.qsSmsHint')}</p>
+          </div>
+          <p className="text-xs text-muted-foreground">{t('messages.qsVerify')} <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">GET /__admin/messages/otp?recipient=…</code></p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Channel behaviors (G18e): the screen for /__admin/messages/behaviors — SMTP fault directives,
+ * simulated SMS provider errors, and the capture webhook, per tenant.
+ */
+function BehaviorsSheet({ open, onOpenChange, tenant }: { open: boolean; onOpenChange: (o: boolean) => void; tenant: string }) {
+  const { t } = useTranslation()
+  const [form, setForm] = useReactState<MessageBehaviors>(defaultBehaviors)
+  const [loaded, setLoaded] = useReactState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setLoaded(false)
+    void fetchMessageBehaviors(tenant).then(({ behaviors }) => { setForm(behaviors); setLoaded(true) })
+  }, [open, tenant, setForm, setLoaded])
+
+  async function save() {
+    const { ok, error } = await saveMessageBehaviors(tenant, form)
+    if (ok) { toast.success(t('messages.behaviorsSaved')); onOpenChange(false) }
+    else toast.error(error ?? t('editor.invalidJson'))
+  }
+
+  async function reset() {
+    await resetMessageBehaviors(tenant)
+    setForm(defaultBehaviors)
+    toast.success(t('messages.behaviorsReset'))
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="max-w-[480px]">
+        <SheetHeader title={t('messages.behaviors')} description={t('messages.behaviorsHint')} />
+        <div className={cn('min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5', !loaded && 'pointer-events-none opacity-50')}>
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold"><Mail className="size-4 text-info" />{t('messages.qsMail')}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{t('messages.smtpFault')}</Label>
+                <NativeSelect value={form.smtpFault} onChange={(e) => setForm({ ...form, smtpFault: e.target.value as MessageBehaviors['smtpFault'] })}>
+                  <option value="none">{t('messages.faultNone')}</option>
+                  <option value="reject">{t('messages.faultReject')}</option>
+                  <option value="drop">{t('messages.faultDrop')}</option>
+                </NativeSelect>
+              </div>
+              <div>
+                <Label>{t('messages.smtpDelay')}</Label>
+                <Input type="number" min={0} value={form.smtpDelayMs || ''}
+                  placeholder="0" onChange={(e) => setForm({ ...form, smtpDelayMs: Number(e.target.value) || 0 })} />
+              </div>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">{t('messages.smtpFaultHint')}</p>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold"><MessageSquareText className="size-4 text-warning" />{t('messages.qsSms')}</div>
+            <Label>{t('messages.smsError')}</Label>
+            <Input type="number" placeholder="21211" value={form.smsErrorCode ?? ''}
+              onChange={(e) => setForm({ ...form, smsErrorCode: e.target.value ? Number(e.target.value) : null })} />
+            <p className="mt-1.5 text-xs text-muted-foreground">{t('messages.smsErrorHint')}</p>
+          </div>
+
+          <div>
+            <Label>{t('messages.captureWebhook')}</Label>
+            <Input placeholder="https://…/hook" value={form.webhookUrl ?? ''}
+              onChange={(e) => setForm({ ...form, webhookUrl: e.target.value || null })} />
+            <p className="mt-1.5 text-xs text-muted-foreground">{t('messages.captureWebhookHint')}</p>
+          </div>
+        </div>
+        <div className="flex justify-between gap-2 border-t border-border px-6 py-3">
+          <Button variant="ghost" onClick={() => void reset()}>{t('messages.behaviorsResetBtn')}</Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('editor.cancel')}</Button>
+            <Button variant="primary" onClick={() => void save()}>{t('messages.save')}</Button>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }
