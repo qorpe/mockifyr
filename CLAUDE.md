@@ -90,6 +90,40 @@ Every item in [docs/roadmap.md](docs/roadmap.md) is developed the same way:
 
 ---
 
+## 3a. Definition of Done — tests (non-negotiable, applies to EVERY change)
+
+The full contract lives in [docs/testing.md](docs/testing.md). The short form the agent must obey:
+
+1. **Write the tests yourself, run them yourself.** Every change ships with the layers it touches:
+   unit (pure logic + tenant isolation), wire/integration (real Kestrel host), differential (Docker
+   oracle) for WireMock-dialect behavior, real-client self-tests where no oracle exists, and
+   in-browser verification for UI. Never declare done on a build alone; never ask the human to
+   verify what you can verify.
+2. **Mutation-test new pure logic** with Stryker.NET (local tool). Target 100%; analyze and
+   document any survivor as an equivalent mutant in `docs/parity/`.
+3. **Run the edge-case checklist** (docs/testing.md) before any merge of a user-facing surface —
+   hostile input, empty/missing, volume, unicode, boundaries, tenant isolation.
+4. **All suites green before a PR**: `dotnet build` (0 warnings) + all four test projects + UI
+   `tsc`/`lint`/`build`. CI repeats them, but green CI is confirmation, not discovery.
+
+## 3b. Definition of Done — documentation (every issue fix and feature)
+
+Documentation is part of the change, not a follow-up. A change is not done until, **in the same
+branch/PR**:
+
+- `docs/roadmap.md` — checkbox ticked / new item recorded.
+- `docs/parity/<group>.md` — learned behavior, validation story, deferred edges (never silent).
+- `docs/decisions/` — new/updated ADR whenever a design decision was made or changed (+ index row).
+- `README.md` — flags table and feature claims still true.
+- `CLAUDE.md` — repo map (§4) and status (§7) still true.
+- **The docs website** ([mockifyr.omercelik.dev](https://mockifyr.omercelik.dev), repo
+  `omercelikdev/mockifyr.omercelik.dev`) — every user-facing change (new flag, endpoint, screen,
+  behavior) gets its guide/reference pages updated via a PR to that repo. Shipping a feature the
+  website does not document is an unfinished change.
+
+Everything written into either repository — code, comments, commits, PRs, issues, docs, website —
+is **English only** (§1); conversation language never leaks into artifacts.
+
 ## 4. Where things go (repo map)
 
 ```
