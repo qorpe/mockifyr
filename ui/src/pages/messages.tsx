@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { cn, formatDateTime, timeAgo } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import {
-  type CapturedMessage, defaultBehaviors, deleteMessage, fetchMessageBehaviors, fetchMessages,
+  type CapturedMessage, defaultBehaviors, deleteMessage, fetchMessageBehaviors, fetchMessageRaw, fetchMessages,
   messageAttachmentUrl, type MessageBehaviors, type MessageChannel, resetMessageBehaviors, resetMessages,
   saveMessageBehaviors,
 } from '@/lib/api'
@@ -289,6 +289,7 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                   <TabsList className="mx-6 mt-4">
                     {hasHtml && <TabsTrigger value="preview">{t('messages.preview')}</TabsTrigger>}
                     <TabsTrigger value="text">{t('messages.text')}</TabsTrigger>
+                    <TabsTrigger value="source">{t('messages.source')}</TabsTrigger>
                     <TabsTrigger value="meta">{t('messages.details')}</TabsTrigger>
                   </TabsList>
                   {hasHtml && (
@@ -299,6 +300,9 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                   )}
                   <TabsContent value="text" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
                     <pre className="whitespace-pre-wrap rounded-xl border border-border bg-muted/30 p-4 font-mono text-[12.5px]">{message.body || '—'}</pre>
+                  </TabsContent>
+                  <TabsContent value="source" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
+                    <RawSource id={message.id} />
                   </TabsContent>
                   <TabsContent value="meta" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
                     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12.5px]">
@@ -325,6 +329,7 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
 // One recipient number's conversation, newest at the bottom like a phone, with OTP badges.
 function SmsThread({ list, locale, onDelete }: { list: CapturedMessage[]; locale: string; onDelete: (id: string) => void }) {
   const { t } = useTranslation()
+  const [sourceFor, setSourceFor] = useState<string | null>(null)
   const chronological = [...list].reverse()
   return (
     <div className="scroll-area min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
@@ -345,13 +350,28 @@ function SmsThread({ list, locale, onDelete }: { list: CapturedMessage[]; locale
                   OTP {otp}
                 </button>
               )}
+              <button onClick={() => setSourceFor(sourceFor === m.id ? null : m.id)}
+                className={cn('rounded px-1 font-mono text-[10px] transition-colors hover:bg-muted hover:text-foreground', sourceFor === m.id && 'bg-muted text-foreground')}>
+                {t('messages.source')}
+              </button>
               <button aria-label="Delete" onClick={() => onDelete(m.id)}
                 className="rounded p-0.5 opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger group-hover:opacity-100"><Trash2 className="size-3" /></button>
             </div>
+            {sourceFor === m.id && <RawSource id={m.id} />}
           </div>
         )
       })}
     </div>
+  )
+}
+
+/** The raw wire payload (#194, Mailpit-style): fetched on demand, shown byte-for-byte. */
+function RawSource({ id }: { id: string }) {
+  const { tenant } = useUi()
+  const { data, isLoading } = useQuery({ queryKey: ['message-raw', tenant, id], queryFn: () => fetchMessageRaw(tenant, id) })
+  if (isLoading) return <div className="h-16 animate-pulse rounded-lg bg-muted" />
+  return (
+    <pre className="scroll-area overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-border bg-muted/30 p-4 font-mono text-[11.5px] leading-relaxed">{data ?? '—'}</pre>
   )
 }
 

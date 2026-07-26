@@ -402,7 +402,10 @@ public static class AdminEndpoints
         admin.MapGet("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new GetMessageQuery(id, TenantOf(request)));
-            return result.IsSuccess ? Results.Json(MessageJson(result.Value)) : Results.NotFound();
+            // The detail carries the raw wire payload (Mailpit-style, #194); the list stays lean.
+            return result.IsSuccess
+                ? Results.Json(new { message = MessageJson(result.Value), raw = result.Value.Raw })
+                : Results.NotFound();
         });
 
         // Behavior directives (G18e): SMTP fault/delay, simulated SMS provider errors, and the

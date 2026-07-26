@@ -314,6 +314,18 @@ export async function resetMessageBehaviors(tenant: string): Promise<{ ok: boole
   }
 }
 
+/** The raw wire payload of one message (SMTP: full MIME as received; SMS: the provider form body). */
+export async function fetchMessageRaw(tenant: string, id: string): Promise<string | null> {
+  try {
+    const res = await adminFetch(`/messages/${id}`, tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { raw?: string | null }
+    return body.raw ?? null
+  } catch {
+    return null
+  }
+}
+
 /** The per-attachment download URL (served with the stored content type and file name). */
 export const messageAttachmentUrl = (id: string, index: number) => `/__admin/messages/${id}/attachments/${index}`
 

@@ -38,7 +38,7 @@ public static class SmtpEnvelopeFactory
                 Guid.NewGuid(), MessageChannel.Email,
                 envelopeFrom ?? string.Empty, [.. recipients],
                 Subject: null, Body: mimeText, HtmlBody: null,
-                meta, [], DateTimeOffset.UtcNow);
+                meta, [], DateTimeOffset.UtcNow, Raw: mimeText);
         }
 
         AddIfPresent(meta, "messageId", mime.MessageId);
@@ -71,7 +71,7 @@ public static class SmtpEnvelopeFactory
             mime.Subject is { Length: > 0 } subject ? subject : null,
             TrimTransportNewline(mime.TextBody) ?? string.Empty,
             TrimTransportNewline(mime.HtmlBody),
-            meta, attachments, DateTimeOffset.UtcNow);
+            meta, attachments, DateTimeOffset.UtcNow, Raw: mimeText);
     }
 
     // SMTP terminates the DATA body with CRLF, which MIME decoders surface as one trailing newline
