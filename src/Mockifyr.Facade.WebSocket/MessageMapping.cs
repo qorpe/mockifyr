@@ -19,7 +19,8 @@ public sealed record MessageMapping(
     TenantId Tenant,
     IReadOnlyList<IMatcher> Trigger,
     IReadOnlyList<SendAction> Responses,
-    bool OnConnect = false)
+    bool OnConnect = false,
+    string? Source = null)
 {
     /// <summary>Whether this mapping's trigger matches the given inbound message. An empty trigger matches any.</summary>
     public bool Matches(string message)
@@ -95,7 +96,9 @@ public static class MessageMappingReader
             }
         }
 
-        return new MessageMapping(Guid.NewGuid(), tenant, trigger, responses, onConnect);
+        // The raw registration JSON is retained so the admin list (G18-pre) can show the mapping
+        // exactly as it was posted — the same as-is rule stub mappings follow.
+        return new MessageMapping(Guid.NewGuid(), tenant, trigger, responses, onConnect, json);
     }
 
     // A send body is either inline `data` or a `filePath` read from the files directory (the
@@ -140,6 +143,15 @@ public sealed class MessageMappingStore
         lock (_gate)
         {
             return _byTenant.TryGetValue(tenant, out var list) ? [.. list] : [];
+        }
+    }
+
+    /// <summary>Removes the tenant's mapping with the given id; false when it does not exist.</summary>
+    public bool Remove(TenantId tenant, Guid id)
+    {
+        lock (_gate)
+        {
+            return _byTenant.TryGetValue(tenant, out var list) && list.RemoveAll(m => m.Id == id) > 0;
         }
     }
 }

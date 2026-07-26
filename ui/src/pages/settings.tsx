@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowDownToLine, ArrowUpFromLine, Boxes, Check, Database, GitBranch, KeyRound, Lock, Moon, Palette, Plus, ShieldCheck, Sun, Trash2 } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, Boxes, Check, Database, GitBranch, KeyRound, Lock, Moon, Palette, Plus, ShieldCheck, Sun, Trash2, Workflow } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import {
-  distrustHost, fetchGitStatus, fetchHealth, fetchOutboundTrust, gitConfigure, gitPull, gitPush,
-  gitSetCredentials, persistenceLabel, trustHost,
+  deleteGrpcDescriptor, distrustHost, fetchGitStatus, fetchGrpcDescriptors, fetchHealth, fetchOutboundTrust,
+  gitConfigure, gitPull, gitPush, gitSetCredentials, persistenceLabel, trustHost, uploadGrpcDescriptor,
 } from '@/lib/api'
 import { LOCALES } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
@@ -63,6 +63,9 @@ export function SettingsPage() {
         {/* Outbound certificate trust (#174): manageable here so a new internal endpoint does not
             need a restart; pinned read-only when a --trust-* flag was passed. */}
         <OutboundTrustCard />
+
+        {/* gRPC descriptors (G18-pre, ADR 0010): upload a compiled *.dsc; serving hot-reloads. */}
+        <GrpcDescriptorsCard />
 
         {/* Transport (host-config, read-only) */}
         <Card icon={ShieldCheck} title={t('settings.transport')}>
@@ -364,6 +367,64 @@ function OutboundTrustCard() {
           </Button>
         </div>
       )}
+    </Card>
+  )
+}
+
+// gRPC descriptor management (G18-pre): list the host's *.dsc files and their indexed services,
+// upload a new set (hot-reloads serving — no restart), delete one. Host-level, like outbound trust.
+function GrpcDescriptorsCard() {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const { data } = useQuery({ queryKey: ['grpc-descriptors'], queryFn: fetchGrpcDescriptors })
+  const grpc = data?.grpc
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['grpc-descriptors'] })
+
+  async function upload(file: File) {
+    const { ok } = await uploadGrpcDescriptor(file.name, await file.arrayBuffer())
+    if (ok) { toast.success(t('settings.descriptorUploaded')); refresh() }
+    else toast.error(t('settings.descriptorInvalid'))
+  }
+
+  async function remove(name: string) {
+    const { ok } = await deleteGrpcDescriptor(name)
+    if (ok) { toast.success(t('settings.descriptorDeleted')); refresh() }
+  }
+
+  return (
+    <Card icon={Workflow} title={t('settings.grpcDescriptors')}>
+      <p className="mb-3 text-sm text-muted-foreground">{t('settings.grpcDescriptorsHint')}</p>
+      {(grpc?.descriptors ?? []).length === 0 ? (
+        <p className="mb-3 text-sm text-faint">{t('settings.noDescriptors')}</p>
+      ) : (
+        <ul className="mb-3 space-y-2">
+          {grpc!.descriptors.map((d) => (
+            <li key={d.name} className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+              <span className="font-mono text-[12.5px]">{d.name}</span>
+              <span className="text-xs text-faint">{(d.size / 1024).toFixed(1)} KB</span>
+              <button onClick={() => void remove(d.name)} aria-label={t('common.remove')}
+                className="ms-auto rounded p-1 text-faint transition-colors hover:bg-danger-bg hover:text-danger"><Trash2 className="size-3.5" /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {(grpc?.services ?? []).length > 0 && (
+        <ul className="mb-3 space-y-1 text-sm">
+          {grpc!.services.map((s) => (
+            <li key={s.service}>
+              <span className="font-mono text-[12.5px] text-muted-foreground">{s.service}</span>
+              <span className="ms-2 text-xs text-faint">{s.methods.map((m) => m.method).join(' · ')}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <label className="inline-flex cursor-pointer">
+        <input type="file" accept=".dsc" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = '' }} />
+        <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-[13px] font-medium transition-colors hover:bg-muted">
+          <Plus className="size-3.5" />{t('settings.uploadDescriptor')}
+        </span>
+      </label>
     </Card>
   )
 }

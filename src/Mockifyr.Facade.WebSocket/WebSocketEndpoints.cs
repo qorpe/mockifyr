@@ -75,6 +75,25 @@ public static class WebSocketEndpoints
             }
         });
 
+        // Listing + deletion (G18-pre, ADR 0010): the dashboard shows message-mappings next to the
+        // request/response stubs. Each entry is the registration JSON as posted, with the id stamped
+        // in — the same shape the stub mappings list uses.
+        app.MapGet("/__admin/message-mappings", (HttpRequest request) =>
+        {
+            var mappings = store.For(TenantOf(request)).Select(mapping =>
+            {
+                var node = (mapping.Source is not null
+                    ? System.Text.Json.Nodes.JsonNode.Parse(mapping.Source) : null) as System.Text.Json.Nodes.JsonObject
+                    ?? [];
+                node["id"] = mapping.Id.ToString();
+                return node;
+            }).ToList();
+            return Results.Json(new { messageMappings = mappings });
+        });
+
+        app.MapDelete("/__admin/message-mappings/{id:guid}", (Guid id, HttpRequest request) =>
+            store.Remove(TenantOf(request), id) ? Results.Ok() : Results.NotFound());
+
         // Admin push (POST /__admin/channels/send): dispatch a message to connected clients.
         app.MapPost("/__admin/channels/send", async (HttpRequest request) =>
         {

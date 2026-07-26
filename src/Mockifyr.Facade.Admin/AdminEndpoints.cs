@@ -158,7 +158,15 @@ public static class AdminEndpoints
         admin.MapGet("/mappings", async (HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new GetStubsQuery(TenantOf(request)));
-            var mappings = result.Value.Select(FullMapping).ToList();
+            // The protocol is computed per response, never stored (ADR 0010) — like id/uuid, it is
+            // presentation the exporter tolerates, and the stub's Source stays byte-identical.
+            var probe = request.HttpContext.RequestServices.GetService(typeof(IStubProtocolProbe)) as IStubProtocolProbe;
+            var mappings = result.Value.Select(stub =>
+            {
+                var node = FullMapping(stub);
+                node["protocol"] = StubProtocols.Classify((node as JsonObject)!, probe);
+                return node;
+            }).ToList();
             return Results.Json(new { mappings });
         });
 
