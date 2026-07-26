@@ -57,6 +57,15 @@ serving follows).
   it into the Source — the UI now strips it at projection time. The JSON-only lock remains for
   *unknown* custom matchers (extensions), which no form can express. The channel picker was also
   restyled to the design system's pilled-tabs segmented control (one visual language with Form/JSON).
+- **GraphQL unified into the classic editor (follow-up #3, review feedback):** the separate GraphQL
+  channel form was removed; `graphqlQuery/Variables/OperationName` became first-class stub-form
+  fields (emitting the exact G14 matcher JSON), so a GraphQL stub gets the FULL editor — webhooks,
+  delays, faults, scenarios, priority, headers — in New and Edit alike, and the form is no longer
+  lossy. `jsonBody` responses are preserved on form saves (a hidden flag; previously a form edit
+  silently converted jsonBody to a body string — that also protected gRPC edits). gRPC/channel JSON
+  inputs use the standard framed JSON editor (lint/Beautify/Copy); channel picker pills are the
+  standard TabsList size; the facet row aligns flush with the search box (wrapping on narrow
+  panels). All verified in-browser including an edit save round-trip.
 - **Deferred (tracked, not silent):** editing an existing WS mapping (list/delete/create only —
   no PUT endpoint exists); gRPC request-skeleton generation from the descriptor's input type in
   the form; protocol chips in the journal.

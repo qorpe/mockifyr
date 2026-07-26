@@ -7,10 +7,9 @@ import { fetchGrpcDescriptors, saveMessageMapping, saveStub } from '@/lib/api'
 import { useUi } from '@/components/providers'
 import { Button } from '@/components/ui/button'
 import { Input, Label, NativeSelect, Textarea } from '@/components/ui/field'
-import { JsonEditor } from '@/components/ui/json-editor'
+import { JsonEditor, JsonField } from '@/components/ui/json-editor'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StubEditorForm } from '@/components/stubs/stub-editor'
-import type { Stub } from '@/lib/api'
 
 // The stub channels the Add flow offers (ADR 0010). HTTP renders the classic editor; the others are
 // thin projections that always emit the exact JSON the host dialect expects — the JSON preview *is*
@@ -45,7 +44,7 @@ export function NewStubWorkspace({ active, prefillUrl, onSaved, onDirtyChange }:
         <Tabs value={channel} onValueChange={(v) => setChannel(v as StubChannel)}>
           <TabsList>
             {CHANNELS.map(({ id, icon: Icon }) => (
-              <TabsTrigger key={id} value={id} className="inline-flex items-center gap-1.5 px-3 py-1 text-xs">
+              <TabsTrigger key={id} value={id} className="inline-flex items-center gap-1.5">
                 <Icon className="size-3.5" />{t(`channels.${id}`)}
               </TabsTrigger>
             ))}
@@ -57,7 +56,14 @@ export function NewStubWorkspace({ active, prefillUrl, onSaved, onDirtyChange }:
           onSaved={() => onSaved(true)} onCancel={() => onSaved(false)} onDirtyChange={onDirtyChange} />
       )}
       {channel === 'grpc' && <GrpcStubForm onSaved={onSaved} />}
-      {channel === 'graphql' && <GraphqlStubForm onSaved={onSaved} />}
+      {channel === 'graphql' && (
+        <StubEditorForm editing={null} initialTab="form" active={active}
+          template={{
+            method: 'POST', urlValue: '/graphql', graphqlQuery: '{ hero { id name } }',
+            responseBody: '{\n  "data": { "hero": { "id": "1", "name": "R2-D2" } }\n}', responseJsonBody: true,
+          }}
+          onSaved={() => onSaved(true)} onCancel={() => onSaved(false)} onDirtyChange={onDirtyChange} />
+      )}
       {channel === 'websocket' && <WsMappingForm onSaved={onSaved} />}
     </div>
   )
@@ -147,115 +153,11 @@ function GrpcStubForm({ onSaved }: { onSaved: (saved: boolean) => void }) {
       </div>
       <div>
         <Label>{t('channels.grpcRequest')}</Label>
-        <Textarea rows={5} className="font-mono text-[12.5px]" value={request}
-          onChange={(e) => { setRequest(e.target.value); setOverride(null) }} />
+        <JsonField height={140} value={request} onChange={(v) => { setRequest(v); setOverride(null) }} />
       </div>
       <div>
         <Label>{t('channels.grpcResponse')}</Label>
-        <Textarea rows={5} className="font-mono text-[12.5px]" value={response}
-          onChange={(e) => { setResponse(e.target.value); setOverride(null) }} />
-      </div>
-    </ChannelScaffold>
-  )
-}
-
-/** The graphql-body-matcher parameters of a mapping, when it carries one (G14 dialect). */
-export function graphqlMatcherOf(raw: Record<string, unknown> | undefined):
-  { query: string; variables: unknown; operationName: string; endpoint: string; response: unknown } | null {
-  const request = (raw?.request ?? {}) as Record<string, unknown>
-  const matcher = request.customMatcher as { name?: string; parameters?: Record<string, unknown> } | undefined
-  if (matcher?.name?.toLowerCase() !== 'graphql-body-matcher') return null
-  const parameters = matcher.parameters ?? {}
-  return {
-    query: typeof parameters.query === 'string' ? parameters.query : '',
-    variables: parameters.variables ?? null,
-    operationName: typeof parameters.operationName === 'string' ? parameters.operationName : '',
-    endpoint: typeof request.urlPath === 'string' ? request.urlPath : typeof request.url === 'string' ? request.url : '/graphql',
-    response: (raw?.response as Record<string, unknown> | undefined)?.jsonBody ?? null,
-  }
-}
-
-// A GraphQL stub is an HTTP stub carrying the graphql-body-matcher custom matcher (G14). The form
-// emits exactly the adapter's dialect: parameters.query (+ variables / operationName when given).
-// When `editing` is given, the form seeds from the stub's matcher and MERGES onto the original
-// mapping on save — name, priority and anything else the form doesn't model survive the edit.
-export function GraphqlStubForm({ editing, onSaved }: { editing?: Stub | null; onSaved: (saved: boolean) => void }) {
-  const { t } = useTranslation()
-  const { tenant } = useUi()
-  const queryClient = useQueryClient()
-  const seed = useMemo(() => graphqlMatcherOf(editing?.raw), [editing])
-  const [endpoint, setEndpoint] = useState(seed?.endpoint ?? '/graphql')
-  const [query, setQuery] = useState(seed?.query || '{ hero { id name } }')
-  const [variables, setVariables] = useState(seed?.variables ? JSON.stringify(seed.variables, null, 2) : '')
-  const [operationName, setOperationName] = useState(seed?.operationName ?? '')
-  const [response, setResponse] = useState(seed?.response
-    ? JSON.stringify(seed.response, null, 2)
-    : '{\n  "data": { "hero": { "id": "1", "name": "R2-D2" } }\n}')
-  const [override, setOverride] = useState<string | null>(null)
-
-  const generated = useMemo(() => {
-    const vars = (() => { try { return variables.trim() ? JSON.parse(variables) : null } catch { return null } })()
-    const reply = (() => { try { return JSON.parse(response) } catch { return null } })()
-    // Editing merges onto the original mapping so fields the form doesn't model are never lost.
-    const base = editing?.raw ? structuredClone(editing.raw) as Record<string, unknown> : {}
-    const baseRequest = (base.request ?? {}) as Record<string, unknown>
-    delete baseRequest.url
-    base.request = {
-      ...baseRequest,
-      method: 'POST',
-      urlPath: endpoint || '/graphql',
-      customMatcher: {
-        name: 'graphql-body-matcher',
-        parameters: {
-          query,
-          ...(vars ? { variables: vars } : {}),
-          ...(operationName.trim() ? { operationName: operationName.trim() } : {}),
-        },
-      },
-    }
-    const baseResponse = (base.response ?? {}) as Record<string, unknown>
-    delete baseResponse.body
-    base.response = { status: 200, ...baseResponse, jsonBody: reply ?? {} }
-    return JSON.stringify(base, null, 2)
-  }, [editing, endpoint, query, variables, operationName, response])
-
-  const json = override ?? generated
-
-  async function save() {
-    try { JSON.parse(json) } catch { toast.error(t('editor.invalidJson')); return }
-    const { mock } = await saveStub(tenant, json, editing?.id)
-    toast[mock ? 'message' : 'success'](mock ? t('editor.savedSample') : t('editor.saved'))
-    void queryClient.invalidateQueries({ queryKey: ['stubs', tenant] })
-    onSaved(true)
-  }
-
-  return (
-    <ChannelScaffold json={json} onJsonChange={setOverride} onSave={() => void save()} hint={t('channels.graphqlHint')}>
-      <div>
-        <Label>{t('channels.graphqlEndpoint')}</Label>
-        <Input value={endpoint} onChange={(e) => { setEndpoint(e.target.value); setOverride(null) }} />
-      </div>
-      <div>
-        <Label>{t('channels.graphqlQuery')}</Label>
-        <Textarea rows={6} className="font-mono text-[12.5px]" value={query}
-          onChange={(e) => { setQuery(e.target.value); setOverride(null) }} />
-        <p className="mt-1.5 text-xs text-muted-foreground">{t('channels.graphqlNormalize')}</p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>{t('channels.graphqlVariables')}</Label>
-          <Textarea rows={3} className="font-mono text-[12.5px]" placeholder="{ }" value={variables}
-            onChange={(e) => { setVariables(e.target.value); setOverride(null) }} />
-        </div>
-        <div>
-          <Label>{t('channels.graphqlOperation')}</Label>
-          <Input value={operationName} onChange={(e) => { setOperationName(e.target.value); setOverride(null) }} />
-        </div>
-      </div>
-      <div>
-        <Label>{t('channels.graphqlResponse')}</Label>
-        <Textarea rows={5} className="font-mono text-[12.5px]" value={response}
-          onChange={(e) => { setResponse(e.target.value); setOverride(null) }} />
+        <JsonField height={140} value={response} onChange={(v) => { setResponse(v); setOverride(null) }} />
       </div>
     </ChannelScaffold>
   )

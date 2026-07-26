@@ -9,7 +9,7 @@ import { useUi } from '@/components/providers'
 import { deleteMessageMapping, deleteStub, fetchMessageMappings, fetchStubs, type MessageMapping, type Stub } from '@/lib/api'
 import { buildStubTree, countStubs, type StubTreeNode } from '@/lib/stub-tree'
 import { MethodChip, ProtocolChip, StatusCode } from '@/components/ui/badges'
-import { GraphqlStubForm, graphqlMatcherOf, NewStubWorkspace } from '@/components/stubs/channel-editors'
+import { NewStubWorkspace } from '@/components/stubs/channel-editors'
 import { JsonEditor } from '@/components/ui/json-editor'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -242,7 +242,9 @@ export function StubsPage() {
           </div>
           {/* flex-none: the tree header is a flex column, so SearchBox's own flex-1 would collapse its height. */}
           <SearchBox value={search} onCommit={setSearch} placeholder={t('stubs.filter')} className="flex-none bg-background" />
-          <div className="flex gap-1.5">
+          {/* Natural button sizes; justify-between pins Method to the search box's left edge and
+              Protocol to its right edge, so the row reads as one aligned block. */}
+          <div className="flex w-full flex-wrap items-center justify-between gap-1.5">
             <FacetFilter compact label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
               onToggle={(v) => setSelected((s) => toggleSelection(s, 'method', v))} onClear={() => setSelected((s) => clearFacet(s, 'method'))} clearLabel={t('common.clear')} />
             <FacetFilter compact label={t('stubs.status')} options={statusOptions} selected={selected.status ?? EMPTY_SET}
@@ -324,13 +326,6 @@ export function StubsPage() {
                     prefillUrl={tab.prefillUrl}
                     onSaved={(saved) => onTabSaved(tab, saved)}
                     onDirtyChange={(d) => setDirty((prev) => (prev[tab.key] === d ? prev : { ...prev, [tab.key]: d }))}
-                  />
-                ) : tab.kind === 'stub' && graphqlMatcherOf(stubs.find((s) => s.id === tab.stubId)?.raw) ? (
-                  // A GraphQL stub edits in its own channel form (query/variables/operationName seeded,
-                  // merge-on-save) — the generic form cannot express its matcher (ADR 0010).
-                  <GraphqlStubForm
-                    editing={stubs.find((s) => s.id === tab.stubId) ?? null}
-                    onSaved={(saved) => onTabSaved(tab, saved)}
                   />
                 ) : (
                   <StubEditorForm

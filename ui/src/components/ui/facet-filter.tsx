@@ -11,9 +11,10 @@ export interface FacetOption { value: string; label?: string; count?: number }
  * `@/lib/faceted` (OR within a facet, AND across facets).
  */
 export function FacetFilter({
-  label, options, selected, onToggle, onClear, clearLabel, compact = false,
+  label, options, selected, onToggle, onClear, clearLabel, compact = false, className,
 }: {
   label: string
+  className?: string
   options: FacetOption[]
   selected: Set<string>
   onToggle: (value: string) => void
@@ -30,6 +31,7 @@ export function FacetFilter({
             'inline-flex items-center gap-1.5 rounded-lg border font-medium transition-colors hover:bg-muted',
             compact ? 'h-8 px-2.5 text-[13px]' : 'h-9 px-3 text-sm',
             n > 0 ? 'border-primary/50 bg-background text-foreground' : 'border-border bg-background text-muted-foreground',
+            className,
           )}
         >
           <ListFilter className={compact ? 'size-3.5' : 'size-4'} />
