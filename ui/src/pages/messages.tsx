@@ -267,8 +267,14 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
       <SheetContent>
         {message && (
           <>
-            <SheetHeader title={message.subject ?? (message.channel === 'sms' ? message.to[0] : t('messages.noSubject'))}
-              description={`${message.from || '—'} → ${message.to.join(', ')}`} />
+            {/* The subject and the from→to line copy on hover — both travel into tests and bug
+                reports constantly (#194 polish). */}
+            <div className="border-b border-border px-6 py-4">
+              <HoverCopy className="text-base font-semibold"
+                text={message.subject ?? (message.channel === 'sms' ? message.to[0] : t('messages.noSubject'))} />
+              <HoverCopy className="mt-0.5 text-sm text-muted-foreground"
+                text={`${message.from || '—'} → ${message.to.join(', ')}`} />
+            </div>
             {message.channel === 'sms' ? (
               <SmsThread list={thread} locale={locale} onDelete={onDelete} />
             ) : (
@@ -307,7 +313,7 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                     <RawSource id={message.id} />
                   </TabsContent>
                   <TabsContent value="meta" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
-                    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12.5px]">
+                    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-[12.5px]">
                       <dt className="text-faint">{t('messages.received')}</dt><dd>{new Date(message.receivedAt).toLocaleString(locale)}</dd>
                       <dt className="text-faint">id</dt><dd><CopyableValue value={message.id} /></dd>
                       {Object.entries(message.meta).map(([k, v]) => (
@@ -379,6 +385,19 @@ function RawSource({ id }: { id: string }) {
       {/* Deliberately NOT beautified: the source pane's promise is byte-for-byte wire truth. */}
       <pre className="scroll-area overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-border bg-muted/30 p-4 font-mono text-[11.5px] leading-relaxed">{data ?? '—'}</pre>
     </div>
+  )
+}
+
+/** A text line that copies on click, with the icon appearing on hover — for titles and address lines. */
+function HoverCopy({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { void navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+      className={cn('group flex max-w-full items-center gap-2 text-start', className)} title={text}>
+      <span className="min-w-0 truncate">{text}</span>
+      {copied ? <Check className="size-3.5 shrink-0 text-success" /> : <Copy className="size-3.5 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100" />}
+    </button>
   )
 }
 
