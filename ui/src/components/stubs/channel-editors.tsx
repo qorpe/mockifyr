@@ -8,8 +8,9 @@ import { useUi } from '@/components/providers'
 import { Button } from '@/components/ui/button'
 import { Input, Label, NativeSelect, Textarea } from '@/components/ui/field'
 import { JsonEditor } from '@/components/ui/json-editor'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StubEditorForm } from '@/components/stubs/stub-editor'
-import { cn } from '@/lib/utils'
+import type { Stub } from '@/lib/api'
 
 // The stub channels the Add flow offers (ADR 0010). HTTP renders the classic editor; the others are
 // thin projections that always emit the exact JSON the host dialect expects — the JSON preview *is*
@@ -38,15 +39,18 @@ export function NewStubWorkspace({ active, prefillUrl, onSaved, onDirtyChange }:
   const [channel, setChannel] = useState<StubChannel>('http')
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-1 border-b border-border px-4 py-2">
-        <span className="me-2 text-xs font-semibold text-muted-foreground">{t('channels.pick')}</span>
-        {CHANNELS.map(({ id, icon: Icon }) => (
-          <button key={id} onClick={() => setChannel(id)}
-            className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors',
-              channel === id ? 'border-border-strong bg-muted text-foreground' : 'border-transparent text-muted-foreground hover:bg-muted/60')}>
-            <Icon className="size-3.5" />{t(`channels.${id}`)}
-          </button>
-        ))}
+      {/* Same pilled-tabs language as every other view switcher (Form/JSON) — one segmented style. */}
+      <div className="flex items-center gap-3 border-b border-border px-4 py-2">
+        <span className="text-xs font-semibold text-muted-foreground">{t('channels.pick')}</span>
+        <Tabs value={channel} onValueChange={(v) => setChannel(v as StubChannel)}>
+          <TabsList>
+            {CHANNELS.map(({ id, icon: Icon }) => (
+              <TabsTrigger key={id} value={id} className="inline-flex items-center gap-1.5 px-3 py-1 text-xs">
+                <Icon className="size-3.5" />{t(`channels.${id}`)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       {channel === 'http' && (
         <StubEditorForm editing={null} initialTab="form" prefillUrl={prefillUrl} active={active}
@@ -155,44 +159,71 @@ function GrpcStubForm({ onSaved }: { onSaved: (saved: boolean) => void }) {
   )
 }
 
+/** The graphql-body-matcher parameters of a mapping, when it carries one (G14 dialect). */
+export function graphqlMatcherOf(raw: Record<string, unknown> | undefined):
+  { query: string; variables: unknown; operationName: string; endpoint: string; response: unknown } | null {
+  const request = (raw?.request ?? {}) as Record<string, unknown>
+  const matcher = request.customMatcher as { name?: string; parameters?: Record<string, unknown> } | undefined
+  if (matcher?.name?.toLowerCase() !== 'graphql-body-matcher') return null
+  const parameters = matcher.parameters ?? {}
+  return {
+    query: typeof parameters.query === 'string' ? parameters.query : '',
+    variables: parameters.variables ?? null,
+    operationName: typeof parameters.operationName === 'string' ? parameters.operationName : '',
+    endpoint: typeof request.urlPath === 'string' ? request.urlPath : typeof request.url === 'string' ? request.url : '/graphql',
+    response: (raw?.response as Record<string, unknown> | undefined)?.jsonBody ?? null,
+  }
+}
+
 // A GraphQL stub is an HTTP stub carrying the graphql-body-matcher custom matcher (G14). The form
 // emits exactly the adapter's dialect: parameters.query (+ variables / operationName when given).
-function GraphqlStubForm({ onSaved }: { onSaved: (saved: boolean) => void }) {
+// When `editing` is given, the form seeds from the stub's matcher and MERGES onto the original
+// mapping on save — name, priority and anything else the form doesn't model survive the edit.
+export function GraphqlStubForm({ editing, onSaved }: { editing?: Stub | null; onSaved: (saved: boolean) => void }) {
   const { t } = useTranslation()
   const { tenant } = useUi()
   const queryClient = useQueryClient()
-  const [endpoint, setEndpoint] = useState('/graphql')
-  const [query, setQuery] = useState('{ hero { id name } }')
-  const [variables, setVariables] = useState('')
-  const [operationName, setOperationName] = useState('')
-  const [response, setResponse] = useState('{\n  "data": { "hero": { "id": "1", "name": "R2-D2" } }\n}')
+  const seed = useMemo(() => graphqlMatcherOf(editing?.raw), [editing])
+  const [endpoint, setEndpoint] = useState(seed?.endpoint ?? '/graphql')
+  const [query, setQuery] = useState(seed?.query || '{ hero { id name } }')
+  const [variables, setVariables] = useState(seed?.variables ? JSON.stringify(seed.variables, null, 2) : '')
+  const [operationName, setOperationName] = useState(seed?.operationName ?? '')
+  const [response, setResponse] = useState(seed?.response
+    ? JSON.stringify(seed.response, null, 2)
+    : '{\n  "data": { "hero": { "id": "1", "name": "R2-D2" } }\n}')
   const [override, setOverride] = useState<string | null>(null)
 
   const generated = useMemo(() => {
     const vars = (() => { try { return variables.trim() ? JSON.parse(variables) : null } catch { return null } })()
     const reply = (() => { try { return JSON.parse(response) } catch { return null } })()
-    return JSON.stringify({
-      request: {
-        method: 'POST',
-        urlPath: endpoint || '/graphql',
-        customMatcher: {
-          name: 'graphql-body-matcher',
-          parameters: {
-            query,
-            ...(vars ? { variables: vars } : {}),
-            ...(operationName.trim() ? { operationName: operationName.trim() } : {}),
-          },
+    // Editing merges onto the original mapping so fields the form doesn't model are never lost.
+    const base = editing?.raw ? structuredClone(editing.raw) as Record<string, unknown> : {}
+    const baseRequest = (base.request ?? {}) as Record<string, unknown>
+    delete baseRequest.url
+    base.request = {
+      ...baseRequest,
+      method: 'POST',
+      urlPath: endpoint || '/graphql',
+      customMatcher: {
+        name: 'graphql-body-matcher',
+        parameters: {
+          query,
+          ...(vars ? { variables: vars } : {}),
+          ...(operationName.trim() ? { operationName: operationName.trim() } : {}),
         },
       },
-      response: { status: 200, jsonBody: reply ?? {} },
-    }, null, 2)
-  }, [endpoint, query, variables, operationName, response])
+    }
+    const baseResponse = (base.response ?? {}) as Record<string, unknown>
+    delete baseResponse.body
+    base.response = { status: 200, ...baseResponse, jsonBody: reply ?? {} }
+    return JSON.stringify(base, null, 2)
+  }, [editing, endpoint, query, variables, operationName, response])
 
   const json = override ?? generated
 
   async function save() {
     try { JSON.parse(json) } catch { toast.error(t('editor.invalidJson')); return }
-    const { mock } = await saveStub(tenant, json)
+    const { mock } = await saveStub(tenant, json, editing?.id)
     toast[mock ? 'message' : 'success'](mock ? t('editor.savedSample') : t('editor.saved'))
     void queryClient.invalidateQueries({ queryKey: ['stubs', tenant] })
     onSaved(true)

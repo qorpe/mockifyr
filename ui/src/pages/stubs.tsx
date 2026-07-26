@@ -9,7 +9,7 @@ import { useUi } from '@/components/providers'
 import { deleteMessageMapping, deleteStub, fetchMessageMappings, fetchStubs, type MessageMapping, type Stub } from '@/lib/api'
 import { buildStubTree, countStubs, type StubTreeNode } from '@/lib/stub-tree'
 import { MethodChip, ProtocolChip, StatusCode } from '@/components/ui/badges'
-import { NewStubWorkspace } from '@/components/stubs/channel-editors'
+import { GraphqlStubForm, graphqlMatcherOf, NewStubWorkspace } from '@/components/stubs/channel-editors'
 import { JsonEditor } from '@/components/ui/json-editor'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -324,6 +324,13 @@ export function StubsPage() {
                     prefillUrl={tab.prefillUrl}
                     onSaved={(saved) => onTabSaved(tab, saved)}
                     onDirtyChange={(d) => setDirty((prev) => (prev[tab.key] === d ? prev : { ...prev, [tab.key]: d }))}
+                  />
+                ) : tab.kind === 'stub' && graphqlMatcherOf(stubs.find((s) => s.id === tab.stubId)?.raw) ? (
+                  // A GraphQL stub edits in its own channel form (query/variables/operationName seeded,
+                  // merge-on-save) — the generic form cannot express its matcher (ADR 0010).
+                  <GraphqlStubForm
+                    editing={stubs.find((s) => s.id === tab.stubId) ?? null}
+                    onSaved={(saved) => onTabSaved(tab, saved)}
                   />
                 ) : (
                   <StubEditorForm

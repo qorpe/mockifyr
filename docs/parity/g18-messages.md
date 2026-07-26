@@ -48,9 +48,18 @@ serving follows).
   disabled, with an explanatory hint); gRPC stubs stay form-editable because `urlPath` +
   `equalToJson` express them fully. Editor tab headers and workspace tabs show the protocol chip.
   Verified in-browser both ways.
+- **GraphQL edit form (follow-up #2, on review feedback):** the JSON-only lock was replaced by the
+  real fix — a GraphQL stub now edits in its own channel form (query/variables/operationName and
+  the response seeded from the mapping), which **merges onto the original mapping on save** so
+  name/priority/anything the form doesn't model survive; verified end to end in-browser, including
+  the persisted Source (matcher + name intact, no computed field). Found while wiring it: the list
+  response's computed `protocol` was reaching `Stub.raw`, so a JSON-tab re-save could have persisted
+  it into the Source — the UI now strips it at projection time. The JSON-only lock remains for
+  *unknown* custom matchers (extensions), which no form can express. The channel picker was also
+  restyled to the design system's pilled-tabs segmented control (one visual language with Form/JSON).
 - **Deferred (tracked, not silent):** editing an existing WS mapping (list/delete/create only —
   no PUT endpoint exists); gRPC request-skeleton generation from the descriptor's input type in
-  the form; protocol chips in the journal; a channel-aware GraphQL *edit* form (today: JSON-only).
+  the form; protocol chips in the journal.
 
 ## G18a — Core message model + store + admin API (ADR 0009)
 

@@ -114,7 +114,9 @@ function projectMapping(m: RawMapping): Stub {
     lastMatched: null,
     status: m.response?.proxyBaseUrl ? 'proxy' : 'live',
     responseStatus: typeof m.response?.status === 'number' ? m.response.status : null,
-    raw: m as unknown as Record<string, unknown>,
+    // `protocol` is computed by the server per response (ADR 0010) — strip it from the editable
+    // mapping so a JSON-tab or channel-form save can never persist it into the stored Source.
+    raw: (({ protocol: _p, ...rest }) => rest)(m as unknown as Record<string, unknown>),
   }
 }
 
