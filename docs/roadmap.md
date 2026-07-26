@@ -480,7 +480,7 @@ behavior change.
   sends; capture asserted through the admin API.
 - [x] **G18c — Mail inbox UI** (#187). Messages section: inbox list with search/filters, detail view
   (sandboxed HTML preview, source, headers, attachments), delete/clear. Verified in-browser.
-- [ ] **G18d — SMS provider profile: Twilio + UI**. Opt-in `--sms-profile twilio` mounts
+- [x] **G18d — SMS provider profile: Twilio + UI** (#188). Opt-in `--sms-profile twilio` mounts
   `POST /2010-04-01/Accounts/{sid}/Messages.json`: form body → SMS envelope → store; realistic
   Twilio JSON reply. Self-test: the official Twilio C# SDK pointed at Mockifyr sends and accepts
   the response. UI: SMS thread view per recipient with OTP badges.

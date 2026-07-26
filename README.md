@@ -113,6 +113,7 @@ The common flags, with the [full reference](https://mockifyr.omercelik.dev/cli/)
 | `--https-port <n>` | enable HTTPS / HTTP2 |
 | `--root-dir <dir>` | load and persist stubs as JSON files |
 | `--smtp-port <n>` | capture real SMTP mail into the tenant-scoped message inbox (`/__admin/messages`); the AUTH username names the tenant |
+| `--sms-profile twilio` | emulate Twilio's send-message API: realistic responses the official SDK accepts, every SMS captured into the message inbox |
 | `--dashboard <dir>` | serve the built dashboard under `/__mockifyr` |
 | `--admin-user <u>` · `--admin-pass <p>` | require HTTP Basic auth on the admin API (`/__admin/*`); the dashboard shows a login screen |
 | `--postgres <connstr>` · `--redis <connstr>` · `--litedb <path>` | durable persistence backend |

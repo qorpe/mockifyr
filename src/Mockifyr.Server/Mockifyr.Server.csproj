@@ -12,6 +12,7 @@
     <ProjectReference Include="..\Mockifyr.Facade.Grpc\Mockifyr.Facade.Grpc.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.WebSocket\Mockifyr.Facade.WebSocket.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Smtp\Mockifyr.Facade.Smtp.csproj" />
+    <ProjectReference Include="..\Mockifyr.Providers.Sms\Mockifyr.Providers.Sms.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Library\Mockifyr.Facade.Library.csproj" />
     <ProjectReference Include="..\Mockifyr.Application\Mockifyr.Application.csproj" />
     <ProjectReference Include="..\Mockifyr.Matching\Mockifyr.Matching.csproj" />

@@ -118,3 +118,32 @@ serving follows).
   traffic, not stubs. All six locales translated.
 - **Deferred (tracked):** SMS thread view + OTP badges (G18d); message webhooks and retention
   controls (G18e); verify/OTP admin shapes (G18f).
+
+## G18d — SMS provider profile: Twilio (ADR 0009)
+
+- **Group / item:** G18d — validated with the **official Twilio C# SDK** pointed at Mockifyr
+  (`G18dTwilioSmsProfileTests`): `MessageResource.CreateAsync` succeeds and parses our resource
+  (sid/status/body round-trip through Twilio's own model), the send is captured as an SMS envelope,
+  missing fields answer Twilio's real error codes (21604 To / 21603 From-or-Service / 21602 Body,
+  Twilio's own validation order), the tenant header scopes the capture, and without the flag the
+  route does not exist. No oracle: WireMock has no provider emulation.
+- **Design.** `Mockifyr.Providers.Sms` — an opt-in middleware (`--sms-profile twilio`) emulating
+  `POST /2010-04-01/Accounts/{sid}/Messages.json` ahead of the mock-serving fallback. **A
+  hand-written stub on the same URL still wins**: the middleware peeks the engine on a buffered
+  body and steps aside on a match, so enabling the profile can never change what an existing stub
+  serves (verified: the stub's 503 served, nothing captured). Provider fields (`sid`, `accountSid`,
+  `status`, `messagingServiceSid`) ride in `Meta`; `num_segments` follows coarse GSM segmentation.
+- **Found & fixed in passing — dotted-path serving.** The profile's own URL exposed a real facade
+  bug: the mock-serving fallback used ASP.NET's default `MapFallback` pattern `{*path:nonfile}`,
+  whose `:nonfile` constraint silently 404'd **any** stub whose last path segment looks like a file
+  (`/report.json`, `/export.csv` …) before the engine ever saw it. WireMock serves such paths —
+  **proven against the real oracle** (`G18dDottedPathServingTests`, Docker) after switching the
+  fallback to an explicit `{*path}`. Dashboard assets are unaffected (static files run before
+  routing).
+- **UI.** The Messages page's SMS filter becomes a thread view: one row per recipient number with
+  count + last message, a phone-style conversation on the right, and an **OTP badge** per message
+  (default `\b\d{4,8}\b`, click-to-copy). Verified in-browser: four sends through the profile,
+  two threads, three OTP badges extracted.
+- **Deferred (tracked):** more providers (Vonage, NetGSM) behind the same seam; provider error
+  simulation rules (G18e); status-callback webhooks (G18e); the message list/fetch subresources of
+  the Twilio API.

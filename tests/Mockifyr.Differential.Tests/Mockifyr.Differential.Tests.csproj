@@ -16,6 +16,8 @@
     <PackageReference Include="Testcontainers.Redis" />
     <!-- Real SMTP client for the G18b self-test (WireMock has no SMTP — no oracle exists). -->
     <PackageReference Include="MailKit" />
+    <!-- Official Twilio SDK driven at the G18d provider profile. -->
+    <PackageReference Include="Twilio" />
     <!-- gRPC client + codegen for the G13 differential. -->
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Google.Protobuf" />

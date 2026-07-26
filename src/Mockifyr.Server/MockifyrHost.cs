@@ -294,6 +294,14 @@ public static class MockifyrHost
         var filesDirectory = string.IsNullOrWhiteSpace(rootDir) ? null : Path.Combine(rootDir, "__files");
         app.UseMockifyrWebSockets(filesDirectory);
 
+        // SMS provider profile (G18d, ADR 0009): opt-in via --sms-profile twilio. Mounted ahead of the
+        // mock-serving fallback, but a hand-written stub on the same URL still wins (the middleware
+        // peeks the engine and steps aside on a match), so enabling it never changes existing serving.
+        if (string.Equals(builder.Configuration["sms-profile"], "twilio", StringComparison.OrdinalIgnoreCase))
+        {
+            app.UseMiddleware<Providers.Sms.TwilioSmsProfileMiddleware>();
+        }
+
         // gRPC serving (G13) runs ahead of the endpoints: application/grpc requests are handled by the
         // codec+engine, everything else falls through to the admin/mock-serving endpoints. The admin
         // descriptor endpoints (G18-pre) manage <root-dir>/grpc/*.dsc and hot-reload the same index.
