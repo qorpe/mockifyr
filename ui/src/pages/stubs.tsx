@@ -306,6 +306,7 @@ export function StubsPage() {
                       active === tab.key ? 'border-b-2 border-b-primary bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}>
                     {tab.pinned && <Pin className="size-3 shrink-0 text-faint" aria-label={t('tabs.pin')} />}
                     {stub && <MethodChip method={stub.method} />}
+                    {stub && <ProtocolChip protocol={stub.protocol} />}
                     <span className="truncate">{label}</span>
                     {dirty[tab.key] && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="unsaved" />}
                     <span role="button" tabIndex={-1} aria-label={t('editor.cancel')} onClick={(e) => { e.stopPropagation(); closeTab(tab.key) }}

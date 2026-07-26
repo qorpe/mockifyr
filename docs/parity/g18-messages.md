@@ -41,9 +41,16 @@ serving follows).
   preview); WebSocket mappings are listed under the tree with a read-only detail sheet; Settings
   gained a gRPC-descriptors card (upload/list/delete). All six locales translated; verified
   in-browser against a live host (chips, facet, gRPC form fed by descriptors, WS create → listed).
+- **Edit-path safety (follow-up, found in review):** the classic Form editor is a lossy projection —
+  it rebuilds the mapping from the form model on save, and it has no representation for
+  `customMatcher`. Editing a GraphQL stub in the Form tab would have silently dropped the
+  `graphql-body-matcher`. A stub carrying a custom matcher now opens **JSON-only** (Form tab
+  disabled, with an explanatory hint); gRPC stubs stay form-editable because `urlPath` +
+  `equalToJson` express them fully. Editor tab headers and workspace tabs show the protocol chip.
+  Verified in-browser both ways.
 - **Deferred (tracked, not silent):** editing an existing WS mapping (list/delete/create only —
   no PUT endpoint exists); gRPC request-skeleton generation from the descriptor's input type in
-  the form; protocol chips in the journal.
+  the form; protocol chips in the journal; a channel-aware GraphQL *edit* form (today: JSON-only).
 
 ## G18a — Core message model + store + admin API (ADR 0009)
 

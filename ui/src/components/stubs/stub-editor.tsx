@@ -12,6 +12,7 @@ import { BODY_OPS, BODY_SUB_OPS, emptyStub, FAULTS, fromMapping, MATCH_OPS, stub
 import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ProtocolChip } from '@/components/ui/badges'
 import { Input, Label, NativeSelect, Textarea } from '@/components/ui/field'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
@@ -92,7 +93,11 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, activ
     queryFn: () => fetchEnvironments(tenant),
   })
   const environments = environmentData?.environments ?? []
-  const [tab, setTab] = useState(initialTab)
+  // A custom matcher (e.g. GraphQL's graphql-body-matcher) has no form representation — a Form-tab
+  // save would rebuild the mapping from the form and silently DROP it. Such stubs edit as JSON only.
+  const jsonOnly = !!editing?.raw &&
+    typeof (editing.raw as { request?: { customMatcher?: unknown } }).request?.customMatcher === 'object'
+  const [tab, setTab] = useState(jsonOnly ? 'json' : initialTab)
   const [rawJson, setRawJson] = useState('')
   const [saving, setSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -111,8 +116,8 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, activ
     const seeded = editing?.raw ? JSON.stringify(editing.raw, null, 2) : toJson(seed)
     setRawJson(seeded)
     initialJson.current = seeded
-    setTab(initialTab)
-  }, [editing, reset, initialTab, prefillUrl])
+    setTab(jsonOnly ? 'json' : initialTab)
+  }, [editing, reset, initialTab, prefillUrl, jsonOnly])
 
   // Report unsaved state for the tab's dot: form edits (RHF isDirty) or a raw JSON change.
   const dirty = form.formState.isDirty || (tab === 'json' && rawJson !== initialJson.current)
@@ -188,11 +193,13 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, activ
   return (
     <div className="flex h-full min-h-0 flex-col">
         <Tabs value={tab} onValueChange={(v) => setTab(v as 'form' | 'json')} className="flex min-h-0 flex-1 flex-col">
-          <div className="px-6 pt-4">
+          <div className="flex items-center gap-3 px-6 pt-4">
             <TabsList>
-              <TabsTrigger value="form">{t('editor.form')}</TabsTrigger>
+              <TabsTrigger value="form" disabled={jsonOnly}>{t('editor.form')}</TabsTrigger>
               <TabsTrigger value="json">JSON</TabsTrigger>
             </TabsList>
+            {editing && <ProtocolChip protocol={editing.protocol} />}
+            {jsonOnly && <span className="text-xs text-muted-foreground">{t('editor.jsonOnly')}</span>}
           </div>
 
           <TabsContent value="form" className="scroll-area min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
