@@ -106,6 +106,8 @@ src/
   Mockifyr.Facade.Admin/         /__admin/* REST (thin: HTTP -> CQRS dispatch)
   Mockifyr.Facade.Grpc/          gRPC serving (protobuf <-> JSON codec -> engine)
   Mockifyr.Facade.WebSocket/     WebSocket message serving (message-mappings -> matcher/templating)
+  Mockifyr.Facade.Smtp/          opt-in ESMTP capture listener (MIME -> MessageEnvelope -> inbox)
+  Mockifyr.Providers.Sms/        opt-in SMS provider profiles (Twilio-shaped API -> capture + realistic replies)
   Mockifyr.Server/               composition root (host, config, CLI)
 harness/
   Mockifyr.Differential.Harness/   Java WireMock (Testcontainers) + canonical diff
@@ -158,7 +160,7 @@ the unit tests on every PR.
 ## 7. Current status
 
 All roadmap groups **G1–G17 are complete** (see [docs/roadmap.md](docs/roadmap.md)), including the
-post-phase **UI / dashboard**. Delivered across 17 projects: matching (G1 — URL/method,
+post-phase **UI / dashboard**. Delivered across 19 projects: matching (G1 — URL/method,
 header/query/cookie/body value matchers, `equalToJson`/`matchesJsonPath`/`matchesJsonSchema` incl.
 `format` + networknt `typeLoose` + `$ref`, `equalToXml`/`matchesXPath` incl. XMLUnit placeholders +
 namespaces + XPath functions, date/time, logic/basicAuth/multipart/priority); response + templating
@@ -172,5 +174,12 @@ GraphQL (G14 — query/variables/operationName matching + response templating); 
 `{{key}}` config resolved at serve time, across all four persistence providers). Correctness is proven **differentially
 against the Java WireMock oracle** except where no stable oracle exists — racy helpers (Faker/JWT/
 random/`now`) use structural/content validation, and WebSocket (WireMock beta) uses a self-test —
-each such case is stated in `docs/parity/`. Remaining work is documented **deferred edges** (per group
-in `docs/parity/`) plus the UI. Builds clean (0 warnings).
+each such case is stated in `docs/parity/`. **G18 — message mocking (ADR 0009/0010)** is complete:
+protocol-aware stub UX (computed `protocol`, channel-aware editors, descriptor admin + hot reload),
+the tenant-scoped message inbox (`/__admin/messages` + dashboard Messages page), SMTP capture
+(`--smtp-port`, AUTH-as-tenant), the Twilio SMS profile (`--sms-profile twilio`, stub-wins peek),
+behaviors (SMTP faults/delay, simulated provider errors, capture webhook, `--message-limit`), and
+verify/OTP (`/__admin/messages/otp`, `matches` regex filter) — validated by real-client self-tests
+(MailKit, official Twilio SDK) plus Stryker mutation testing (100% on the message logic), no oracle
+existing for message channels (`docs/parity/g18-messages.md`). Remaining work is documented
+**deferred edges** (per group in `docs/parity/`). Builds clean (0 warnings).
