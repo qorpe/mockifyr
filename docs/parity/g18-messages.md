@@ -44,3 +44,28 @@ serving follows).
 - **Deferred (tracked, not silent):** editing an existing WS mapping (list/delete/create only —
   no PUT endpoint exists); gRPC request-skeleton generation from the descriptor's input type in
   the form; protocol chips in the journal.
+
+## G18a — Core message model + store + admin API (ADR 0009)
+
+- **Group / item:** G18a — self-tested (`G18aMessageStoreTests` unit + CQRS, `G18aMessagesAdminTests`
+  over the wire); **mutation-tested with Stryker.NET**: 100% score on `MessageOperations`/
+  `MessageHandlers` (36 mutants), `InMemoryMessageStore` (19), and G18-pre's `StubProtocols` (19) —
+  survivors were killed by adding tests (Limit=0 semantics, NotFound error codes, any-recipient
+  matching, at-capacity no-eviction, urlPath-over-url precedence, query-only URL) and by one
+  refactor: the eviction `RemoveRange(count - Capacity)` was an *equivalent-mutant* shape
+  (`RemoveRange(0,0)` no-ops), rewritten to `RemoveAt(0)` which is both simpler and testable.
+- **Model.** `MessageEnvelope` (channel `email`|`sms`, from/to/subject/body/htmlBody, flat `Meta`
+  map for provider fields, attachments, receivedAt) + `IMessageStore`/`IMessageSink` in Core —
+  pure, zero deps; the in-memory store is bounded per tenant (default 1000, oldest evicted first,
+  newest-first reads) and strictly tenant-scoped (cross-tenant get/remove refuse, verified).
+- **Admin surface.** `/__admin/messages` (+`/count`, `/{id}`, `DELETE /{id}`, `POST /reset`) via
+  CQRS; filters (`channel`, `recipient` any-addressee case-insensitive substring, `contains` over
+  subject+bodies, `limit` where 0 = unlimited) are defined once in `MessageFilter` and shared by
+  list and count, so the two can never disagree. Attachment content is not inlined in JSON
+  (name/type/size only; download endpoint lands with the inbox UI, G18c).
+- **Learned in passing:** Stryker.NET (4.16) only offers as mutable the projects a test csproj
+  references **directly** — transitive references through `Mockifyr.Server` are invisible to it.
+  The test project now references Application/Stores.InMemory/Facade.Admin directly (harmless,
+  already transitive) to make them mutable.
+- **Deferred (tracked):** durable message persistence (reuse the G16 seam if demanded); attachment
+  download endpoint (G18c); verify/OTP query shapes (G18f).

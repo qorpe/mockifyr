@@ -350,6 +350,47 @@ public static class AdminEndpoints
             return Results.Ok();
         });
 
+        // Captured messages (G18a, ADR 0009): the tenant-scoped inbox facades write into. Filters are
+        // query parameters so a test can assert "the OTP SMS reached +90…" in one GET.
+        admin.MapGet("/messages", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessagesQuery(
+                TenantOf(request),
+                ChannelOf(request),
+                request.Query["recipient"].FirstOrDefault(),
+                request.Query["contains"].FirstOrDefault(),
+                int.TryParse(request.Query["limit"].FirstOrDefault(), out var limit) ? limit : null));
+            return Results.Json(new { messages = result.Value.Select(MessageJson) });
+        });
+
+        admin.MapGet("/messages/count", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new CountMessagesQuery(
+                TenantOf(request),
+                ChannelOf(request),
+                request.Query["recipient"].FirstOrDefault(),
+                request.Query["contains"].FirstOrDefault()));
+            return Results.Json(new { count = result.Value });
+        });
+
+        admin.MapGet("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessageQuery(id, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(MessageJson(result.Value)) : Results.NotFound();
+        });
+
+        admin.MapDelete("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new DeleteMessageCommand(id, TenantOf(request)));
+            return result.IsSuccess ? Results.Ok() : Results.NotFound();
+        });
+
+        admin.MapPost("/messages/reset", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ResetMessagesCommand(TenantOf(request)));
+            return Results.Ok();
+        });
+
         // Outbound certificate trust (#174). Host-level, not tenant-scoped: the outbound HttpClient is
         // shared, so trust cannot belong to one tenant. Writes are refused (409) on a flag-pinned host,
         // mirroring Git sync's two-mode design.
@@ -634,6 +675,32 @@ public static class AdminEndpoints
 
     // The full mapping for GET /mappings: the stub's own source JSON with its id/uuid stamped
     // in, so the dashboard can display and faithfully round-trip an edit (not just see an id).
+    // ---- Captured messages (G18a) --------------------------------------------------------------
+
+    private static MessageChannel? ChannelOf(HttpRequest request) =>
+        request.Query["channel"].FirstOrDefault()?.ToLowerInvariant() switch
+        {
+            "email" => MessageChannel.Email,
+            "sms" => MessageChannel.Sms,
+            _ => null,
+        };
+
+    // Attachment content is deliberately not inlined in the JSON (it may be megabytes); the list
+    // carries name/type/size and a per-attachment download lands with the inbox UI (G18c).
+    private static object MessageJson(MessageEnvelope message) => new
+    {
+        id = message.Id,
+        channel = message.Channel == MessageChannel.Email ? "email" : "sms",
+        from = message.From,
+        to = message.To,
+        subject = message.Subject,
+        body = message.Body,
+        htmlBody = message.HtmlBody,
+        meta = message.Meta,
+        attachments = message.Attachments.Select(a => new { name = a.Name, contentType = a.ContentType, size = a.Size }),
+        receivedAt = message.ReceivedAt,
+    };
+
     private static JsonNode FullMapping(StubMapping stub)
     {
         var node = (stub.Source is not null ? JsonNode.Parse(stub.Source) : null) as JsonObject ?? new JsonObject();

@@ -470,7 +470,7 @@ behavior change.
   loaded descriptors; GraphQL query editor emitting the `graphql-body-matcher` JSON; WebSocket
   message-mapping form). Descriptor upload/list/delete via admin + Settings. WS mappings listed in
   the UI.
-- [ ] **G18a — Core message model + store + admin API**. `MessageEnvelope` (channel `email`|`sms`),
+- [x] **G18a — Core message model + store + admin API** (#185). `MessageEnvelope` (channel `email`|`sms`),
   tenant-scoped `IMessageStore` (bounded, ring-buffer eviction) + `IMessageSink` in Core (zero
   deps); in-memory store; `/__admin/messages` CQRS + REST: list (channel/recipient/text filters),
   get, delete, reset, count.

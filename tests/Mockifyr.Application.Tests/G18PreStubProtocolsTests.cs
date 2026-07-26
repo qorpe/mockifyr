@@ -71,6 +71,22 @@ public sealed class G18PreStubProtocolsTests
     }
 
     [Fact]
+    public void UrlPath_WinsOverUrl_WhenBothArePresent()
+    {
+        // The gRPC dialect writes urlPath; a stray url field must not steal the lookup.
+        var mapping = Mapping("""{"method":"POST","urlPath":"/pkg.Svc/Call","url":"/other"}""");
+        Assert.Equal("grpc", StubProtocols.Classify(mapping, new FixedProbe("/pkg.Svc/Call")));
+    }
+
+    [Fact]
+    public void QueryOnlyUrl_ProbesTheEmptyPath_NotTheRawUrl()
+    {
+        // '?' at position 0 leaves an empty path; the probe must never see the raw query text.
+        var mapping = Mapping("""{"method":"POST","url":"?x=1"}""");
+        Assert.Equal("http", StubProtocols.Classify(mapping, new FixedProbe("?x=1")));
+    }
+
+    [Fact]
     public void MissingRequest_IsHttp()
     {
         Assert.Equal("http", StubProtocols.Classify((JsonObject)JsonNode.Parse("""{"response":{"status":200}}""")!, null));

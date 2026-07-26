@@ -38,5 +38,8 @@ public sealed class MockifyrKestrelHost : IAsyncDisposable
     /// <summary>The bound base address, e.g. <c>http://127.0.0.1:53211</c>.</summary>
     public string BaseAddress { get; }
 
+    /// <summary>The host's service provider, for seeding state below the HTTP surface in self-tests.</summary>
+    public IServiceProvider Services => _app.Services;
+
     public async ValueTask DisposeAsync() => await _app.DisposeAsync();
 }

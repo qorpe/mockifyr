@@ -1,0 +1,68 @@
+namespace Mockifyr.Core;
+
+/// <summary>The channel a captured message arrived through (G18, ADR 0009).</summary>
+public enum MessageChannel
+{
+    Email,
+    Sms,
+}
+
+/// <summary>An attachment carried by a captured email message.</summary>
+public sealed record MessageAttachment(string Name, string ContentType, byte[] Content)
+{
+    /// <summary>The attachment size in bytes.</summary>
+    public int Size => Content.Length;
+}
+
+/// <summary>
+/// A captured outbound message (G18, ADR 0009): the transport-neutral envelope a facade produces
+/// after parsing its wire format (MIME for SMTP, a provider's form body for SMS). Core never sees
+/// either wire format — only this value. <see cref="Meta"/> carries channel-specific fields
+/// (mail headers, provider ids) as a flat string map so the envelope stays closed under new
+/// providers without growing per-provider properties.
+/// </summary>
+public sealed record MessageEnvelope(
+    Guid Id,
+    MessageChannel Channel,
+    string From,
+    IReadOnlyList<string> To,
+    string? Subject,
+    string Body,
+    string? HtmlBody,
+    IReadOnlyDictionary<string, string> Meta,
+    IReadOnlyList<MessageAttachment> Attachments,
+    DateTimeOffset ReceivedAt);
+
+/// <summary>
+/// The tenant-scoped inbox of captured messages (G18). Bounded: the store holds at most its
+/// configured capacity per tenant and evicts oldest-first, so an unattended host cannot grow without
+/// limit. Every entry point takes an explicit <see cref="TenantId"/> — there is no tenant-less
+/// overload (ADR 0003).
+/// </summary>
+public interface IMessageStore
+{
+    /// <summary>Appends a captured message to the tenant's inbox, evicting the oldest beyond capacity.</summary>
+    void Append(TenantId tenant, MessageEnvelope message);
+
+    /// <summary>The tenant's messages, newest first.</summary>
+    IReadOnlyList<MessageEnvelope> GetMessages(TenantId tenant);
+
+    /// <summary>The tenant's message with the given id, or null.</summary>
+    MessageEnvelope? Get(TenantId tenant, Guid id);
+
+    /// <summary>Removes one message; false when it does not exist.</summary>
+    bool Remove(TenantId tenant, Guid id);
+
+    /// <summary>Clears the tenant's inbox.</summary>
+    void Reset(TenantId tenant);
+}
+
+/// <summary>
+/// The write-side seam a message-producing facade calls (G18). The default sink appends to the
+/// store; decorators layer behavior (serve events → webhooks) without the facade knowing.
+/// </summary>
+public interface IMessageSink
+{
+    /// <summary>Accepts a captured message for the tenant.</summary>
+    void Accept(TenantId tenant, MessageEnvelope message);
+}
