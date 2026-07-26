@@ -379,6 +379,28 @@ public sealed class G18fOtpHandlerTests
     }
 
     [Theory]
+    [InlineData("1234", "1234")] // lower bound
+    [InlineData("12345678", "12345678")] // upper bound
+    public async Task DefaultPattern_DigitBoundaries_Match(string body, string expected)
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        provider.GetRequiredService<IMessageSink>().Accept(TenantId.Default, Message($"code {body} end"));
+        Assert.Equal(expected, (await sender.Send(new ExtractOtpQuery(TenantId.Default))).Value.Otp);
+    }
+
+    [Theory]
+    [InlineData("123")] // below the bound
+    [InlineData("123456789012")] // a 12-digit id must NOT read as an OTP
+    public async Task DefaultPattern_OutOfBoundsDigits_DoNotMatch(string body)
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        provider.GetRequiredService<IMessageSink>().Accept(TenantId.Default, Message($"ref {body} end"));
+        Assert.Equal("Otp.NoMatch", (await sender.Send(new ExtractOtpQuery(TenantId.Default))).Error.Code);
+    }
+
+    [Theory]
     [InlineData(@"code is \d{6}", true)]
     [InlineData(@"^absent$", false)]
     [InlineData("([", false)] // malformed regex matches nothing, never throws

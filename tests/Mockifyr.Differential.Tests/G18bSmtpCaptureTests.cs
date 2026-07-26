@@ -140,6 +140,36 @@ public sealed class G18bSmtpCaptureTests
     }
 
     [Fact]
+    public async Task UnicodeAttachmentName_RoundTrips()
+    {
+        var (app, admin, smtpPort) = await StartHostAsync();
+        await using var _ = app;
+
+        var mail = new MimeMessage();
+        mail.From.Add(MailboxAddress.Parse("noreply@app.test"));
+        mail.To.Add(MailboxAddress.Parse("user@example.com"));
+        mail.Subject = "unicode ek";
+        var builder = new BodyBuilder { TextBody = "ekli" };
+        builder.Attachments.Add("türkçe rapor ğüşiöç.bin", new byte[] { 1, 2, 3 },
+            ContentType.Parse("application/octet-stream"));
+        mail.Body = builder.ToMessageBody();
+
+        using (var client = new SmtpClient())
+        {
+            await client.ConnectAsync("127.0.0.1", smtpPort, SecureSocketOptions.None);
+            await client.SendAsync(mail);
+            await client.DisconnectAsync(quit: true);
+        }
+
+        // The RFC 2231/2047-encoded name decodes back to the exact unicode string, end to end.
+        using var list = await MessagesAsync(admin);
+        var attachment = Assert.Single(Assert.Single(list.RootElement.GetProperty("messages").EnumerateArray())
+            .GetProperty("attachments").EnumerateArray());
+        Assert.Equal("türkçe rapor ğüşiöç.bin", attachment.GetProperty("name").GetString());
+        Assert.Equal(3, attachment.GetProperty("size").GetInt32());
+    }
+
+    [Fact]
     public async Task TwoMailsOnOneConnection_BothCaptured()
     {
         var (app, admin, smtpPort) = await StartHostAsync();

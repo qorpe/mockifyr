@@ -12,8 +12,9 @@
 
 **An independent, .NET-based API mock engine + platform.** A transport-agnostic request-matching and
 response engine with first-class multi-tenancy, pluggable persistence, and thin facades — in-process
-library · HTTP server · admin REST · gRPC · GraphQL · WebSocket. Clean-room codebase with its own IP
-and no third-party mock-engine dependencies.
+library · HTTP server · admin REST · gRPC · GraphQL · WebSocket — plus **message mocking**: an SMTP
+capture server and Twilio-compatible SMS emulation with a tenant-scoped inbox and one-call OTP
+verification. Clean-room codebase with its own IP and no third-party mock-engine dependencies.
 
 📖 **[Documentation → mockifyr.omercelik.dev](https://mockifyr.omercelik.dev)** — guides, the full CLI
 and admin API reference, and [known limitations](https://mockifyr.omercelik.dev/limitations/).
@@ -166,6 +167,7 @@ cannot turn verification off. Full detail:
 - Stubs — [request matching](https://mockifyr.omercelik.dev/request-matching/) · [responses](https://mockifyr.omercelik.dev/responses/) · [templating](https://mockifyr.omercelik.dev/templating/)
 - Behaviour — [scenarios](https://mockifyr.omercelik.dev/scenarios/) · [delays and faults](https://mockifyr.omercelik.dev/delays-and-faults/) · [proxying](https://mockifyr.omercelik.dev/proxying/) · [record and playback](https://mockifyr.omercelik.dev/record-and-playback/) · [webhooks](https://mockifyr.omercelik.dev/webhooks/)
 - Platform — [multi-tenancy](https://mockifyr.omercelik.dev/multi-tenancy/) · [environments](https://mockifyr.omercelik.dev/environments/) · [persistence](https://mockifyr.omercelik.dev/persistence/) · [HTTPS and mTLS](https://mockifyr.omercelik.dev/https-and-mtls/)
+- Messages — [email & SMS mocking](https://mockifyr.omercelik.dev/messages/) (SMTP capture, Twilio profile, OTP verify)
 - Reference — [CLI](https://mockifyr.omercelik.dev/cli/) · [admin API](https://mockifyr.omercelik.dev/admin-api/) · [extending](https://mockifyr.omercelik.dev/extending/)
 - [Migrating from WireMock](https://mockifyr.omercelik.dev/migrating-from-wiremock/), and the
   [known limitations](https://mockifyr.omercelik.dev/limitations/) worth reading first
@@ -175,6 +177,7 @@ cannot turn verification off. Full detail:
 - Architecture & design — [ARCHITECTURE.md](ARCHITECTURE.md)
 - Roadmap — [docs/roadmap.md](docs/roadmap.md) · decisions — [docs/decisions/](docs/decisions/)
 - Learned WireMock behaviour, per feature group — [docs/parity/](docs/parity/)
+- Testing strategy (the binding test contract) — [docs/testing.md](docs/testing.md)
 - Brand assets and their usage rules — [brand/](brand/)
 - This is an AI-driven repository; how work is done here — [CLAUDE.md](CLAUDE.md)
 
