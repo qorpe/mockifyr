@@ -495,6 +495,8 @@ export interface JournalEntry {
   id: string
   method: string
   url: string
+  /** Computed server-side (ADR 0010): grpc/graphql/sms entries read as what they are. */
+  protocol?: Protocol | 'sms'
   status: number | null
   wasMatched: boolean
   /** ISO timestamp of when the request was served (for ordering + "time ago"). */

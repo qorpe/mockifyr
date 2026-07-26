@@ -5,7 +5,7 @@ import {
   type ColumnDef, flexRender, getCoreRowModel, getPaginationRowModel,
   getSortedRowModel, type SortingState, useReactTable,
 } from '@tanstack/react-table'
-import { ArrowUpDown, CheckCircle2, ChevronLeft, ChevronRight, Clock, RefreshCw, Rows2, Rows3, XCircle } from 'lucide-react'
+import { ArrowUpDown, CheckCircle2, ChevronLeft, ChevronRight, Clock, MessageSquareText, RefreshCw, Rows2, Rows3, XCircle } from 'lucide-react'
 import { cn, formatDateTime, timeAgo } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import { fetchJournal, type JournalEntry } from '@/lib/api'
@@ -44,6 +44,7 @@ const EMPTY_SET = new Set<string>()
 const FACETS: FacetDef<JournalEntry>[] = [
   { id: 'method', get: (r) => r.method },
   { id: 'status', get: (r) => statusClass(r.status) },
+  { id: 'protocol', get: (r) => r.protocol ?? 'http' },
 ]
 
 export function JournalPage() {
@@ -71,7 +72,21 @@ export function JournalPage() {
 
   const columns = useMemo<ColumnDef<JournalEntry>[]>(() => [
     { accessorKey: 'method', header: () => t('stubs.method'), cell: ({ getValue }) => <MethodChip method={getValue<string>()} /> },
-    { accessorKey: 'url', header: () => t('stubs.url'), cell: ({ getValue }) => <span className="font-mono text-[12.5px]">{getValue<string>()}</span> },
+    {
+      accessorKey: 'url', header: () => t('stubs.url'),
+      cell: ({ row, getValue }) => {
+        // Non-HTTP protocols get a chip (ADR 0010) — same rule as the stub tree, HTTP stays unmarked.
+        const p = row.original.protocol
+        return (
+          <span className="inline-flex items-center gap-2">
+            {p === 'grpc' && <span className="rounded-md border border-violet-border bg-violet-bg px-1.5 py-0.5 font-mono text-[10px] font-bold text-violet">gRPC</span>}
+            {p === 'graphql' && <span className="rounded-md border border-info-border bg-info-bg px-1.5 py-0.5 font-mono text-[10px] font-bold text-info">GraphQL</span>}
+            {p === 'sms' && <span className="inline-flex items-center gap-1 rounded-md border border-warning-border bg-warning-bg px-1.5 py-0.5 font-mono text-[10px] font-bold text-warning"><MessageSquareText className="size-3" />SMS</span>}
+            <span className="font-mono text-[12.5px]">{getValue<string>()}</span>
+          </span>
+        )
+      },
+    },
     {
       accessorKey: 'status', header: () => t('journal.status'),
       cell: ({ getValue }) => {
@@ -106,6 +121,7 @@ export function JournalPage() {
   const entries = data?.entries ?? EMPTY_ENTRIES
   const methodOptions = useMemo(() => facetOptions(entries, (r) => r.method), [entries])
   const statusOptions = useMemo(() => facetOptions(entries, (r) => statusClass(r.status)), [entries])
+  const protocolOptions = useMemo(() => facetOptions(entries, (r) => r.protocol ?? 'http'), [entries])
   const rows = useMemo(() => applyFilters(entries, FACETS, selected, search, (r) => r.url), [entries, selected, search])
 
   const table = useReactTable({
@@ -146,6 +162,8 @@ export function JournalPage() {
             onToggle={(v) => setSelected((s) => toggleSelection(s, 'method', v))} onClear={() => setSelected((s) => clearFacet(s, 'method'))} clearLabel={t('common.clear')} />
           <FacetFilter label={t('journal.status')} options={statusOptions} selected={selected.status ?? EMPTY_SET}
             onToggle={(v) => setSelected((s) => toggleSelection(s, 'status', v))} onClear={() => setSelected((s) => clearFacet(s, 'status'))} clearLabel={t('common.clear')} />
+          <FacetFilter label={t('stubs.protocol')} options={protocolOptions} selected={selected.protocol ?? EMPTY_SET}
+            onToggle={(v) => setSelected((s) => toggleSelection(s, 'protocol', v))} onClear={() => setSelected((s) => clearFacet(s, 'protocol'))} clearLabel={t('common.clear')} />
           {activeCount > 0 && (
             <Button variant="ghost" size="sm" onClick={() => setSelected({})}>{t('common.clear')}</Button>
           )}
