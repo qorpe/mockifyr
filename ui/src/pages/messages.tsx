@@ -293,12 +293,14 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                     <TabsTrigger value="meta">{t('messages.details')}</TabsTrigger>
                   </TabsList>
                   {hasHtml && (
-                    <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden p-6 pt-3">
+                    <TabsContent value="preview" className="flex min-h-0 flex-1 flex-col overflow-hidden p-6 pt-3">
+                      <div className="mb-2 flex justify-end"><CopyButton text={message.htmlBody!} label={t('messages.copyHtml')} /></div>
                       {/* Sandboxed: no scripts, no navigation — captured HTML is untrusted content. */}
-                      <iframe title="preview" sandbox="" srcDoc={message.htmlBody!} className="h-full w-full rounded-xl border border-border bg-white" />
+                      <iframe title="preview" sandbox="" srcDoc={message.htmlBody!} className="min-h-0 w-full flex-1 rounded-xl border border-border bg-white" />
                     </TabsContent>
                   )}
                   <TabsContent value="text" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
+                    <div className="mb-2 flex justify-end"><CopyButton text={message.body} label={t('editor.copy')} /></div>
                     <pre className="whitespace-pre-wrap rounded-xl border border-border bg-muted/30 p-4 font-mono text-[12.5px]">{message.body || '—'}</pre>
                   </TabsContent>
                   <TabsContent value="source" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
@@ -307,9 +309,9 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                   <TabsContent value="meta" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
                     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12.5px]">
                       <dt className="text-faint">{t('messages.received')}</dt><dd>{new Date(message.receivedAt).toLocaleString(locale)}</dd>
-                      <dt className="text-faint">id</dt><dd className="font-mono">{message.id}</dd>
+                      <dt className="text-faint">id</dt><dd><CopyableValue value={message.id} /></dd>
                       {Object.entries(message.meta).map(([k, v]) => (
-                        <div key={k} className="contents"><dt className="text-faint">{k}</dt><dd className="break-all font-mono">{v}</dd></div>
+                        <div key={k} className="contents"><dt className="text-faint">{k}</dt><dd><CopyableValue value={v} /></dd></div>
                       ))}
                     </dl>
                   </TabsContent>
@@ -367,11 +369,42 @@ function SmsThread({ list, locale, onDelete }: { list: CapturedMessage[]; locale
 
 /** The raw wire payload (#194, Mailpit-style): fetched on demand, shown byte-for-byte. */
 function RawSource({ id }: { id: string }) {
+  const { t } = useTranslation()
   const { tenant } = useUi()
   const { data, isLoading } = useQuery({ queryKey: ['message-raw', tenant, id], queryFn: () => fetchMessageRaw(tenant, id) })
   if (isLoading) return <div className="h-16 animate-pulse rounded-lg bg-muted" />
   return (
-    <pre className="scroll-area overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-border bg-muted/30 p-4 font-mono text-[11.5px] leading-relaxed">{data ?? '—'}</pre>
+    <div>
+      <div className="mb-2 flex justify-end"><CopyButton text={data ?? ''} label={t('editor.copy')} /></div>
+      {/* Deliberately NOT beautified: the source pane's promise is byte-for-byte wire truth. */}
+      <pre className="scroll-area overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-border bg-muted/30 p-4 font-mono text-[11.5px] leading-relaxed">{data ?? '—'}</pre>
+    </div>
+  )
+}
+
+/** A value that copies on click — meta ids and provider fields travel into tests constantly. */
+function CopyableValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { void navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+      className="group inline-flex max-w-full items-center gap-1.5 break-all text-start font-mono hover:text-foreground"
+      title={value}>
+      <span className="break-all">{value}</span>
+      {copied ? <Check className="size-3 shrink-0 text-success" /> : <Copy className="size-3 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100" />}
+    </button>
+  )
+}
+
+// A small copy control used across the detail tabs (#194 polish): every pane's content is one click away.
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => { void navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}{label}
+    </button>
   )
 }
 
