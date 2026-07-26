@@ -97,7 +97,16 @@ export function MessagesPage() {
     },
     {
       accessorKey: 'to', header: () => t('messages.to'),
-      cell: ({ getValue }) => <span className="font-mono text-[12.5px]">{getValue<string[]>().join(', ')}</span>,
+      cell: ({ getValue }) => {
+        const to = getValue<string[]>()
+        // A bulk send must not explode the row: first address + a count chip, full list in the sheet.
+        return (
+          <span className="inline-flex max-w-[260px] items-center gap-1.5">
+            <span className="min-w-0 truncate font-mono text-[12.5px]">{to[0] ?? '—'}</span>
+            {to.length > 1 && <span className="shrink-0 rounded-full bg-muted px-1.5 text-[10.5px] font-semibold tabular-nums text-muted-foreground">+{to.length - 1}</span>}
+          </span>
+        )
+      },
     },
     {
       id: 'content', accessorFn: (m) => m.subject ?? m.body, header: () => t('messages.content'),
