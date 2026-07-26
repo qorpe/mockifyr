@@ -37,6 +37,8 @@ COPY --from=build /app ./
 COPY --from=ui /ui/dist ./dashboard
 EXPOSE 8080
 # The dashboard is served under /__mockifyr. --root-dir /work is baked in so no run command needs it:
-# stubs load from and persist to /work/mappings. Mount a volume there (bind or named) to keep them; a
+# stubs persist to /work/mappings, environment configuration to /work/environments, response body
+# files to /work/__files and gRPC descriptors to /work/grpc. Mount a volume at /work (bind or named)
+# to keep all of it — mounting only /work/mappings loses the rest on recreate (issue #181). A
 # datastore flag (--postgres/--redis/--litedb) passed at run time takes precedence over the file store.
 ENTRYPOINT ["dotnet", "Mockifyr.Server.dll", "--port", "8080", "--dashboard", "/app/dashboard", "--root-dir", "/work"]

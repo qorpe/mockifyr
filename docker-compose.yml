@@ -14,7 +14,12 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Your *.json stubs live in ./mappings; the image already loads/persists there (--root-dir baked in).
+      # The file store keeps everything under /work: stubs (mappings/), environment configuration
+      # (environments/), response body files (__files/) and gRPC descriptors (grpc/). The named volume
+      # keeps all of it across container recreation; the bind below overlays just the stubs so your
+      # *.json files stay in ./mappings, next to you. Mounting only /work/mappings would silently lose
+      # the environment configuration on recreate (issue #181).
+      - mockifyr-data:/work
       - ./mappings:/work/mappings
     # Durable Postgres instead of file-based — uncomment this command and the postgres service:
     # command: ["--postgres", "Host=postgres;Username=mockifyr;Password=mockifyr;Database=mockifyr", "--change-feed"]
@@ -30,5 +35,6 @@ services:
   #   volumes:
   #     - pgdata:/var/lib/postgresql/data
 
-# volumes:
-#   pgdata:
+volumes:
+  mockifyr-data:
+  # pgdata:            # uncomment together with the postgres service

@@ -35,12 +35,16 @@ docker run -p 8080:8080 ghcr.io/omercelikdev/mockifyr
 Create stubs in the dashboard, or import a WireMock bundle. Runs on `linux/amd64` and `linux/arm64`
 (Apple Silicon included).
 
-**Keep your stubs across restarts** — `docker compose up`, or a named volume (both identical on every OS):
+**Keep your data across restarts** — `docker compose up`, or a named volume (both identical on every OS):
 
 ```bash
-docker compose up                                        # stubs live in ./mappings, next to you
-docker run -p 8080:8080 -v mockifyr-data:/work/mappings ghcr.io/omercelikdev/mockifyr   # named volume
+docker compose up                                # stubs live in ./mappings, next to you
+docker run -p 8080:8080 -v mockifyr-data:/work ghcr.io/omercelikdev/mockifyr   # named volume
 ```
+
+Mount **`/work`**, not just `/work/mappings` — the file store also keeps environment configuration
+(`/work/environments`), response body files (`/work/__files`) and gRPC descriptors (`/work/grpc`)
+there, and a mappings-only mount silently loses those when the container is recreated.
 
 **Preload / edit stub files on your host** (advanced) — bind-mount a folder of WireMock `*.json`. Only
 the path syntax differs per shell; nothing else changes:
@@ -57,6 +61,21 @@ or POST to `/__admin/mappings/import` with an `X-Mockifyr-Tenant` header. Durabl
 docker compose -f docker-compose.postgres.yml up    # PostgreSQL persistence
 docker compose -f docker-compose.redis.yml up       # Redis persistence
 ```
+
+### .NET Aspire
+
+Aspire recreates containers on every app-host run, so without a volume the file store — stubs *and*
+environment configuration — resets each time. Mount a named volume at `/work` (and optionally keep
+the container alive between runs):
+
+```csharp
+var mockifyr = builder.AddContainer("mockifyr", "ghcr.io/omercelikdev/mockifyr")
+    .WithHttpEndpoint(port: 8080, targetPort: 8080)
+    .WithVolume("mockifyr-data", "/work")            // survives restarts and recreation
+    .WithLifetime(ContainerLifetime.Persistent);     // optional: reuse the container across runs
+```
+
+Or point it at a durable datastore instead: `.WithArgs("--postgres", connectionString)`.
 
 ### Local (.NET 10 SDK)
 
