@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import type { StubStatus } from '@/lib/api'
+import type { Protocol, StubStatus } from '@/lib/api'
 
 // Method chips and status pills draw from the semantic token ramp — configurable in one place, kept
 // separate from the accent so status always reads at a glance.
@@ -15,6 +15,24 @@ export function MethodChip({ method }: { method: string }) {
   return (
     <span className={cn('inline-flex rounded-md border px-2 py-0.5 font-mono text-[11px] font-bold', METHOD_TONE[method] ?? 'text-muted-foreground bg-muted border-border')}>
       {method}
+    </span>
+  )
+}
+
+// Non-HTTP protocols get a chip (ADR 0010); HTTP is the default and stays unmarked so the tree
+// doesn't drown in badges. Tones are distinct from the method ramp so the two never read as one.
+const PROTOCOL_TONE: Record<Exclude<Protocol, 'http'>, { label: string; tone: string }> = {
+  grpc: { label: 'gRPC', tone: 'text-violet bg-violet-bg border-violet-border' },
+  graphql: { label: 'GraphQL', tone: 'text-info bg-info-bg border-info-border' },
+  websocket: { label: 'WS', tone: 'text-warning bg-warning-bg border-warning-border' },
+}
+
+export function ProtocolChip({ protocol }: { protocol: Protocol }) {
+  if (protocol === 'http') return null
+  const p = PROTOCOL_TONE[protocol]
+  return (
+    <span className={cn('inline-flex rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold', p.tone)}>
+      {p.label}
     </span>
   )
 }

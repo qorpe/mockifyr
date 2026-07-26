@@ -158,7 +158,15 @@ public static class AdminEndpoints
         admin.MapGet("/mappings", async (HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new GetStubsQuery(TenantOf(request)));
-            var mappings = result.Value.Select(FullMapping).ToList();
+            // The protocol is computed per response, never stored (ADR 0010) — like id/uuid, it is
+            // presentation the exporter tolerates, and the stub's Source stays byte-identical.
+            var probe = request.HttpContext.RequestServices.GetService(typeof(IStubProtocolProbe)) as IStubProtocolProbe;
+            var mappings = result.Value.Select(stub =>
+            {
+                var node = FullMapping(stub);
+                node["protocol"] = StubProtocols.Classify((node as JsonObject)!, probe);
+                return node;
+            }).ToList();
             return Results.Json(new { mappings });
         });
 
@@ -339,6 +347,116 @@ public static class AdminEndpoints
         admin.MapPost("/environments/reset", async (HttpRequest request, ISender sender) =>
         {
             await sender.Send(new ResetEnvironmentsCommand(TenantOf(request)));
+            return Results.Ok();
+        });
+
+        // Captured messages (G18a, ADR 0009): the tenant-scoped inbox facades write into. Filters are
+        // query parameters so a test can assert "the OTP SMS reached +90…" in one GET.
+        admin.MapGet("/messages", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessagesQuery(
+                TenantOf(request),
+                ChannelOf(request),
+                request.Query["recipient"].FirstOrDefault(),
+                request.Query["contains"].FirstOrDefault(),
+                request.Query["matches"].FirstOrDefault(),
+                int.TryParse(request.Query["limit"].FirstOrDefault(), out var limit) ? limit : null));
+            return Results.Json(new { messages = result.Value.Select(MessageJson) });
+        });
+
+        admin.MapGet("/messages/count", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new CountMessagesQuery(
+                TenantOf(request),
+                ChannelOf(request),
+                request.Query["recipient"].FirstOrDefault(),
+                request.Query["contains"].FirstOrDefault(),
+                request.Query["matches"].FirstOrDefault()));
+            return Results.Json(new { count = result.Value });
+        });
+
+        // OTP extraction (G18f): the e2e "wait for the code and read it" as one GET. The
+        // recipient/channel form reads the newest matching message; /{id}/otp reads one message.
+        admin.MapGet("/messages/otp", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new ExtractOtpQuery(
+                TenantOf(request),
+                Id: null,
+                request.Query["recipient"].FirstOrDefault(),
+                ChannelOf(request),
+                request.Query["pattern"].FirstOrDefault()));
+            return OtpResult(result);
+        });
+
+        admin.MapGet("/messages/{id:guid}/otp", async (Guid id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new ExtractOtpQuery(
+                TenantOf(request), id, Pattern: request.Query["pattern"].FirstOrDefault()));
+            return OtpResult(result);
+        });
+
+        admin.MapGet("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessageQuery(id, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(MessageJson(result.Value)) : Results.NotFound();
+        });
+
+        // Behavior directives (G18e): SMTP fault/delay, simulated SMS provider errors, and the
+        // capture webhook — per tenant, applied by the facades like HTTP delay/fault directives.
+        admin.MapGet("/messages/behaviors", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessageBehaviorsQuery(TenantOf(request)));
+            return Results.Json(BehaviorsJson(result.Value));
+        });
+
+        admin.MapPut("/messages/behaviors", async (HttpRequest request, ISender sender) =>
+        {
+            MessageBehaviors behaviors;
+            try
+            {
+                behaviors = ReadBehaviors(await ReadBody(request));
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity,
+                    title: "The behaviors JSON is malformed.");
+            }
+
+            var result = await sender.Send(new SetMessageBehaviorsCommand(behaviors, TenantOf(request)));
+            return result.IsSuccess
+                ? Results.Json(BehaviorsJson(behaviors))
+                : Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: result.Error.Description);
+        });
+
+        admin.MapDelete("/messages/behaviors", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ResetMessageBehaviorsCommand(TenantOf(request)));
+            return Results.Ok();
+        });
+
+        // Attachment content is served on demand (it may be megabytes; the list carries only
+        // name/type/size). The index is the position in the message's attachments list.
+        admin.MapGet("/messages/{id:guid}/attachments/{index:int}", async (Guid id, int index, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessageQuery(id, TenantOf(request)));
+            if (!result.IsSuccess || index < 0 || index >= result.Value.Attachments.Count)
+            {
+                return Results.NotFound();
+            }
+
+            var attachment = result.Value.Attachments[index];
+            return Results.File(attachment.Content, attachment.ContentType, attachment.Name);
+        });
+
+        admin.MapDelete("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new DeleteMessageCommand(id, TenantOf(request)));
+            return result.IsSuccess ? Results.Ok() : Results.NotFound();
+        });
+
+        admin.MapPost("/messages/reset", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ResetMessagesCommand(TenantOf(request)));
             return Results.Ok();
         });
 
@@ -626,6 +744,72 @@ public static class AdminEndpoints
 
     // The full mapping for GET /mappings: the stub's own source JSON with its id/uuid stamped
     // in, so the dashboard can display and faithfully round-trip an edit (not just see an id).
+    // ---- Captured messages (G18a) --------------------------------------------------------------
+
+    private static MessageChannel? ChannelOf(HttpRequest request) =>
+        request.Query["channel"].FirstOrDefault()?.ToLowerInvariant() switch
+        {
+            "email" => MessageChannel.Email,
+            "sms" => MessageChannel.Sms,
+            _ => null,
+        };
+
+    private static IResult OtpResult(Mediant.Results.Result<OtpExtraction> result) =>
+        result.IsSuccess
+            ? Results.Json(new { otp = result.Value.Otp, messageId = result.Value.MessageId, receivedAt = result.Value.ReceivedAt })
+            : result.Error.Code == "Otp.InvalidPattern"
+                ? Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: result.Error.Description)
+                : Results.NotFound(new { code = result.Error.Code, message = result.Error.Description });
+
+    private static object BehaviorsJson(MessageBehaviors behaviors) => new
+    {
+        smtpFault = behaviors.SmtpFault switch
+        {
+            SmtpFaultMode.Reject => "reject",
+            SmtpFaultMode.Drop => "drop",
+            _ => "none",
+        },
+        smtpDelayMs = behaviors.SmtpDelayMs,
+        smsErrorCode = behaviors.SmsErrorCode,
+        webhookUrl = behaviors.WebhookUrl,
+    };
+
+    private static MessageBehaviors ReadBehaviors(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var fault = root.TryGetProperty("smtpFault", out var f) && f.ValueKind == System.Text.Json.JsonValueKind.String
+            ? f.GetString()!.ToLowerInvariant() switch
+            {
+                "reject" => SmtpFaultMode.Reject,
+                "drop" => SmtpFaultMode.Drop,
+                "none" => SmtpFaultMode.None,
+                _ => throw new InvalidOperationException("Unknown smtpFault."),
+            }
+            : SmtpFaultMode.None;
+        return new MessageBehaviors(
+            fault,
+            root.TryGetProperty("smtpDelayMs", out var d) && d.ValueKind == System.Text.Json.JsonValueKind.Number ? d.GetInt32() : 0,
+            root.TryGetProperty("smsErrorCode", out var e) && e.ValueKind == System.Text.Json.JsonValueKind.Number ? e.GetInt32() : null,
+            root.TryGetProperty("webhookUrl", out var w) && w.ValueKind == System.Text.Json.JsonValueKind.String ? w.GetString() : null);
+    }
+
+    // Attachment content is deliberately not inlined in the JSON (it may be megabytes); the list
+    // carries name/type/size and a per-attachment download lands with the inbox UI (G18c).
+    private static object MessageJson(MessageEnvelope message) => new
+    {
+        id = message.Id,
+        channel = message.Channel == MessageChannel.Email ? "email" : "sms",
+        from = message.From,
+        to = message.To,
+        subject = message.Subject,
+        body = message.Body,
+        htmlBody = message.HtmlBody,
+        meta = message.Meta,
+        attachments = message.Attachments.Select(a => new { name = a.Name, contentType = a.ContentType, size = a.Size }),
+        receivedAt = message.ReceivedAt,
+    };
+
     private static JsonNode FullMapping(StubMapping stub)
     {
         var node = (stub.Source is not null ? JsonNode.Parse(stub.Source) : null) as JsonObject ?? new JsonObject();

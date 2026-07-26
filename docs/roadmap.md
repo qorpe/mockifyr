@@ -452,3 +452,41 @@ is now end-to-end: engine + platform + dashboard.
   are refused (`Environment.ReservedKey`). No WireMock oracle exists for this, so it is validated by
   unit + behavioral self-tests and a 26-check end-to-end script including a restart; see
   `docs/parity/g17-environments.md` and ADR 0008. `dotnet`/`pnpm` green; verified in-browser.
+
+## G18 — Message mocking: email + SMS (ADR 0009, ADR 0010)
+
+Mockifyr becomes a **message capture platform** as well as an API mock: applications send real
+email (SMTP) and SMS (provider HTTP APIs) at Mockifyr, get realistic protocol answers, and every
+message lands in a tenant-scoped, queryable inbox — protocol mock + capture/verify in one tool.
+No WireMock oracle exists for any of this; each vertical is validated by real-client self-tests
+(MailKit, the official Twilio C# SDK) plus unit/integration/mutation coverage, stated per vertical
+in `docs/parity/g18-messages.md`. Everything is opt-in: no flag → no listener, no routes, no
+behavior change.
+
+- [x] **G18-pre — Protocol-aware stub UX** (#184, ADR 0010). Computed read-only `protocol` field on the
+  admin mappings list (`grpc` via descriptor lookup, `graphql` via the custom matcher, else
+  `http`) — never stored, byte-identical round-trip asserted. UI: protocol badge + facet on the
+  stub tree; Add flow starts with a channel choice (HTTP form unchanged; gRPC service/method from
+  loaded descriptors; GraphQL query editor emitting the `graphql-body-matcher` JSON; WebSocket
+  message-mapping form). Descriptor upload/list/delete via admin + Settings. WS mappings listed in
+  the UI.
+- [x] **G18a — Core message model + store + admin API** (#185). `MessageEnvelope` (channel `email`|`sms`),
+  tenant-scoped `IMessageStore` (bounded, ring-buffer eviction) + `IMessageSink` in Core (zero
+  deps); in-memory store; `/__admin/messages` CQRS + REST: list (channel/recipient/text filters),
+  get, delete, reset, count.
+- [x] **G18b — SMTP facade (capture)** (#186). `Mockifyr.Facade.Smtp`: opt-in `--smtp-port` ESMTP
+  listener (EHLO/MAIL/RCPT/DATA/QUIT; AUTH accepted-unchecked), MimeKit parse at the edge →
+  envelope → sink. Tenant from AUTH user, else recipient domain, else default. Self-test: MailKit
+  sends; capture asserted through the admin API.
+- [x] **G18c — Mail inbox UI** (#187). Messages section: inbox list with search/filters, detail view
+  (sandboxed HTML preview, source, headers, attachments), delete/clear. Verified in-browser.
+- [x] **G18d — SMS provider profile: Twilio + UI** (#188). Opt-in `--sms-profile twilio` mounts
+  `POST /2010-04-01/Accounts/{sid}/Messages.json`: form body → SMS envelope → store; realistic
+  Twilio JSON reply. Self-test: the official Twilio C# SDK pointed at Mockifyr sends and accepts
+  the response. UI: SMS thread view per recipient with OTP badges.
+- [x] **G18e — Behaviors: faults, webhooks, retention** (#189). SMTP fault injection (550 reject, delay,
+  drop), provider error simulation, message-received events through `IServeEventListener` → the
+  G3 webhook infrastructure, store capacity/retention flags.
+- [x] **G18f — Verify + OTP extraction** (#190). Count/matcher verify on `/__admin/messages` (sibling of
+  `/__admin/requests`), `GET /__admin/messages/{id}/otp?pattern=…` (default `\b\d{4,8}\b`); e2e:
+  an app sends an OTP mail + SMS, the test retrieves the code in one admin call.

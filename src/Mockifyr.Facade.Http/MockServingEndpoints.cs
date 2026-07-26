@@ -25,7 +25,12 @@ public static class MockServingEndpoints
 
     public static IEndpointRouteBuilder MapMockServing(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapFallback(ServeAsync);
+        // An explicit {*path} pattern, NOT the MapFallback default: the default is {*path:nonfile},
+        // whose :nonfile constraint silently refuses any path whose last segment looks like a file —
+        // so a stub on /report.json (or the Twilio profile's /Messages.json) 404'd without ever
+        // reaching the engine. WireMock serves dotted paths; discovered by G18d, covered by test.
+        // Static dashboard assets are unaffected: the static-files middleware runs before routing.
+        endpoints.MapFallback("{*path}", ServeAsync);
         return endpoints;
     }
 

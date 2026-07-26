@@ -37,7 +37,13 @@ export const stubSchema = z.object({
   responseStatus: z.coerce.number({ message: 'Status must be a number' }).int().min(100, 'Status must be 100–599').max(599, 'Status must be 100–599'),
   responseHeaders: z.array(z.object({ name: z.string(), value: z.string() })),
   responseBody: z.string(),
+  /** Emit the response body as jsonBody (preserved from the mapping) instead of a body string. */
+  responseJsonBody: z.boolean(),
   useTemplating: z.boolean(),
+  // GraphQL matcher (G14/ADR 0010): when query is non-empty the mapping carries graphql-body-matcher.
+  graphqlQuery: z.string(),
+  graphqlVariables: z.string(),
+  graphqlOperationName: z.string(),
   fixedDelayMs: msField,
   fault: z.enum(FAULTS),
   proxyBaseUrl: z.string(),
@@ -78,7 +84,7 @@ export const emptyStub: StubForm = {
   newScenarioState: '',
   responseStatus: 200,
   responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-  responseBody: '',
+  responseBody: '', responseJsonBody: false, graphqlQuery: '', graphqlVariables: '', graphqlOperationName: '',
   // Default ON for new stubs: in practice almost every authored body maps request values ({{…}}),
   // and modern WireMock applies templating globally by default, so OFF surprised operators.
   // Editing an existing stub still reflects the mapping's own transformers (fromMapping).
@@ -101,6 +107,15 @@ export function toMapping(f: StubForm): Record<string, unknown> {
   const queryMap = matcherMap(f.queryParams)
   if (queryMap) request.queryParameters = queryMap
   if (f.bodyPatterns.length) request.bodyPatterns = f.bodyPatterns.map(serializeBodyPattern)
+  // GraphQL (ADR 0010): the query field materializes as the graphql-body-matcher custom matcher, so
+  // the classic form fully expresses a GraphQL stub — nothing is lost on a form save.
+  if (f.graphqlQuery.trim()) {
+    const parameters: Record<string, unknown> = { query: f.graphqlQuery }
+    const vars = f.graphqlVariables.trim() ? tryJson(f.graphqlVariables) : null
+    if (vars !== null && typeof vars === 'object') parameters.variables = vars
+    if (f.graphqlOperationName.trim()) parameters.operationName = f.graphqlOperationName.trim()
+    request.customMatcher = { name: 'graphql-body-matcher', parameters }
+  }
 
   const response: Record<string, unknown> = {}
   if (f.proxyBaseUrl.trim()) {
@@ -108,7 +123,13 @@ export function toMapping(f: StubForm): Record<string, unknown> {
   } else {
     response.status = Number(f.responseStatus)
     if (f.responseHeaders.length) response.headers = Object.fromEntries(f.responseHeaders.filter((h) => h.name).map((h) => [h.name, h.value]))
-    if (f.responseBody) response.body = f.responseBody
+    if (f.responseBody) {
+      // A mapping that carried jsonBody keeps jsonBody (the gRPC codec and exports depend on it);
+      // an unparseable edit falls back to a body string rather than corrupting the response.
+      const parsed = f.responseJsonBody ? tryJson(f.responseBody) : null
+      if (parsed !== null && typeof parsed === 'object') response.jsonBody = parsed
+      else response.body = f.responseBody
+    }
     if (f.useTemplating) response.transformers = ['response-template']
   }
   if (f.fixedDelayMs.trim()) response.fixedDelayMilliseconds = Number(f.fixedDelayMs)
@@ -189,6 +210,10 @@ export function fromMapping(mapping: Record<string, unknown>): StubForm {
       })
     : []
 
+  const matcher = obj(req.customMatcher)
+  const matcherParameters = obj(matcher.parameters)
+  const isGraphql = str(matcher.name).toLowerCase() === 'graphql-body-matcher'
+
   const wh = obj((Array.isArray(mapping.postServeActions) ? mapping.postServeActions : []).map(obj).find((a) => a.name === 'webhook'))
   const whParams = obj(wh.parameters)
   const whDelay = obj(whParams.delay)
@@ -209,6 +234,10 @@ export function fromMapping(mapping: Record<string, unknown>): StubForm {
     responseStatus: typeof res.status === 'number' ? res.status : 200,
     responseHeaders: Object.entries(obj(res.headers)).map(([name, value]) => ({ name, value: str(value) })),
     responseBody: typeof res.body === 'string' ? res.body : res.jsonBody !== undefined ? JSON.stringify(res.jsonBody, null, 2) : '',
+    responseJsonBody: res.jsonBody !== undefined,
+    graphqlQuery: isGraphql ? str(matcherParameters.query) : '',
+    graphqlVariables: isGraphql && matcherParameters.variables !== undefined ? JSON.stringify(matcherParameters.variables, null, 2) : '',
+    graphqlOperationName: isGraphql ? str(matcherParameters.operationName) : '',
     useTemplating: Array.isArray(res.transformers) && (res.transformers as unknown[]).includes('response-template'),
     fixedDelayMs: typeof res.fixedDelayMilliseconds === 'number' ? String(res.fixedDelayMilliseconds) : '',
     fault: (FAULTS as readonly string[]).includes(str(res.fault)) ? (str(res.fault) as StubForm['fault']) : '',

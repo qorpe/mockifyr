@@ -6,9 +6,12 @@ import { toast } from 'sonner'
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, Import, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
-import { deleteStub, fetchStubs, type Stub } from '@/lib/api'
+import { deleteMessageMapping, deleteStub, fetchMessageMappings, fetchStubs, type MessageMapping, type Stub } from '@/lib/api'
 import { buildStubTree, countStubs, type StubTreeNode } from '@/lib/stub-tree'
-import { MethodChip, StatusCode } from '@/components/ui/badges'
+import { MethodChip, ProtocolChip, StatusCode } from '@/components/ui/badges'
+import { NewStubWorkspace } from '@/components/stubs/channel-editors'
+import { JsonEditor } from '@/components/ui/json-editor'
+import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { FacetFilter } from '@/components/ui/facet-filter'
 import { SearchBox } from '@/components/ui/search-box'
@@ -24,6 +27,7 @@ const EMPTY_SET = new Set<string>()
 const FACETS: FacetDef<Stub>[] = [
   { id: 'method', get: (s) => s.method },
   { id: 'status', get: (s) => s.status },
+  { id: 'protocol', get: (s) => s.protocol },
 ]
 
 interface Tab { key: string; kind: 'stub' | 'new' | 'import'; stubId?: string; initial: 'form' | 'json'; prefillUrl?: string; pinned?: boolean }
@@ -53,6 +57,18 @@ export function StubsPage() {
   const tree = useMemo(() => buildStubTree(filtered), [filtered])
   const methodOptions = useMemo(() => facetOptions(stubs, (s) => s.method), [stubs])
   const statusOptions = useMemo(() => facetOptions(stubs, (s) => s.status), [stubs])
+  const protocolOptions = useMemo(() => facetOptions(stubs, (s) => s.protocol), [stubs])
+
+  // WebSocket message-mappings (G18-pre): a separate admin resource, listed under the stub tree.
+  const { data: wsData } = useQuery({ queryKey: ['message-mappings', tenant], queryFn: () => fetchMessageMappings(tenant) })
+  const wsMappings = wsData?.messageMappings ?? []
+  const [wsOpen, setWsOpen] = useState<MessageMapping | null>(null)
+  const removeWs = useCallback(async (id: string) => {
+    await deleteMessageMapping(tenant, id)
+    setWsOpen(null)
+    void queryClient.invalidateQueries({ queryKey: ['message-mappings', tenant] })
+    toast.success(t('channels.wsDeleted'))
+  }, [tenant, queryClient, t])
 
   // Open tabs — persistent (localStorage) per tenant. Stub tabs restore across reloads; new/import tabs
   // are ephemeral. Every open tab's editor stays mounted (hidden when inactive), so unsaved edits
@@ -226,11 +242,15 @@ export function StubsPage() {
           </div>
           {/* flex-none: the tree header is a flex column, so SearchBox's own flex-1 would collapse its height. */}
           <SearchBox value={search} onCommit={setSearch} placeholder={t('stubs.filter')} className="flex-none bg-background" />
-          <div className="flex gap-1.5">
-            <FacetFilter compact label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
+          {/* One joined segmented group, flush with the search box: three equal cells, shared inner
+              borders, rounded only at the outer ends — no gaps, no wrapping. */}
+          <div className="grid w-full grid-cols-3">
+            <FacetFilter compact className="w-full min-w-0 justify-center overflow-hidden rounded-e-none" label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
               onToggle={(v) => setSelected((s) => toggleSelection(s, 'method', v))} onClear={() => setSelected((s) => clearFacet(s, 'method'))} clearLabel={t('common.clear')} />
-            <FacetFilter compact label={t('stubs.status')} options={statusOptions} selected={selected.status ?? EMPTY_SET}
+            <FacetFilter compact className="w-full min-w-0 justify-center overflow-hidden rounded-none border-x-0" label={t('stubs.status')} options={statusOptions} selected={selected.status ?? EMPTY_SET}
               onToggle={(v) => setSelected((s) => toggleSelection(s, 'status', v))} onClear={() => setSelected((s) => clearFacet(s, 'status'))} clearLabel={t('common.clear')} />
+            <FacetFilter compact className="w-full min-w-0 justify-center overflow-hidden rounded-s-none" label={t('stubs.protocol')} options={protocolOptions} selected={selected.protocol ?? EMPTY_SET}
+              onToggle={(v) => setSelected((s) => toggleSelection(s, 'protocol', v))} onClear={() => setSelected((s) => clearFacet(s, 'protocol'))} clearLabel={t('common.clear')} />
           </div>
         </div>
         <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
@@ -240,6 +260,23 @@ export function StubsPage() {
             <p className="p-3 text-sm text-faint">{filtering ? t('stubs.empty') : t('dashboard.getStarted')}</p>
           ) : (
             <TreeView node={tree} depth={0} basePath="" defaultOpen={filtered.length <= 40} forceOpen={filtering} bulk={bulk} activeStubId={activeStubId} onOpen={openStub} onDelete={setConfirmDelete} onAddUnder={(url) => openBlank('form', url)} />
+          )}
+          {wsMappings.length > 0 && (
+            <div className="mt-3 border-t border-border/70 pt-2">
+              <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                {t('channels.wsSection')}
+                <span className="rounded-full bg-muted px-1.5 tabular-nums">{wsMappings.length}</span>
+              </div>
+              {wsMappings.map((m) => (
+                <div key={m.id} onClick={() => setWsOpen(m)}
+                  className="group flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-[13px] transition-colors hover:bg-muted/60">
+                  <ProtocolChip protocol="websocket" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.trigger}</span>
+                  <span role="button" tabIndex={-1} aria-label="Delete" onClick={(e) => { e.stopPropagation(); void removeWs(m.id) }}
+                    className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger group-hover:opacity-100"><Trash2 className="size-3.5" /></span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
         {data?.mock && <div className="p-2 text-center"><span className="rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 text-[11px] font-medium text-warning">{t('stubs.sample')}</span></div>}
@@ -271,6 +308,7 @@ export function StubsPage() {
                       active === tab.key ? 'border-b-2 border-b-primary bg-background text-foreground' : 'text-muted-foreground hover:text-foreground')}>
                     {tab.pinned && <Pin className="size-3 shrink-0 text-faint" aria-label={t('tabs.pin')} />}
                     {stub && <MethodChip method={stub.method} />}
+                    {stub && <ProtocolChip protocol={stub.protocol} />}
                     <span className="truncate">{label}</span>
                     {dirty[tab.key] && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="unsaved" />}
                     <span role="button" tabIndex={-1} aria-label={t('editor.cancel')} onClick={(e) => { e.stopPropagation(); closeTab(tab.key) }}
@@ -282,14 +320,23 @@ export function StubsPage() {
             </div>
             {tabs.map((tab) => (
               <div key={tab.key} className={cn('min-h-0 flex-1', active === tab.key ? 'flex flex-col' : 'hidden')}>
-                <StubEditorForm
-                  editing={tab.stubId ? stubs.find((s) => s.id === tab.stubId) ?? null : null}
-                  initialTab={tab.initial}
-                  prefillUrl={tab.prefillUrl}
-                  active={active === tab.key}
-                  onSaved={(saved) => onTabSaved(tab, saved)}
-                  onDirtyChange={(d) => setDirty((prev) => (prev[tab.key] === d ? prev : { ...prev, [tab.key]: d }))}
-                />
+                {tab.kind === 'new' ? (
+                  <NewStubWorkspace
+                    active={active === tab.key}
+                    prefillUrl={tab.prefillUrl}
+                    onSaved={(saved) => onTabSaved(tab, saved)}
+                    onDirtyChange={(d) => setDirty((prev) => (prev[tab.key] === d ? prev : { ...prev, [tab.key]: d }))}
+                  />
+                ) : (
+                  <StubEditorForm
+                    editing={tab.stubId ? stubs.find((s) => s.id === tab.stubId) ?? null : null}
+                    initialTab={tab.initial}
+                    prefillUrl={tab.prefillUrl}
+                    active={active === tab.key}
+                    onSaved={(saved) => onTabSaved(tab, saved)}
+                    onDirtyChange={(d) => setDirty((prev) => (prev[tab.key] === d ? prev : { ...prev, [tab.key]: d }))}
+                  />
+                )}
               </div>
             ))}
           </>
@@ -297,6 +344,20 @@ export function StubsPage() {
       </section>
 
       {menu && <TabContextMenu menu={menu} tabs={tabs} onClose={() => setMenu(null)} closeTab={closeTab} closeMany={closeMany} togglePin={togglePin} />}
+
+      {/* WebSocket message-mapping detail: registration JSON as posted, read-only, with delete. */}
+      <Sheet open={wsOpen !== null} onOpenChange={(o) => { if (!o) setWsOpen(null) }}>
+        <SheetContent>
+          <SheetHeader title={t('channels.wsDetail')} description={wsOpen?.trigger} />
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {wsOpen && <JsonEditor value={JSON.stringify(wsOpen.raw, null, 2)} readOnly className="min-h-64" />}
+          </div>
+          <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
+            <Button variant="ghost" onClick={() => setWsOpen(null)}>{t('editor.cancel')}</Button>
+            <Button variant="danger" onClick={() => { if (wsOpen) void removeWs(wsOpen.id) }}>{t('stubs.delete')}</Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <ConfirmDialog
         open={confirmDelete !== null}
@@ -453,6 +514,7 @@ function CaseLeaf({ stub, active, onOpen, onDelete }: { stub: Stub; active: bool
       className={cn('group flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-[13px] transition-colors',
         active ? 'bg-muted font-medium text-foreground' : 'text-foreground hover:bg-muted/60')}>
       <StatusCode code={stub.responseStatus} />
+      <ProtocolChip protocol={stub.protocol} />
       <span className="min-w-0 flex-1 truncate">{stub.name?.trim() || t('stubs.untitledCase')}</span>
       <span role="button" tabIndex={-1} aria-label="Delete" onClick={(e) => { e.stopPropagation(); onDelete(stub) }}
         className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger group-hover:opacity-100"><Trash2 className="size-3.5" /></span>

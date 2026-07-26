@@ -1,0 +1,215 @@
+# G18 — Message mocking (email + SMS) and the protocol-aware surface
+
+G18 is Mockifyr surface, not WireMock dialect: WireMock has no SMTP listener, no SMS provider
+emulation, no message inbox, and no protocol classification. **There is no oracle for anything in
+this group** — every vertical is validated by real-client self-tests plus unit/integration coverage,
+and this file states exactly what was verified per vertical (the same honesty rule G15's WebSocket
+serving follows).
+
+## G18-pre — Protocol-aware stub UX (ADR 0010)
+
+- **Group / item:** G18-pre — self-tested (`G18PreProtocolUxTests`, host-only, no Docker;
+  `G18PreStubProtocolsTests` for the pure decision table). Verified in-browser on the dashboard.
+- **The `protocol` field is computed, never stored.** `GET /__admin/mappings` stamps
+  `protocol: http|grpc|graphql` per mapping at query time. Verified: the persisted document
+  contains exactly the posted mapping plus the id/uuid stamp G16 always writes — no protocol key —
+  and its `request` is deep-equal to what was posted. (Learned in passing: persisted files are
+  *re-serialized* by `PersistableJson` — key set and values survive byte-exactly, but string
+  escaping may differ, e.g. `\"` becomes `"`. Assertions about "as-is" storage must compare
+  JSON-semantically, not byte-wise.)
+- **Classification rules.** `graphql` = the stub carries the `graphql-body-matcher` custom matcher
+  (name compared case-insensitively; any other custom matcher name is not GraphQL). `grpc` = the
+  stub's plain `urlPath`/`url` (query string stripped) resolves against a loaded descriptor —
+  pattern URL forms are never probed, and without its descriptor a gRPC-shaped stub classifies
+  (honestly) as `http`, since it could not serve gRPC anyway. GraphQL wins when both would apply.
+  The probe crosses the facade boundary as `IStubProtocolProbe`, implemented in the composition
+  root — the admin and gRPC facades stay unacquainted.
+- **Descriptor admin + hot reload.** `GET/POST/DELETE /__admin/grpc/descriptors` manage
+  `<root-dir>/grpc/*.dsc`. `ProtoDescriptors` became swappable (volatile index snapshot): an upload
+  is parse-validated *before* anything is written (garbage → 422, existing index untouched), then
+  the index rebuilds from the directory. Verified end-to-end: a host started with **no** grpc
+  directory serves a real `SayHello` gRPC call immediately after an upload — no restart — and
+  delete empties the index again. The middleware is now registered whenever a root-dir exists;
+  it still only engages for `application/grpc` requests.
+- **Message-mappings listing.** `GET /__admin/message-mappings` returns each registration JSON
+  as posted with the id stamped in (the stub-list shape); `DELETE /{id}` removes it (404 on a
+  second delete). Tenant-scoped: another tenant's list is empty. `MessageMapping` retains its
+  raw `Source` for this — serving behavior is unchanged (G15 tests still green).
+- **Dashboard.** Protocol chips (gRPC/GraphQL/WS; HTTP intentionally unmarked) + a protocol facet
+  on the stub tree; the Add flow starts with a channel choice — HTTP is the unchanged classic
+  editor, gRPC/GraphQL/WebSocket are forms that emit the exact dialect JSON (live, editable
+  preview); WebSocket mappings are listed under the tree with a read-only detail sheet; Settings
+  gained a gRPC-descriptors card (upload/list/delete). All six locales translated; verified
+  in-browser against a live host (chips, facet, gRPC form fed by descriptors, WS create → listed).
+- **Edit-path safety (follow-up, found in review):** the classic Form editor is a lossy projection —
+  it rebuilds the mapping from the form model on save, and it has no representation for
+  `customMatcher`. Editing a GraphQL stub in the Form tab would have silently dropped the
+  `graphql-body-matcher`. A stub carrying a custom matcher now opens **JSON-only** (Form tab
+  disabled, with an explanatory hint); gRPC stubs stay form-editable because `urlPath` +
+  `equalToJson` express them fully. Editor tab headers and workspace tabs show the protocol chip.
+  Verified in-browser both ways.
+- **GraphQL edit form (follow-up #2, on review feedback):** the JSON-only lock was replaced by the
+  real fix — a GraphQL stub now edits in its own channel form (query/variables/operationName and
+  the response seeded from the mapping), which **merges onto the original mapping on save** so
+  name/priority/anything the form doesn't model survive; verified end to end in-browser, including
+  the persisted Source (matcher + name intact, no computed field). Found while wiring it: the list
+  response's computed `protocol` was reaching `Stub.raw`, so a JSON-tab re-save could have persisted
+  it into the Source — the UI now strips it at projection time. The JSON-only lock remains for
+  *unknown* custom matchers (extensions), which no form can express. The channel picker was also
+  restyled to the design system's pilled-tabs segmented control (one visual language with Form/JSON).
+- **GraphQL unified into the classic editor (follow-up #3, review feedback):** the separate GraphQL
+  channel form was removed; `graphqlQuery/Variables/OperationName` became first-class stub-form
+  fields (emitting the exact G14 matcher JSON), so a GraphQL stub gets the FULL editor — webhooks,
+  delays, faults, scenarios, priority, headers — in New and Edit alike, and the form is no longer
+  lossy. `jsonBody` responses are preserved on form saves (a hidden flag; previously a form edit
+  silently converted jsonBody to a body string — that also protected gRPC edits). gRPC/channel JSON
+  inputs use the standard framed JSON editor (lint/Beautify/Copy); channel picker pills are the
+  standard TabsList size; the facet row aligns flush with the search box (wrapping on narrow
+  panels). All verified in-browser including an edit save round-trip.
+- **Deferred (tracked, not silent):** editing an existing WS mapping (list/delete/create only —
+  no PUT endpoint exists); gRPC request-skeleton generation from the descriptor's input type in
+  the form; protocol chips in the journal.
+
+## G18a — Core message model + store + admin API (ADR 0009)
+
+- **Group / item:** G18a — self-tested (`G18aMessageStoreTests` unit + CQRS, `G18aMessagesAdminTests`
+  over the wire); **mutation-tested with Stryker.NET**: 100% score on `MessageOperations`/
+  `MessageHandlers` (36 mutants), `InMemoryMessageStore` (19), and G18-pre's `StubProtocols` (19) —
+  survivors were killed by adding tests (Limit=0 semantics, NotFound error codes, any-recipient
+  matching, at-capacity no-eviction, urlPath-over-url precedence, query-only URL) and by one
+  refactor: the eviction `RemoveRange(count - Capacity)` was an *equivalent-mutant* shape
+  (`RemoveRange(0,0)` no-ops), rewritten to `RemoveAt(0)` which is both simpler and testable.
+- **Model.** `MessageEnvelope` (channel `email`|`sms`, from/to/subject/body/htmlBody, flat `Meta`
+  map for provider fields, attachments, receivedAt) + `IMessageStore`/`IMessageSink` in Core —
+  pure, zero deps; the in-memory store is bounded per tenant (default 1000, oldest evicted first,
+  newest-first reads) and strictly tenant-scoped (cross-tenant get/remove refuse, verified).
+- **Admin surface.** `/__admin/messages` (+`/count`, `/{id}`, `DELETE /{id}`, `POST /reset`) via
+  CQRS; filters (`channel`, `recipient` any-addressee case-insensitive substring, `contains` over
+  subject+bodies, `limit` where 0 = unlimited) are defined once in `MessageFilter` and shared by
+  list and count, so the two can never disagree. Attachment content is not inlined in JSON
+  (name/type/size only; download endpoint lands with the inbox UI, G18c).
+- **Learned in passing:** Stryker.NET (4.16) only offers as mutable the projects a test csproj
+  references **directly** — transitive references through `Mockifyr.Server` are invisible to it.
+  The test project now references Application/Stores.InMemory/Facade.Admin directly (harmless,
+  already transitive) to make them mutable.
+- **Deferred (tracked):** durable message persistence (reuse the G16 seam if demanded); attachment
+  download endpoint (G18c); verify/OTP query shapes (G18f).
+
+## G18b — SMTP capture facade (ADR 0009)
+
+- **Group / item:** G18b — validated by **real-client self-tests** (`G18bSmtpCaptureTests`: MailKit
+  drives a full `MockifyrHost --smtp-port 0` — plain text, HTML + attachment, two recipients, two
+  mails on one connection, dot-stuffed bodies, AUTH-as-tenant — each asserted through
+  `/__admin/messages` over the wire) plus 21 unit tests on the socket-free `SmtpSession` state
+  machine. No oracle exists: WireMock has no SMTP.
+- **Design.** `Mockifyr.Facade.Smtp` — a loopback `TcpListener` speaking enough ESMTP for
+  mainstream clients (EHLO/HELO, MAIL, RCPT, DATA with RFC 5321 dot-unstuffing, RSET, NOOP, QUIT;
+  AUTH PLAIN/LOGIN **accepted-but-unchecked**). MimeKit parses DATA at the facade edge into a
+  `MessageEnvelope` → `IMessageSink`; Core never sees MIME. Opt-in via `--smtp-port` (a hosted
+  service; no flag → no listener). Unparseable MIME still captures raw — a mock never loses a
+  message a real client managed to send.
+- **Tenant = AUTH username** — the SMTP analog of `X-Mockifyr-Tenant`. PLAIN reads the authcid
+  (three-part payload) or the first field (two-part, authzid omitted); LOGIN reads the username
+  step; garbage/empty auth falls back to the default tenant. *The ADR's original idea of resolving
+  tenants from recipient domains was dropped: G15c multi-domain is stub-level matching, no
+  tenant→domain map exists to consult.*
+- **Learned: envelope vs header truth.** `To` carries the **RCPT TO envelope recipients** (who
+  actually received it); the `To:` header is display data and goes to `Meta.headerTo`. `From`
+  prefers the MIME header (display truth), with `MAIL FROM` kept as `Meta.envelopeFrom`. MIME
+  decoders also surface the transport's final CRLF as a trailing newline the sender never wrote —
+  the factory trims exactly one.
+- **Mutation (Stryker):** 86.6% on `SmtpSession` (71/82 killed). The 11 survivors were analyzed
+  individually and are **equivalent mutants** of the lenient parser: leading-space command lines
+  (both variants answer 502), unreachable `space == 0` branches after `Trim()`, the
+  `_pendingAuth = "LOGIN-PASS"` sentinel (the default branch treats any unknown sentinel as the
+  final step by design), colon/bracket fallbacks that the bracket-extraction path rescues, and
+  null-vs-empty address results that the caller's `{ Length: > 0 }` pattern collapses.
+- **Deferred (tracked):** STARTTLS; size limits/`SIZE` extension; SMTP fault directives (550
+  reject, delay, drop) land in G18e.
+
+## G18c — Mail inbox UI (ADR 0009)
+
+- **Group / item:** G18c — verified **in-browser** against a live host (`--smtp-port`), with three
+  real mails sent by a real SMTP client: inbox list with channel chips (All/Email/SMS + counts),
+  text search, auto-refresh (5s), per-row and clear-all deletion (confirm dialog), detail view with
+  subject/from/envelope-recipients/received, attachment chips, and Preview/Text/Details tabs.
+- **Untrusted HTML is sandboxed.** The HTML preview renders in an `<iframe sandbox="">` — no
+  scripts, no navigation, no same-origin: captured mail is hostile input by definition.
+- **Attachment download** landed server-side with this vertical:
+  `GET /__admin/messages/{id}/attachments/{index}` serves the stored bytes with the original
+  content type + file name (verified: `application/pdf`, `Content-Disposition: attachment`).
+  Sizes render as `26 B` / `1.4 KB` — a tiny payload must not read as `0.0 KB`.
+- **Placement.** Messages sit in the *Mocking* nav group beside the Request journal — captured
+  traffic, not stubs. All six locales translated.
+- **Deferred (tracked):** SMS thread view + OTP badges (G18d); message webhooks and retention
+  controls (G18e); verify/OTP admin shapes (G18f).
+
+## G18d — SMS provider profile: Twilio (ADR 0009)
+
+- **Group / item:** G18d — validated with the **official Twilio C# SDK** pointed at Mockifyr
+  (`G18dTwilioSmsProfileTests`): `MessageResource.CreateAsync` succeeds and parses our resource
+  (sid/status/body round-trip through Twilio's own model), the send is captured as an SMS envelope,
+  missing fields answer Twilio's real error codes (21604 To / 21603 From-or-Service / 21602 Body,
+  Twilio's own validation order), the tenant header scopes the capture, and without the flag the
+  route does not exist. No oracle: WireMock has no provider emulation.
+- **Design.** `Mockifyr.Providers.Sms` — an opt-in middleware (`--sms-profile twilio`) emulating
+  `POST /2010-04-01/Accounts/{sid}/Messages.json` ahead of the mock-serving fallback. **A
+  hand-written stub on the same URL still wins**: the middleware peeks the engine on a buffered
+  body and steps aside on a match, so enabling the profile can never change what an existing stub
+  serves (verified: the stub's 503 served, nothing captured). Provider fields (`sid`, `accountSid`,
+  `status`, `messagingServiceSid`) ride in `Meta`; `num_segments` follows coarse GSM segmentation.
+- **Found & fixed in passing — dotted-path serving.** The profile's own URL exposed a real facade
+  bug: the mock-serving fallback used ASP.NET's default `MapFallback` pattern `{*path:nonfile}`,
+  whose `:nonfile` constraint silently 404'd **any** stub whose last path segment looks like a file
+  (`/report.json`, `/export.csv` …) before the engine ever saw it. WireMock serves such paths —
+  **proven against the real oracle** (`G18dDottedPathServingTests`, Docker) after switching the
+  fallback to an explicit `{*path}`. Dashboard assets are unaffected (static files run before
+  routing).
+- **UI.** The Messages page's SMS filter becomes a thread view: one row per recipient number with
+  count + last message, a phone-style conversation on the right, and an **OTP badge** per message
+  (default `\b\d{4,8}\b`, click-to-copy). Verified in-browser: four sends through the profile,
+  two threads, three OTP badges extracted.
+- **Deferred (tracked):** more providers (Vonage, NetGSM) behind the same seam; provider error
+  simulation rules (G18e); status-callback webhooks (G18e); the message list/fetch subresources of
+  the Twilio API.
+
+## G18e — Message behaviors: faults, capture webhook, retention (ADR 0009)
+
+- **Group / item:** G18e — real-client self-tests (`G18eMessageBehaviorTests`): a MailKit client
+  *feels* each SMTP fault (550 bounce as `SmtpCommandException`, held DATA ack ≥ the configured
+  delay, dropped connection), the Twilio profile answers a simulated provider error (21211), the
+  capture webhook is asserted **end to end inside one host** (capture → webhook → a stub on the
+  same host → the request journal), `--message-limit 2` keeps only the newest two, and directives
+  are tenant-scoped (acme's reject never touches the default tenant). Plus 7 handler unit tests;
+  Stryker back to **100%** on the message operations/handlers (50 mutants).
+- **Design.** `MessageBehaviors` (Core record) + tenant-scoped `IMessageBehaviorStore`; configured
+  via `GET/PUT/DELETE /__admin/messages/behaviors` (CQRS). Like HTTP delay/fault, these are
+  **facade directives**: the SMTP session refuses DATA (550) or signals a connection drop, the
+  server holds the DATA acknowledgment for `smtpDelayMs`, the Twilio middleware short-circuits
+  with the simulated error before validation and capture. Validation refuses a negative delay and
+  non-five-digit provider codes rather than storing nonsense.
+- **Capture webhook.** `webhookUrl` posts every captured message as JSON — fire-and-forget,
+  best-effort, decorating `IMessageSink` in the composition root (`NotifyingMessageSink`); a
+  webhook can never slow or fail a capture (the G3 delivery ethos).
+- **Deferred (tracked):** per-message webhook templating (G3-style Handlebars over the envelope);
+  greylisting/tempfail (451) simulation; Twilio status-callback emulation.
+
+## G18f — Verify + OTP extraction (ADR 0009)
+
+- **Group / item:** G18f — the epic's e2e proof (`G18fOtpVerifyTests`): an "application" sends an
+  OTP mail over real SMTP (MailKit) and an OTP SMS through the Twilio profile, and the "test" reads
+  each code back with **one admin GET** — `/__admin/messages/otp?recipient=…&channel=…` — with the
+  latest message winning (an older code to the same number is ignored). Plus 9 handler unit tests;
+  Stryker **100%** on the message operations/handlers (67 mutants — the last two killed by
+  dropping a redundant `Groups.Count` check, since `Groups[1]` is a safe non-match, and by a
+  non-participating-group alternation test).
+- **Verify.** The list/count filters gain `matches` — a regex over subject + bodies with a 250ms
+  budget; a malformed or catastrophic pattern **filters to nothing** rather than 500ing the admin
+  surface (verified over the wire). `contains`/`recipient`/`channel`/`limit` were G18a.
+- **OTP.** `GET /__admin/messages/{id}/otp` and the e2e shape `GET /__admin/messages/otp?recipient=
+  …&channel=…&pattern=…`; default pattern `\b\d{4,8}\b`; body → subject → HTML search order; a
+  custom pattern's first capture group wins over the full match when it participates. Honest
+  failures: `Message.NotFound` (nothing to read), `Otp.NoMatch` (message exists, no code),
+  `Otp.InvalidPattern` → 422.
+- **Deferred (tracked):** a blocking "wait for the next message" long-poll variant; verify-style
+  request-pattern bodies (POST with matcher JSON, the G6 shape) if demand appears.

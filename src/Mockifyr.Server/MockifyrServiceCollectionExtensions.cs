@@ -41,6 +41,12 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IEnvironmentResolver>(sp => sp.GetRequiredService<InMemoryEnvironmentStore>());
         services.AddSingleton<IRequestJournal, InMemoryRequestJournal>();
 
+        // Captured messages (G18a, ADR 0009): the tenant-scoped, bounded inbox behind /__admin/messages.
+        // Facades (SMTP, SMS profiles) write through IMessageSink; behavior decorates the sink, not them.
+        services.AddSingleton<IMessageStore, InMemoryMessageStore>();
+        services.AddSingleton<IMessageBehaviorStore, InMemoryMessageBehaviorStore>();
+        services.AddSingleton<IMessageSink>(sp => new StoreMessageSink(sp.GetRequiredService<IMessageStore>()));
+
         // Persistence (G16): no-op by default (purely in-memory). A file/db-backed provider is
         // registered on top (e.g. by MockifyrHost when --root-dir is set) and wins the resolution.
         services.AddSingleton<IStubPersistence, NullStubPersistence>();

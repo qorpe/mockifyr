@@ -12,14 +12,15 @@ import { BODY_OPS, BODY_SUB_OPS, emptyStub, FAULTS, fromMapping, MATCH_OPS, stub
 import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ProtocolChip } from '@/components/ui/badges'
 import { Input, Label, NativeSelect, Textarea } from '@/components/ui/field'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { JsonField } from '@/components/ui/json-editor'
 import { HelpersButton } from '@/components/templating/helpers-dialog'
 
-function seedFrom(stub: Stub | null, prefillUrl?: string): StubForm {
-  if (!stub) return prefillUrl ? { ...emptyStub, urlValue: prefillUrl } : emptyStub
+function seedFrom(stub: Stub | null, prefillUrl?: string, template?: Partial<StubForm>): StubForm {
+  if (!stub) return { ...emptyStub, ...(template ?? {}), ...(prefillUrl ? { urlValue: prefillUrl } : {}) }
   // Prefer a full reverse-map of the mapping the host returned (no field is lost on edit); fall back to
   // the projected fields when only those are available (e.g. sample mode).
   if (stub.raw) return fromMapping(stub.raw)
@@ -73,10 +74,12 @@ export function StubEditor({ open, onOpenChange, editing, onSaved, initialTab = 
  * The stub editor body — Form + JSON tabs, validation, and Save. Renders inline (no Sheet) so the
  * Stubs workspace can host one per open tab. Reports unsaved state via onDirtyChange for the tab dot.
  */
-export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, active = true, onSaved, onCancel, onDirtyChange }: {
+export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, template, active = true, onSaved, onCancel, onDirtyChange }: {
   editing: Stub | null
   initialTab?: 'form' | 'json'
   prefillUrl?: string
+  /** Seed values for a NEW stub (channel templates, e.g. GraphQL — ADR 0010). */
+  template?: Partial<StubForm>
   /** Only the active (visible) tab's editor listens for the save shortcut — every open tab stays mounted. */
   active?: boolean
   onSaved: (saved: boolean) => void
@@ -92,7 +95,13 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, activ
     queryFn: () => fetchEnvironments(tenant),
   })
   const environments = environmentData?.environments ?? []
-  const [tab, setTab] = useState(initialTab)
+  // An UNKNOWN custom matcher (a G10 extension) has no form representation — a Form-tab save would
+  // rebuild the mapping from the form and silently DROP it, so such stubs edit as JSON only.
+  // GraphQL's graphql-body-matcher is first-class in the form (ADR 0010) and stays editable.
+  const rawMatcher = (editing?.raw as { request?: { customMatcher?: { name?: string } } } | undefined)?.request?.customMatcher
+  const jsonOnly = typeof rawMatcher === 'object' && !!rawMatcher &&
+    (rawMatcher.name ?? '').toLowerCase() !== 'graphql-body-matcher'
+  const [tab, setTab] = useState(jsonOnly ? 'json' : initialTab)
   const [rawJson, setRawJson] = useState('')
   const [saving, setSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -104,15 +113,15 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, activ
 
   const initialJson = useRef('')
   useEffect(() => {
-    const seed = seedFrom(editing, prefillUrl)
+    const seed = seedFrom(editing, prefillUrl, template)
     reset(seed)
     // When editing, the JSON tab shows the exact mapping the host returned (so nothing is lost even if
     // the form doesn't surface a field); for a new stub it mirrors the form.
     const seeded = editing?.raw ? JSON.stringify(editing.raw, null, 2) : toJson(seed)
     setRawJson(seeded)
     initialJson.current = seeded
-    setTab(initialTab)
-  }, [editing, reset, initialTab, prefillUrl])
+    setTab(jsonOnly ? 'json' : initialTab)
+  }, [editing, reset, initialTab, prefillUrl, template, jsonOnly])
 
   // Report unsaved state for the tab's dot: form edits (RHF isDirty) or a raw JSON change.
   const dirty = form.formState.isDirty || (tab === 'json' && rawJson !== initialJson.current)
@@ -188,11 +197,13 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, activ
   return (
     <div className="flex h-full min-h-0 flex-col">
         <Tabs value={tab} onValueChange={(v) => setTab(v as 'form' | 'json')} className="flex min-h-0 flex-1 flex-col">
-          <div className="px-6 pt-4">
+          <div className="flex items-center gap-3 px-6 pt-4">
             <TabsList>
-              <TabsTrigger value="form">{t('editor.form')}</TabsTrigger>
+              <TabsTrigger value="form" disabled={jsonOnly}>{t('editor.form')}</TabsTrigger>
               <TabsTrigger value="json">JSON</TabsTrigger>
             </TabsList>
+            {editing && <ProtocolChip protocol={editing.protocol} />}
+            {jsonOnly && <span className="text-xs text-muted-foreground">{t('editor.jsonOnly')}</span>}
           </div>
 
           <TabsContent value="form" className="scroll-area min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
@@ -242,6 +253,24 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, activ
             </Section>
 
             {/* Response */}
+            {(watch('graphqlQuery') ?? '').trim() !== '' && (
+              <Section title="GraphQL">
+                <Label>{t('channels.graphqlQuery')}</Label>
+                <Textarea rows={5} className="font-mono text-[12.5px]" {...register('graphqlQuery')} />
+                <p className="mt-1.5 text-xs text-muted-foreground">{t('channels.graphqlNormalize')}</p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>{t('channels.graphqlVariables')}</Label>
+                    <Textarea rows={3} className="font-mono text-[12.5px]" placeholder="{ }" {...register('graphqlVariables')} />
+                  </div>
+                  <div>
+                    <Label>{t('channels.graphqlOperation')}</Label>
+                    <Input {...register('graphqlOperationName')} />
+                  </div>
+                </div>
+              </Section>
+            )}
+
             <Section title={t('editor.response')}>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>{t('editor.statusCode')}</Label><Input type="number" {...register('responseStatus')} className={cn(errors.responseStatus && 'border-danger')} /><FieldError msg={errors.responseStatus?.message} /></div>

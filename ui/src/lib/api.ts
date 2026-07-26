@@ -86,10 +86,15 @@ interface RawMapping {
   name?: string
   priority?: number
   scenarioName?: string
+  /** Computed server-side per ADR 0010 (G18-pre); never part of the stored mapping. */
+  protocol?: string
   request?: { method?: string; url?: string; urlPath?: string; urlPattern?: string; urlPathPattern?: string }
   response?: { proxyBaseUrl?: string; status?: number }
   metadata?: { 'mockifyr:persistence'?: string }
 }
+
+const isProtocol = (p: string | undefined): p is Protocol =>
+  p === 'http' || p === 'grpc' || p === 'graphql' || p === 'websocket'
 
 function projectMapping(m: RawMapping): Stub {
   const req = m.request ?? {}
@@ -99,14 +104,19 @@ function projectMapping(m: RawMapping): Stub {
     name: typeof m.name === 'string' && m.name.trim() ? m.name : null,
     method: (typeof req.method === 'string' ? req.method : 'ANY').toUpperCase(),
     url,
-    protocol: url.includes('/grpc') ? 'grpc' : url.includes('graphql') ? 'graphql' : 'http',
+    // The host computes the protocol (descriptor lookup + matcher inspection, ADR 0010); the old
+    // URL-shape guess only remains for sample mode / pre-G18 hosts.
+    protocol: isProtocol(m.protocol) ? m.protocol
+      : url.includes('/grpc') ? 'grpc' : url.includes('graphql') ? 'graphql' : 'http',
     priority: m.priority ?? 5,
     scenario: m.scenarioName ?? null,
     persistence: m.metadata?.['mockifyr:persistence'] ?? 'In-memory',
     lastMatched: null,
     status: m.response?.proxyBaseUrl ? 'proxy' : 'live',
     responseStatus: typeof m.response?.status === 'number' ? m.response.status : null,
-    raw: m as unknown as Record<string, unknown>,
+    // `protocol` is computed by the server per response (ADR 0010) — strip it from the editable
+    // mapping so a JSON-tab or channel-form save can never persist it into the stored Source.
+    raw: (({ protocol: _p, ...rest }) => rest)(m as unknown as Record<string, unknown>),
   }
 }
 
@@ -151,6 +161,156 @@ export async function fetchTenants(): Promise<{ tenants: string[]; mock: boolean
     return { tenants: body.tenants ?? [], mock: false }
   } catch {
     return { tenants: [], mock: true }
+  }
+}
+
+// WebSocket message-mappings (G15d/G18-pre): a separate admin resource from request/response stubs.
+export interface MessageMapping {
+  id: string
+  /** A one-line summary of the trigger for list rows (matcher op + value, or "on connect"). */
+  trigger: string
+  onConnect: boolean
+  raw: Record<string, unknown>
+}
+
+function projectMessageMapping(m: Record<string, unknown>): MessageMapping {
+  const trigger = m.trigger as { type?: string; message?: { body?: Record<string, unknown> } } | undefined
+  const onConnect = trigger?.type === 'connection'
+  const body = trigger?.message?.body ?? {}
+  const [op, value] = Object.entries(body)[0] ?? []
+  return {
+    id: String(m.id ?? crypto.randomUUID()),
+    trigger: onConnect ? 'connection' : op ? `${op}: ${String(value)}` : '*',
+    onConnect,
+    raw: m,
+  }
+}
+
+export async function fetchMessageMappings(tenant: string): Promise<{ messageMappings: MessageMapping[]; mock: boolean }> {
+  try {
+    const res = await adminFetch('/message-mappings', tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { messageMappings?: Record<string, unknown>[] }
+    return { messageMappings: (body.messageMappings ?? []).map(projectMessageMapping), mock: false }
+  } catch {
+    return { messageMappings: [], mock: true }
+  }
+}
+
+export async function saveMessageMapping(tenant: string, json: string): Promise<{ mock: boolean }> {
+  try {
+    const res = await adminFetch('/message-mappings', tenant, { method: 'POST', body: json })
+    if (!res.ok) throw new Error(String(res.status))
+    return { mock: false }
+  } catch {
+    return { mock: true }
+  }
+}
+
+export async function deleteMessageMapping(tenant: string, id: string): Promise<{ mock: boolean }> {
+  try {
+    const res = await adminFetch(`/message-mappings/${id}`, tenant, { method: 'DELETE' })
+    if (!res.ok) throw new Error(String(res.status))
+    return { mock: false }
+  } catch {
+    return { mock: true }
+  }
+}
+
+// Captured messages (G18, ADR 0009): the tenant-scoped inbox the SMTP/SMS facades write into.
+export type MessageChannel = 'email' | 'sms'
+
+export interface CapturedMessage {
+  id: string
+  channel: MessageChannel
+  from: string
+  to: string[]
+  subject: string | null
+  body: string
+  htmlBody: string | null
+  meta: Record<string, string>
+  attachments: { name: string; contentType: string; size: number }[]
+  receivedAt: string
+}
+
+export async function fetchMessages(
+  tenant: string,
+  filters?: { channel?: MessageChannel; recipient?: string; contains?: string },
+): Promise<{ messages: CapturedMessage[]; mock: boolean }> {
+  const params = new URLSearchParams()
+  if (filters?.channel) params.set('channel', filters.channel)
+  if (filters?.recipient) params.set('recipient', filters.recipient)
+  if (filters?.contains) params.set('contains', filters.contains)
+  const query = params.size ? `?${params.toString()}` : ''
+  try {
+    const res = await adminFetch(`/messages${query}`, tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { messages?: CapturedMessage[] }
+    return { messages: body.messages ?? [], mock: false }
+  } catch {
+    return { messages: [], mock: true }
+  }
+}
+
+export async function deleteMessage(tenant: string, id: string): Promise<{ mock: boolean }> {
+  try {
+    const res = await adminFetch(`/messages/${id}`, tenant, { method: 'DELETE' })
+    if (!res.ok) throw new Error(String(res.status))
+    return { mock: false }
+  } catch {
+    return { mock: true }
+  }
+}
+
+export async function resetMessages(tenant: string): Promise<{ mock: boolean }> {
+  try {
+    const res = await adminFetch('/messages/reset', tenant, { method: 'POST' })
+    if (!res.ok) throw new Error(String(res.status))
+    return { mock: false }
+  } catch {
+    return { mock: true }
+  }
+}
+
+/** The per-attachment download URL (served with the stored content type and file name). */
+export const messageAttachmentUrl = (id: string, index: number) => `/__admin/messages/${id}/attachments/${index}`
+
+// gRPC descriptor management (G18-pre): host-level (not tenant-scoped) — descriptors live in
+// <root-dir>/grpc/ and uploads hot-reload the serving index.
+export interface GrpcDescriptors {
+  descriptors: { name: string; size: number }[]
+  services: { service: string; methods: { method: string; path: string; input: string; output: string }[] }[]
+}
+
+export async function fetchGrpcDescriptors(): Promise<{ grpc: GrpcDescriptors; mock: boolean }> {
+  try {
+    const res = await adminFetch('/grpc/descriptors', 'default')
+    if (!res.ok) throw new Error(String(res.status))
+    return { grpc: (await res.json()) as GrpcDescriptors, mock: false }
+  } catch {
+    return { grpc: { descriptors: [], services: [] }, mock: true }
+  }
+}
+
+export async function uploadGrpcDescriptor(name: string, bytes: ArrayBuffer): Promise<{ ok: boolean }> {
+  try {
+    const res = await adminFetch(`/grpc/descriptors?name=${encodeURIComponent(name)}`, 'default', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: bytes,
+    })
+    return { ok: res.ok }
+  } catch {
+    return { ok: false }
+  }
+}
+
+export async function deleteGrpcDescriptor(name: string): Promise<{ ok: boolean }> {
+  try {
+    const res = await adminFetch(`/grpc/descriptors/${encodeURIComponent(name)}`, 'default', { method: 'DELETE' })
+    return { ok: res.ok }
+  } catch {
+    return { ok: false }
   }
 }
 

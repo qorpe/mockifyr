@@ -12,6 +12,7 @@ using Mockifyr.Core;
 using Mockifyr.Facade.Admin;
 using Mockifyr.Facade.Http;
 using Mockifyr.Facade.WebSocket;
+using Mockifyr.Stores.InMemory;
 
 namespace Mockifyr.Server;
 
@@ -101,21 +102,42 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IEnvironmentsLoader>(new FileSystemEnvironmentsLoader(environmentsDir));
 
             // gRPC serving (G13, verified by the differential suite): compiled proto descriptors live in
-            // the conventional <root-dir>/grpc/*.dsc location. When present, the gRPC middleware is enabled.
+            // the conventional <root-dir>/grpc/*.dsc location. The index is registered even when the
+            // directory is empty (G18-pre): the admin descriptor endpoints can then hot-load a first
+            // descriptor without a restart, and the middleware only engages for application/grpc
+            // requests that resolve against it.
             var grpcDir = Path.Combine(rootDir, "grpc");
-            if (Directory.Exists(grpcDir))
-            {
-                var descriptorSets = Directory.EnumerateFiles(grpcDir, "*.dsc")
-                    .OrderBy(path => path, StringComparer.Ordinal)
-                    .Select(File.ReadAllBytes)
-                    .ToList();
-                if (descriptorSets.Count > 0)
-                {
-                    builder.Services.AddMockifyrGrpc(descriptorSets);
-                    grpcEnabled = true;
-                }
-            }
+            builder.Services.AddMockifyrGrpc(GrpcAdminEndpoints.ReadAll(grpcDir));
+            grpcEnabled = true;
+
+            // The protocol probe (G18-pre, ADR 0010): the admin facade classifies a stub as gRPC when
+            // its path resolves against the loaded descriptors. Adapter here — facades never
+            // reference each other.
+            builder.Services.AddSingleton<Facade.Admin.IStubProtocolProbe>(sp =>
+                new DescriptorProtocolProbe(sp.GetRequiredService<ProtoDescriptors>()));
         }
+
+        // SMTP capture (G18b, ADR 0009): opt-in via --smtp-port; no flag, no listener. The AUTH
+        // username names the tenant (the SMTP analog of X-Mockifyr-Tenant); mail lands in the
+        // message inbox behind /__admin/messages.
+        if (int.TryParse(builder.Configuration["smtp-port"], out var smtpPort))
+        {
+            builder.Services.AddSingleton(sp => new Facade.Smtp.SmtpCaptureServer(
+                sp.GetRequiredService<IMessageSink>(), smtpPort, sp.GetRequiredService<IMessageBehaviorStore>()));
+            builder.Services.AddHostedService<SmtpCaptureHostedService>();
+        }
+
+        // Message behaviors (G18e): a bounded inbox override (--message-limit) and the capture
+        // webhook decorating the sink. Registered after AddMockifyr so they win the resolution.
+        if (int.TryParse(builder.Configuration["message-limit"], out var messageLimit))
+        {
+            builder.Services.AddSingleton<IMessageStore>(new InMemoryMessageStore(messageLimit));
+        }
+
+        builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(
+            new StoreMessageSink(sp.GetRequiredService<IMessageStore>()),
+            sp.GetRequiredService<IMessageBehaviorStore>(),
+            new HttpClient()));
 
         // Git sync (ADR 0007 + #151). Two modes, registered last so they win over the default:
         //  - Pinned: --git-remote (+ --git-branch) fixes the configuration at startup; the dashboard
@@ -285,11 +307,23 @@ public static class MockifyrHost
         var filesDirectory = string.IsNullOrWhiteSpace(rootDir) ? null : Path.Combine(rootDir, "__files");
         app.UseMockifyrWebSockets(filesDirectory);
 
+        // SMS provider profile (G18d, ADR 0009): opt-in via --sms-profile twilio. Mounted ahead of the
+        // mock-serving fallback, but a hand-written stub on the same URL still wins (the middleware
+        // peeks the engine and steps aside on a match), so enabling it never changes existing serving.
+        if (string.Equals(builder.Configuration["sms-profile"], "twilio", StringComparison.OrdinalIgnoreCase))
+        {
+            app.UseMiddleware<Providers.Sms.TwilioSmsProfileMiddleware>();
+        }
+
         // gRPC serving (G13) runs ahead of the endpoints: application/grpc requests are handled by the
-        // codec+engine, everything else falls through to the admin/mock-serving endpoints.
+        // codec+engine, everything else falls through to the admin/mock-serving endpoints. The admin
+        // descriptor endpoints (G18-pre) manage <root-dir>/grpc/*.dsc and hot-reload the same index.
         if (grpcEnabled)
         {
             app.UseMockifyrGrpc();
+            app.MapGrpcAdminEndpoints(
+                app.Services.GetRequiredService<ProtoDescriptors>(),
+                Path.Combine(rootDir!, "grpc"));
         }
 
         // Optional admin auth: when --admin-user + --admin-pass are set, require HTTP Basic on the admin

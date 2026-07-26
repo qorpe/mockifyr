@@ -12,6 +12,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mockifyr.Server\Mockifyr.Server.csproj" />
+    <!-- Direct references (already transitive via Server) so Stryker can target these assemblies. -->
+    <ProjectReference Include="..\..\src\Mockifyr.Application\Mockifyr.Application.csproj" />
+    <ProjectReference Include="..\..\src\Mockifyr.Stores.InMemory\Mockifyr.Stores.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Mockifyr.Facade.Admin\Mockifyr.Facade.Admin.csproj" />
+    <ProjectReference Include="..\..\src\Mockifyr.Facade.Smtp\Mockifyr.Facade.Smtp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

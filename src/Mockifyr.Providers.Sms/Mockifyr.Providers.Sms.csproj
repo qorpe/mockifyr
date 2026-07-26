@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Mockifyr.Core\Mockifyr.Core.csproj" />
+  </ItemGroup>
+
+</Project>
