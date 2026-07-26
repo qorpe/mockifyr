@@ -116,6 +116,16 @@ public static class MockifyrHost
                 new DescriptorProtocolProbe(sp.GetRequiredService<ProtoDescriptors>()));
         }
 
+        // SMTP capture (G18b, ADR 0009): opt-in via --smtp-port; no flag, no listener. The AUTH
+        // username names the tenant (the SMTP analog of X-Mockifyr-Tenant); mail lands in the
+        // message inbox behind /__admin/messages.
+        if (int.TryParse(builder.Configuration["smtp-port"], out var smtpPort))
+        {
+            builder.Services.AddSingleton(sp =>
+                new Facade.Smtp.SmtpCaptureServer(sp.GetRequiredService<IMessageSink>(), smtpPort));
+            builder.Services.AddHostedService<SmtpCaptureHostedService>();
+        }
+
         // Git sync (ADR 0007 + #151). Two modes, registered last so they win over the default:
         //  - Pinned: --git-remote (+ --git-branch) fixes the configuration at startup; the dashboard
         //    shows it read-only. Requires --root-dir (the working copy).

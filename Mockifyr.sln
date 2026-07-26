@@ -49,6 +49,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mockifyr.Facade.Grpc", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mockifyr.Facade.WebSocket", "src\Mockifyr.Facade.WebSocket\Mockifyr.Facade.WebSocket.csproj", "{0E157F3F-42ED-49E9-829D-7291CCA07E1E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mockifyr.Facade.Smtp", "src\Mockifyr.Facade.Smtp\Mockifyr.Facade.Smtp.csproj", "{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -299,6 +301,18 @@ Global
 		{0E157F3F-42ED-49E9-829D-7291CCA07E1E}.Release|x64.Build.0 = Release|Any CPU
 		{0E157F3F-42ED-49E9-829D-7291CCA07E1E}.Release|x86.ActiveCfg = Release|Any CPU
 		{0E157F3F-42ED-49E9-829D-7291CCA07E1E}.Release|x86.Build.0 = Release|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Debug|x64.Build.0 = Debug|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Debug|x86.Build.0 = Debug|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Release|x64.ActiveCfg = Release|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Release|x64.Build.0 = Release|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Release|x86.ActiveCfg = Release|Any CPU
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -324,5 +338,6 @@ Global
 		{6806ECA0-976A-4FA9-8746-E865D97C341B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{D5ECC0C7-31AD-431F-9B58-CFA176946914} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{0E157F3F-42ED-49E9-829D-7291CCA07E1E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{1C63AAF0-BF8A-46DF-AC2A-AA44B7E310D1} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

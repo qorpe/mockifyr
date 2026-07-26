@@ -69,3 +69,35 @@ serving follows).
   already transitive) to make them mutable.
 - **Deferred (tracked):** durable message persistence (reuse the G16 seam if demanded); attachment
   download endpoint (G18c); verify/OTP query shapes (G18f).
+
+## G18b — SMTP capture facade (ADR 0009)
+
+- **Group / item:** G18b — validated by **real-client self-tests** (`G18bSmtpCaptureTests`: MailKit
+  drives a full `MockifyrHost --smtp-port 0` — plain text, HTML + attachment, two recipients, two
+  mails on one connection, dot-stuffed bodies, AUTH-as-tenant — each asserted through
+  `/__admin/messages` over the wire) plus 21 unit tests on the socket-free `SmtpSession` state
+  machine. No oracle exists: WireMock has no SMTP.
+- **Design.** `Mockifyr.Facade.Smtp` — a loopback `TcpListener` speaking enough ESMTP for
+  mainstream clients (EHLO/HELO, MAIL, RCPT, DATA with RFC 5321 dot-unstuffing, RSET, NOOP, QUIT;
+  AUTH PLAIN/LOGIN **accepted-but-unchecked**). MimeKit parses DATA at the facade edge into a
+  `MessageEnvelope` → `IMessageSink`; Core never sees MIME. Opt-in via `--smtp-port` (a hosted
+  service; no flag → no listener). Unparseable MIME still captures raw — a mock never loses a
+  message a real client managed to send.
+- **Tenant = AUTH username** — the SMTP analog of `X-Mockifyr-Tenant`. PLAIN reads the authcid
+  (three-part payload) or the first field (two-part, authzid omitted); LOGIN reads the username
+  step; garbage/empty auth falls back to the default tenant. *The ADR's original idea of resolving
+  tenants from recipient domains was dropped: G15c multi-domain is stub-level matching, no
+  tenant→domain map exists to consult.*
+- **Learned: envelope vs header truth.** `To` carries the **RCPT TO envelope recipients** (who
+  actually received it); the `To:` header is display data and goes to `Meta.headerTo`. `From`
+  prefers the MIME header (display truth), with `MAIL FROM` kept as `Meta.envelopeFrom`. MIME
+  decoders also surface the transport's final CRLF as a trailing newline the sender never wrote —
+  the factory trims exactly one.
+- **Mutation (Stryker):** 86.6% on `SmtpSession` (71/82 killed). The 11 survivors were analyzed
+  individually and are **equivalent mutants** of the lenient parser: leading-space command lines
+  (both variants answer 502), unreachable `space == 0` branches after `Trim()`, the
+  `_pendingAuth = "LOGIN-PASS"` sentinel (the default branch treats any unknown sentinel as the
+  final step by design), colon/bracket fallbacks that the bracket-extraction path rescues, and
+  null-vs-empty address results that the caller's `{ Length: > 0 }` pattern collapses.
+- **Deferred (tracked):** STARTTLS; size limits/`SIZE` extension; SMTP fault directives (550
+  reject, delay, drop) land in G18e.

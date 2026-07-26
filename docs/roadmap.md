@@ -474,7 +474,7 @@ behavior change.
   tenant-scoped `IMessageStore` (bounded, ring-buffer eviction) + `IMessageSink` in Core (zero
   deps); in-memory store; `/__admin/messages` CQRS + REST: list (channel/recipient/text filters),
   get, delete, reset, count.
-- [ ] **G18b — SMTP facade (capture)**. `Mockifyr.Facade.Smtp`: opt-in `--smtp-port` ESMTP
+- [x] **G18b — SMTP facade (capture)** (#186). `Mockifyr.Facade.Smtp`: opt-in `--smtp-port` ESMTP
   listener (EHLO/MAIL/RCPT/DATA/QUIT; AUTH accepted-unchecked), MimeKit parse at the edge →
   envelope → sink. Tenant from AUTH user, else recipient domain, else default. Self-test: MailKit
   sends; capture asserted through the admin API.

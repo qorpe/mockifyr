@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mockifyr.Core\Mockifyr.Core.csproj" />
+    <!-- MIME parsing at the facade edge (G18b) — the engine and Core never see MIME. -->
+    <PackageReference Include="MimeKit" />
+  </ItemGroup>
+
+</Project>

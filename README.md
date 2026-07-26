@@ -112,6 +112,7 @@ The common flags, with the [full reference](https://mockifyr.omercelik.dev/cli/)
 | `--port <n>` | mock-serving HTTP port (default 8080) |
 | `--https-port <n>` | enable HTTPS / HTTP2 |
 | `--root-dir <dir>` | load and persist stubs as JSON files |
+| `--smtp-port <n>` | capture real SMTP mail into the tenant-scoped message inbox (`/__admin/messages`); the AUTH username names the tenant |
 | `--dashboard <dir>` | serve the built dashboard under `/__mockifyr` |
 | `--admin-user <u>` · `--admin-pass <p>` | require HTTP Basic auth on the admin API (`/__admin/*`); the dashboard shows a login screen |
 | `--postgres <connstr>` · `--redis <connstr>` · `--litedb <path>` | durable persistence backend |
