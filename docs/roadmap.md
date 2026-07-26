@@ -487,6 +487,6 @@ behavior change.
 - [x] **G18e — Behaviors: faults, webhooks, retention** (#189). SMTP fault injection (550 reject, delay,
   drop), provider error simulation, message-received events through `IServeEventListener` → the
   G3 webhook infrastructure, store capacity/retention flags.
-- [ ] **G18f — Verify + OTP extraction**. Count/matcher verify on `/__admin/messages` (sibling of
+- [x] **G18f — Verify + OTP extraction** (#190). Count/matcher verify on `/__admin/messages` (sibling of
   `/__admin/requests`), `GET /__admin/messages/{id}/otp?pattern=…` (default `\b\d{4,8}\b`); e2e:
   an app sends an OTP mail + SMS, the test retrieves the code in one admin call.

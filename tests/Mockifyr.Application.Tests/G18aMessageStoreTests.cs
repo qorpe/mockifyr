@@ -297,3 +297,115 @@ public sealed class G18eMessageBehaviorHandlerTests
             new MessageBehaviors(SmtpDelayMs: 0), TenantId.Default))).IsSuccess);
     }
 }
+
+// NOTE: appended by G18f — OTP extraction + the `matches` regex filter.
+public sealed class G18fOtpHandlerTests
+{
+    private static ServiceProvider Host() => new ServiceCollection().AddMockifyr().BuildServiceProvider();
+
+    private static MessageEnvelope Message(string body, string? subject = null, string? html = null, string to = "+90555") =>
+        new(Guid.NewGuid(), MessageChannel.Sms, "+1500", [to], subject, body, html,
+            new Dictionary<string, string>(), [], DateTimeOffset.UtcNow);
+
+    [Fact]
+    public async Task DefaultPattern_ReadsTheNewestMatchingMessage()
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        var sink = provider.GetRequiredService<IMessageSink>();
+        sink.Accept(TenantId.Default, Message("old code 111111"));
+        sink.Accept(TenantId.Default, Message("new code 222222"));
+
+        var result = await sender.Send(new ExtractOtpQuery(TenantId.Default, Recipient: "+90555"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("222222", result.Value.Otp);
+    }
+
+    [Fact]
+    public async Task SubjectAndHtml_AreSearchedWhenTheBodyHasNoCode()
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        var sink = provider.GetRequiredService<IMessageSink>();
+
+        sink.Accept(TenantId.Default, Message("no digits here", subject: "Code 4321"));
+        var fromSubject = await sender.Send(new ExtractOtpQuery(TenantId.Default));
+        Assert.Equal("4321", fromSubject.Value.Otp);
+
+        sink.Accept(TenantId.Default, Message("still none", html: "<b>77779</b>"));
+        var fromHtml = await sender.Send(new ExtractOtpQuery(TenantId.Default));
+        Assert.Equal("77779", fromHtml.Value.Otp);
+    }
+
+    [Fact]
+    public async Task ById_CaptureGroup_AndTenantScope()
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        var sink = provider.GetRequiredService<IMessageSink>();
+        var acme = new TenantId("acme");
+        var message = Message("Key AB-9931-XY");
+        sink.Accept(acme, message);
+
+        var extracted = await sender.Send(new ExtractOtpQuery(acme, message.Id, Pattern: @"AB-(\d+)-XY"));
+        Assert.Equal("9931", extracted.Value.Otp);
+        Assert.Equal(message.Id, extracted.Value.MessageId);
+
+        // Another tenant cannot read it, by id or by recipient.
+        Assert.False((await sender.Send(new ExtractOtpQuery(TenantId.Default, message.Id))).IsSuccess);
+        Assert.False((await sender.Send(new ExtractOtpQuery(TenantId.Default, Recipient: "+90555"))).IsSuccess);
+    }
+
+    [Fact]
+    public async Task HonestFailures_NoMessage_NoMatch_BadPattern()
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        var sink = provider.GetRequiredService<IMessageSink>();
+
+        var missing = await sender.Send(new ExtractOtpQuery(TenantId.Default));
+        Assert.Equal("Message.NotFound", missing.Error.Code);
+        Assert.NotEmpty(missing.Error.Description);
+
+        sink.Accept(TenantId.Default, Message("hello there"));
+        var noMatch = await sender.Send(new ExtractOtpQuery(TenantId.Default));
+        Assert.Equal("Otp.NoMatch", noMatch.Error.Code);
+        Assert.NotEmpty(noMatch.Error.Description);
+
+        var invalid = await sender.Send(new ExtractOtpQuery(TenantId.Default, Pattern: "(["));
+        Assert.Equal("Otp.InvalidPattern", invalid.Error.Code);
+        Assert.NotEmpty(invalid.Error.Description);
+    }
+
+    [Theory]
+    [InlineData(@"code is \d{6}", true)]
+    [InlineData(@"^absent$", false)]
+    [InlineData("([", false)] // malformed regex matches nothing, never throws
+    public void MatchesFilter_Regex(string pattern, bool expected)
+    {
+        Assert.Equal(expected, MessageFilter.Matches(
+            Message("Your code is 482913"), null, null, null, pattern));
+    }
+
+    [Fact]
+    public async Task NonParticipatingGroup_FallsBackToTheFullMatch()
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        provider.GetRequiredService<IMessageSink>().Accept(TenantId.Default, Message("token abc"));
+
+        // The alternation's group does not participate in the "abc" branch: the full match wins.
+        var result = await sender.Send(new ExtractOtpQuery(TenantId.Default, Pattern: @"(\d+)|[a-z]+"));
+
+        Assert.Equal("token", result.Value.Otp);
+    }
+
+    [Fact]
+    public void MatchesFilter_SearchesSubjectAndHtml()
+    {
+        Assert.True(MessageFilter.Matches(Message("x", subject: "Code 12"), null, null, null, @"Code \d+"));
+        Assert.True(MessageFilter.Matches(Message("x", html: "<i>tok-99</i>"), null, null, null, @"tok-\d+"));
+        Assert.False(MessageFilter.Matches(Message("x"), null, null, null, @"tok-\d+"));
+    }
+}

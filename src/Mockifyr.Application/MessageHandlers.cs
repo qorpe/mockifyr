@@ -14,7 +14,7 @@ public sealed class GetMessagesHandler(IMessageStore store)
     public ValueTask<Result<IReadOnlyList<MessageEnvelope>>> Handle(GetMessagesQuery query, CancellationToken cancellationToken)
     {
         IEnumerable<MessageEnvelope> messages = store.GetMessages(query.Tenant)
-            .Where(m => MessageFilter.Matches(m, query.Channel, query.Recipient, query.Contains));
+            .Where(m => MessageFilter.Matches(m, query.Channel, query.Recipient, query.Contains, query.Matches));
         if (query.Limit is > 0)
         {
             messages = messages.Take(query.Limit.Value);
@@ -30,7 +30,7 @@ public sealed class CountMessagesHandler(IMessageStore store)
 {
     public ValueTask<Result<int>> Handle(CountMessagesQuery query, CancellationToken cancellationToken) =>
         ValueTask.FromResult(Result.Success(store.GetMessages(query.Tenant)
-            .Count(m => MessageFilter.Matches(m, query.Channel, query.Recipient, query.Contains))));
+            .Count(m => MessageFilter.Matches(m, query.Channel, query.Recipient, query.Contains, query.Matches))));
 }
 
 /// <summary>Reads one message; NotFound when the id is not in this tenant's inbox.</summary>
@@ -106,5 +106,70 @@ public sealed class ResetMessageBehaviorsHandler(IMessageBehaviorStore store)
     {
         store.Reset(command.Tenant);
         return ValueTask.FromResult(Result.Success());
+    }
+}
+
+/// <summary>
+/// Extracts a one-time code (G18f) — the "wait for the OTP and read it" step of an e2e test as one
+/// query. By id when given; otherwise the newest message matching recipient/channel (the store
+/// reads newest-first, so the first hit is the latest). The default pattern is 4–8 consecutive
+/// digits; a custom pattern's first match (first group when present) is returned.
+/// </summary>
+public sealed class ExtractOtpHandler(IMessageStore store)
+    : IQueryHandler<ExtractOtpQuery, Result<OtpExtraction>>
+{
+    /// <summary>The default one-time-code shape: 4–8 consecutive digits on a word boundary.</summary>
+    public const string DefaultPattern = @"\b\d{4,8}\b";
+
+    public ValueTask<Result<OtpExtraction>> Handle(ExtractOtpQuery query, CancellationToken cancellationToken)
+    {
+        var message = query.Id is { } id
+            ? store.Get(query.Tenant, id)
+            : store.GetMessages(query.Tenant)
+                .FirstOrDefault(m => MessageFilter.Matches(m, query.Channel, query.Recipient, contains: null));
+        if (message is null)
+        {
+            return ValueTask.FromResult(Result.Failure<OtpExtraction>(
+                Error.NotFound("Message.NotFound", "No such message in this tenant.")));
+        }
+
+        System.Text.RegularExpressions.Regex regex;
+        try
+        {
+            regex = new System.Text.RegularExpressions.Regex(
+                query.Pattern is { Length: > 0 } pattern ? pattern : DefaultPattern,
+                System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(250));
+        }
+        catch (ArgumentException)
+        {
+            return ValueTask.FromResult(Result.Failure<OtpExtraction>(
+                Error.Validation("Otp.InvalidPattern", "The pattern is not a valid regular expression.")));
+        }
+
+        foreach (var text in new[] { message.Body, message.Subject, message.HtmlBody })
+        {
+            if (text is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                if (regex.Match(text) is { Success: true } match)
+                {
+                    // Groups[1] is a safe non-match when the pattern has no group — no count check needed.
+                    var otp = match.Groups[1].Success ? match.Groups[1].Value : match.Value;
+                    return ValueTask.FromResult(Result.Success(
+                        new OtpExtraction(otp, message.Id, message.ReceivedAt)));
+                }
+            }
+            catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+            {
+                // A catastrophic pattern extracts nothing rather than hanging the admin surface.
+            }
+        }
+
+        return ValueTask.FromResult(Result.Failure<OtpExtraction>(
+            Error.NotFound("Otp.NoMatch", "The message carries no text matching the pattern.")));
     }
 }

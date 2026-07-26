@@ -14,6 +14,7 @@ public sealed record GetMessagesQuery(
     MessageChannel? Channel = null,
     string? Recipient = null,
     string? Contains = null,
+    string? Matches = null,
     int? Limit = null) : IQuery<Result<IReadOnlyList<MessageEnvelope>>>;
 
 /// <summary>Counts the tenant's captured messages under the same filters as <see cref="GetMessagesQuery"/>.</summary>
@@ -21,7 +22,23 @@ public sealed record CountMessagesQuery(
     TenantId Tenant,
     MessageChannel? Channel = null,
     string? Recipient = null,
-    string? Contains = null) : IQuery<Result<int>>;
+    string? Contains = null,
+    string? Matches = null) : IQuery<Result<int>>;
+
+/// <summary>
+/// Extracts a one-time code (G18f): from one message by <paramref name="Id"/>, or — the e2e shape —
+/// from the <b>newest</b> message matching <paramref name="Recipient"/>/<paramref name="Channel"/>.
+/// <paramref name="Pattern"/> defaults to 4–8 consecutive digits.
+/// </summary>
+public sealed record ExtractOtpQuery(
+    TenantId Tenant,
+    Guid? Id = null,
+    string? Recipient = null,
+    MessageChannel? Channel = null,
+    string? Pattern = null) : IQuery<Result<OtpExtraction>>;
+
+/// <summary>The extracted code and the message it came from.</summary>
+public sealed record OtpExtraction(string Otp, Guid MessageId, DateTimeOffset ReceivedAt);
 
 /// <summary>Reads one captured message.</summary>
 public sealed record GetMessageQuery(Guid Id, TenantId Tenant) : IQuery<Result<MessageEnvelope>>;
@@ -34,12 +51,17 @@ public sealed record ResetMessagesCommand(TenantId Tenant) : ICommand<Result>;
 
 /// <summary>
 /// The one filter definition every message query shares: channel equality, a case-insensitive
-/// recipient match (any addressee), and a case-insensitive substring over subject + bodies.
+/// recipient match (any addressee), a case-insensitive substring over subject + bodies, and a
+/// regex over the same text (G18f). A malformed or catastrophic regex matches nothing rather than
+/// failing or hanging the admin surface.
 /// </summary>
 public static class MessageFilter
 {
+    private static readonly TimeSpan RegexBudget = TimeSpan.FromMilliseconds(250);
+
     /// <summary>Whether the message passes the given filters (null = don't care).</summary>
-    public static bool Matches(MessageEnvelope message, MessageChannel? channel, string? recipient, string? contains)
+    public static bool Matches(
+        MessageEnvelope message, MessageChannel? channel, string? recipient, string? contains, string? matches = null)
     {
         if (channel is not null && message.Channel != channel)
         {
@@ -58,6 +80,26 @@ public static class MessageFilter
                       message.Body.Contains(contains, StringComparison.OrdinalIgnoreCase) ||
                       (message.HtmlBody?.Contains(contains, StringComparison.OrdinalIgnoreCase) ?? false);
             if (!hit)
+            {
+                return false;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(matches))
+        {
+            try
+            {
+                var regex = new System.Text.RegularExpressions.Regex(
+                    matches, System.Text.RegularExpressions.RegexOptions.None, RegexBudget);
+                var hit = (message.Subject is { } subject && regex.IsMatch(subject)) ||
+                          regex.IsMatch(message.Body) ||
+                          (message.HtmlBody is { } html && regex.IsMatch(html));
+                if (!hit)
+                {
+                    return false;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or System.Text.RegularExpressions.RegexMatchTimeoutException)
             {
                 return false;
             }

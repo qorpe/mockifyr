@@ -359,6 +359,7 @@ public static class AdminEndpoints
                 ChannelOf(request),
                 request.Query["recipient"].FirstOrDefault(),
                 request.Query["contains"].FirstOrDefault(),
+                request.Query["matches"].FirstOrDefault(),
                 int.TryParse(request.Query["limit"].FirstOrDefault(), out var limit) ? limit : null));
             return Results.Json(new { messages = result.Value.Select(MessageJson) });
         });
@@ -369,8 +370,29 @@ public static class AdminEndpoints
                 TenantOf(request),
                 ChannelOf(request),
                 request.Query["recipient"].FirstOrDefault(),
-                request.Query["contains"].FirstOrDefault()));
+                request.Query["contains"].FirstOrDefault(),
+                request.Query["matches"].FirstOrDefault()));
             return Results.Json(new { count = result.Value });
+        });
+
+        // OTP extraction (G18f): the e2e "wait for the code and read it" as one GET. The
+        // recipient/channel form reads the newest matching message; /{id}/otp reads one message.
+        admin.MapGet("/messages/otp", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new ExtractOtpQuery(
+                TenantOf(request),
+                Id: null,
+                request.Query["recipient"].FirstOrDefault(),
+                ChannelOf(request),
+                request.Query["pattern"].FirstOrDefault()));
+            return OtpResult(result);
+        });
+
+        admin.MapGet("/messages/{id:guid}/otp", async (Guid id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new ExtractOtpQuery(
+                TenantOf(request), id, Pattern: request.Query["pattern"].FirstOrDefault()));
+            return OtpResult(result);
         });
 
         admin.MapGet("/messages/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
@@ -731,6 +753,13 @@ public static class AdminEndpoints
             "sms" => MessageChannel.Sms,
             _ => null,
         };
+
+    private static IResult OtpResult(Mediant.Results.Result<OtpExtraction> result) =>
+        result.IsSuccess
+            ? Results.Json(new { otp = result.Value.Otp, messageId = result.Value.MessageId, receivedAt = result.Value.ReceivedAt })
+            : result.Error.Code == "Otp.InvalidPattern"
+                ? Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: result.Error.Description)
+                : Results.NotFound(new { code = result.Error.Code, message = result.Error.Description });
 
     private static object BehaviorsJson(MessageBehaviors behaviors) => new
     {

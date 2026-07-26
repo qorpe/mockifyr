@@ -168,3 +168,23 @@ serving follows).
   webhook can never slow or fail a capture (the G3 delivery ethos).
 - **Deferred (tracked):** per-message webhook templating (G3-style Handlebars over the envelope);
   greylisting/tempfail (451) simulation; Twilio status-callback emulation.
+
+## G18f — Verify + OTP extraction (ADR 0009)
+
+- **Group / item:** G18f — the epic's e2e proof (`G18fOtpVerifyTests`): an "application" sends an
+  OTP mail over real SMTP (MailKit) and an OTP SMS through the Twilio profile, and the "test" reads
+  each code back with **one admin GET** — `/__admin/messages/otp?recipient=…&channel=…` — with the
+  latest message winning (an older code to the same number is ignored). Plus 9 handler unit tests;
+  Stryker **100%** on the message operations/handlers (67 mutants — the last two killed by
+  dropping a redundant `Groups.Count` check, since `Groups[1]` is a safe non-match, and by a
+  non-participating-group alternation test).
+- **Verify.** The list/count filters gain `matches` — a regex over subject + bodies with a 250ms
+  budget; a malformed or catastrophic pattern **filters to nothing** rather than 500ing the admin
+  surface (verified over the wire). `contains`/`recipient`/`channel`/`limit` were G18a.
+- **OTP.** `GET /__admin/messages/{id}/otp` and the e2e shape `GET /__admin/messages/otp?recipient=
+  …&channel=…&pattern=…`; default pattern `\b\d{4,8}\b`; body → subject → HTML search order; a
+  custom pattern's first capture group wins over the full match when it participates. Honest
+  failures: `Message.NotFound` (nothing to read), `Otp.NoMatch` (message exists, no code),
+  `Otp.InvalidPattern` → 422.
+- **Deferred (tracked):** a blocking "wait for the next message" long-poll variant; verify-style
+  request-pattern bodies (POST with matcher JSON, the G6 shape) if demand appears.
