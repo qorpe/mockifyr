@@ -14,7 +14,7 @@ namespace Mockifyr.Facade.Smtp;
 /// analog of the <c>X-Mockifyr-Tenant</c> header; without AUTH, mail lands in the default tenant.
 /// No oracle exists for any of this (WireMock has no SMTP); validated by real-client self-tests.
 /// </summary>
-public sealed class SmtpCaptureServer(IMessageSink sink, int port) : IAsyncDisposable
+public sealed class SmtpCaptureServer(IMessageSink sink, int port, IMessageBehaviorStore? behaviors = null) : IAsyncDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, port);
     private readonly CancellationTokenSource _stopping = new();
@@ -56,7 +56,7 @@ public sealed class SmtpCaptureServer(IMessageSink sink, int port) : IAsyncDispo
         using var _ = client;
         var stream = client.GetStream();
         var reader = new StreamReader(stream, Encoding.ASCII, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        var session = new SmtpSession(sink);
+        var session = new SmtpSession(sink, behaviors);
         await WriteAsync(stream, "220 mockifyr ESMTP ready");
 
         try
@@ -78,10 +78,23 @@ public sealed class SmtpCaptureServer(IMessageSink sink, int port) : IAsyncDispo
                 if (action == SmtpAction.ReadData)
                 {
                     var data = await ReadDataAsync(reader);
+                    // The delay directive (G18e) holds the DATA acknowledgment — where a slow
+                    // upstream is felt — after the payload is already read and safe to capture.
+                    var delayMs = behaviors?.Get(session.Tenant).SmtpDelayMs ?? 0;
+                    if (delayMs > 0)
+                    {
+                        await Task.Delay(delayMs, _stopping.Token);
+                    }
+
                     await WriteAsync(stream, session.AcceptData(data));
                 }
                 else if (action == SmtpAction.Quit)
                 {
+                    return;
+                }
+                else if (action == SmtpAction.Drop)
+                {
+                    client.Close();
                     return;
                 }
             }

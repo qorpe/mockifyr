@@ -66,3 +66,14 @@ public static class MessageFilter
         return true;
     }
 }
+
+// ---- Behavior directives (G18e) ---------------------------------------------------------------
+
+/// <summary>Reads the tenant's message-channel behavior directives.</summary>
+public sealed record GetMessageBehaviorsQuery(TenantId Tenant) : IQuery<Result<MessageBehaviors>>;
+
+/// <summary>Replaces the tenant's message-channel behavior directives.</summary>
+public sealed record SetMessageBehaviorsCommand(MessageBehaviors Behaviors, TenantId Tenant) : ICommand<Result>;
+
+/// <summary>Returns the tenant to the no-directives default.</summary>
+public sealed record ResetMessageBehaviorsCommand(TenantId Tenant) : ICommand<Result>;

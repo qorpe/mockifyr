@@ -234,3 +234,66 @@ public sealed class G18aMessageStoreTests
         Assert.Equal(["m5", "m4"], limited.Select(m => m.Subject));
     }
 }
+
+// NOTE: appended by G18e — behavior-directive handlers share this file's host helper.
+public sealed class G18eMessageBehaviorHandlerTests
+{
+    private static ServiceProvider Host() => new ServiceCollection().AddMockifyr().BuildServiceProvider()
+;
+    private static readonly TenantId Acme = new("acme");
+
+    [Fact]
+    public async Task Behaviors_DefaultToNone_SetAndReset_TenantScoped()
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+
+        Assert.Equal(MessageBehaviors.None, (await sender.Send(new GetMessageBehaviorsQuery(TenantId.Default))).Value);
+
+        var directive = new MessageBehaviors(SmtpFaultMode.Reject, SmtpDelayMs: 100, SmsErrorCode: 21211, WebhookUrl: "http://x/hook");
+        Assert.True((await sender.Send(new SetMessageBehaviorsCommand(directive, Acme))).IsSuccess);
+
+        Assert.Equal(directive, (await sender.Send(new GetMessageBehaviorsQuery(Acme))).Value);
+        Assert.Equal(MessageBehaviors.None, (await sender.Send(new GetMessageBehaviorsQuery(TenantId.Default))).Value);
+
+        Assert.True((await sender.Send(new ResetMessageBehaviorsCommand(Acme))).IsSuccess);
+        Assert.Equal(MessageBehaviors.None, (await sender.Send(new GetMessageBehaviorsQuery(Acme))).Value);
+    }
+
+    [Theory]
+    [InlineData(-1, null, "MessageBehaviors.InvalidDelay")]
+    [InlineData(0, 9999, "MessageBehaviors.InvalidErrorCode")]
+    [InlineData(0, 100000, "MessageBehaviors.InvalidErrorCode")]
+    public async Task InvalidDirectives_AreRefused(int delayMs, int? errorCode, string expectedCode)
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+
+        var result = await sender.Send(new SetMessageBehaviorsCommand(
+            new MessageBehaviors(SmtpDelayMs: delayMs, SmsErrorCode: errorCode), TenantId.Default));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(expectedCode, result.Error.Code);
+        Assert.NotEmpty(result.Error.Description);
+    }
+
+    [Theory]
+    [InlineData(10000)]
+    [InlineData(99999)]
+    public async Task BoundaryErrorCodes_AreAccepted(int code)
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        Assert.True((await sender.Send(new SetMessageBehaviorsCommand(
+            new MessageBehaviors(SmsErrorCode: code), TenantId.Default))).IsSuccess);
+    }
+
+    [Fact]
+    public async Task ZeroDelay_IsValid()
+    {
+        using var provider = Host();
+        var sender = provider.GetRequiredService<ISender>();
+        Assert.True((await sender.Send(new SetMessageBehaviorsCommand(
+            new MessageBehaviors(SmtpDelayMs: 0), TenantId.Default))).IsSuccess);
+    }
+}

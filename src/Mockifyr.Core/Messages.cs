@@ -66,3 +66,42 @@ public interface IMessageSink
     /// <summary>Accepts a captured message for the tenant.</summary>
     void Accept(TenantId tenant, MessageEnvelope message);
 }
+
+/// <summary>How the SMTP facade misbehaves on purpose (G18e) — the message-channel analog of HTTP faults.</summary>
+public enum SmtpFaultMode
+{
+    None,
+    /// <summary>Refuse DATA with a 550 — the client sees a permanent failure (a bounce).</summary>
+    Reject,
+    /// <summary>Close the connection mid-transaction without a reply.</summary>
+    Drop,
+}
+
+/// <summary>
+/// Per-tenant message-channel behavior directives (G18e, ADR 0009): fault injection for SMTP,
+/// simulated provider errors for SMS, and an optional webhook notified on every capture. Like HTTP
+/// delay/fault, these are <b>facade directives</b> — Core records the configuration, the facades
+/// apply it.
+/// </summary>
+public sealed record MessageBehaviors(
+    SmtpFaultMode SmtpFault = SmtpFaultMode.None,
+    int SmtpDelayMs = 0,
+    int? SmsErrorCode = null,
+    string? WebhookUrl = null)
+{
+    /// <summary>The no-directives default every tenant starts with.</summary>
+    public static readonly MessageBehaviors None = new();
+}
+
+/// <summary>Tenant-scoped storage for <see cref="MessageBehaviors"/>. No tenant-less overloads (ADR 0003).</summary>
+public interface IMessageBehaviorStore
+{
+    /// <summary>The tenant's behaviors; <see cref="MessageBehaviors.None"/> when never configured.</summary>
+    MessageBehaviors Get(TenantId tenant);
+
+    /// <summary>Replaces the tenant's behaviors.</summary>
+    void Set(TenantId tenant, MessageBehaviors behaviors);
+
+    /// <summary>Returns the tenant to the no-directives default.</summary>
+    void Reset(TenantId tenant);
+}

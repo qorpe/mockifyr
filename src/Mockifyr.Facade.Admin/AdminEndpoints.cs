@@ -379,6 +379,39 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Json(MessageJson(result.Value)) : Results.NotFound();
         });
 
+        // Behavior directives (G18e): SMTP fault/delay, simulated SMS provider errors, and the
+        // capture webhook — per tenant, applied by the facades like HTTP delay/fault directives.
+        admin.MapGet("/messages/behaviors", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetMessageBehaviorsQuery(TenantOf(request)));
+            return Results.Json(BehaviorsJson(result.Value));
+        });
+
+        admin.MapPut("/messages/behaviors", async (HttpRequest request, ISender sender) =>
+        {
+            MessageBehaviors behaviors;
+            try
+            {
+                behaviors = ReadBehaviors(await ReadBody(request));
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity,
+                    title: "The behaviors JSON is malformed.");
+            }
+
+            var result = await sender.Send(new SetMessageBehaviorsCommand(behaviors, TenantOf(request)));
+            return result.IsSuccess
+                ? Results.Json(BehaviorsJson(behaviors))
+                : Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: result.Error.Description);
+        });
+
+        admin.MapDelete("/messages/behaviors", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ResetMessageBehaviorsCommand(TenantOf(request)));
+            return Results.Ok();
+        });
+
         // Attachment content is served on demand (it may be megabytes; the list carries only
         // name/type/size). The index is the position in the message's attachments list.
         admin.MapGet("/messages/{id:guid}/attachments/{index:int}", async (Guid id, int index, HttpRequest request, ISender sender) =>
@@ -698,6 +731,39 @@ public static class AdminEndpoints
             "sms" => MessageChannel.Sms,
             _ => null,
         };
+
+    private static object BehaviorsJson(MessageBehaviors behaviors) => new
+    {
+        smtpFault = behaviors.SmtpFault switch
+        {
+            SmtpFaultMode.Reject => "reject",
+            SmtpFaultMode.Drop => "drop",
+            _ => "none",
+        },
+        smtpDelayMs = behaviors.SmtpDelayMs,
+        smsErrorCode = behaviors.SmsErrorCode,
+        webhookUrl = behaviors.WebhookUrl,
+    };
+
+    private static MessageBehaviors ReadBehaviors(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var fault = root.TryGetProperty("smtpFault", out var f) && f.ValueKind == System.Text.Json.JsonValueKind.String
+            ? f.GetString()!.ToLowerInvariant() switch
+            {
+                "reject" => SmtpFaultMode.Reject,
+                "drop" => SmtpFaultMode.Drop,
+                "none" => SmtpFaultMode.None,
+                _ => throw new InvalidOperationException("Unknown smtpFault."),
+            }
+            : SmtpFaultMode.None;
+        return new MessageBehaviors(
+            fault,
+            root.TryGetProperty("smtpDelayMs", out var d) && d.ValueKind == System.Text.Json.JsonValueKind.Number ? d.GetInt32() : 0,
+            root.TryGetProperty("smsErrorCode", out var e) && e.ValueKind == System.Text.Json.JsonValueKind.Number ? e.GetInt32() : null,
+            root.TryGetProperty("webhookUrl", out var w) && w.ValueKind == System.Text.Json.JsonValueKind.String ? w.GetString() : null);
+    }
 
     // Attachment content is deliberately not inlined in the JSON (it may be megabytes); the list
     // carries name/type/size and a per-attachment download lands with the inbox UI (G18c).

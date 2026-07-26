@@ -13,7 +13,8 @@ namespace Mockifyr.Providers.Sms;
 /// profile peeks the engine first and steps aside on a match, so enabling it can never change what
 /// an existing stub serves (the as-is rule). Tenant = <c>X-Mockifyr-Tenant</c>, as everywhere.
 /// </summary>
-public sealed partial class TwilioSmsProfileMiddleware(RequestDelegate next, StubEngine engine, IMessageSink sink)
+public sealed partial class TwilioSmsProfileMiddleware(
+    RequestDelegate next, StubEngine engine, IMessageSink sink, IMessageBehaviorStore? behaviors = null)
 {
     private const string TenantHeader = "X-Mockifyr-Tenant";
 
@@ -39,6 +40,14 @@ public sealed partial class TwilioSmsProfileMiddleware(RequestDelegate next, Stu
         {
             context.Request.Body.Position = 0;
             await next(context);
+            return;
+        }
+
+        // A simulated provider error (G18e) beats validation and capture — the tenant asked the
+        // "provider" to fail, exactly as a real outage would.
+        if (behaviors?.Get(tenant).SmsErrorCode is { } simulated)
+        {
+            await WriteErrorAsync(context, simulated, "Simulated by the SMS fault directive.");
             return;
         }
 

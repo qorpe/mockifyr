@@ -63,3 +63,48 @@ public sealed class ResetMessagesHandler(IMessageStore store)
         return ValueTask.FromResult(Result.Success());
     }
 }
+
+/// <summary>Reads the tenant's behavior directives (the no-directives default when never set).</summary>
+public sealed class GetMessageBehaviorsHandler(IMessageBehaviorStore store)
+    : IQueryHandler<GetMessageBehaviorsQuery, Result<MessageBehaviors>>
+{
+    public ValueTask<Result<MessageBehaviors>> Handle(GetMessageBehaviorsQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(store.Get(query.Tenant)));
+}
+
+/// <summary>
+/// Replaces the tenant's behavior directives. Validation is the useful part: a negative delay or an
+/// out-of-range provider error code would be stored and silently misapplied, so both are refused.
+/// </summary>
+public sealed class SetMessageBehaviorsHandler(IMessageBehaviorStore store)
+    : ICommandHandler<SetMessageBehaviorsCommand, Result>
+{
+    public ValueTask<Result> Handle(SetMessageBehaviorsCommand command, CancellationToken cancellationToken)
+    {
+        if (command.Behaviors.SmtpDelayMs < 0)
+        {
+            return ValueTask.FromResult(Result.Failure(Error.Validation(
+                "MessageBehaviors.InvalidDelay", "The SMTP delay must be zero or positive.")));
+        }
+
+        if (command.Behaviors.SmsErrorCode is < 10000 or > 99999)
+        {
+            return ValueTask.FromResult(Result.Failure(Error.Validation(
+                "MessageBehaviors.InvalidErrorCode", "A Twilio-style error code has five digits.")));
+        }
+
+        store.Set(command.Tenant, command.Behaviors);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
+/// <summary>Returns the tenant to the no-directives default.</summary>
+public sealed class ResetMessageBehaviorsHandler(IMessageBehaviorStore store)
+    : ICommandHandler<ResetMessageBehaviorsCommand, Result>
+{
+    public ValueTask<Result> Handle(ResetMessageBehaviorsCommand command, CancellationToken cancellationToken)
+    {
+        store.Reset(command.Tenant);
+        return ValueTask.FromResult(Result.Success());
+    }
+}

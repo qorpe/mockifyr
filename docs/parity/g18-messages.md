@@ -147,3 +147,24 @@ serving follows).
 - **Deferred (tracked):** more providers (Vonage, NetGSM) behind the same seam; provider error
   simulation rules (G18e); status-callback webhooks (G18e); the message list/fetch subresources of
   the Twilio API.
+
+## G18e — Message behaviors: faults, capture webhook, retention (ADR 0009)
+
+- **Group / item:** G18e — real-client self-tests (`G18eMessageBehaviorTests`): a MailKit client
+  *feels* each SMTP fault (550 bounce as `SmtpCommandException`, held DATA ack ≥ the configured
+  delay, dropped connection), the Twilio profile answers a simulated provider error (21211), the
+  capture webhook is asserted **end to end inside one host** (capture → webhook → a stub on the
+  same host → the request journal), `--message-limit 2` keeps only the newest two, and directives
+  are tenant-scoped (acme's reject never touches the default tenant). Plus 7 handler unit tests;
+  Stryker back to **100%** on the message operations/handlers (50 mutants).
+- **Design.** `MessageBehaviors` (Core record) + tenant-scoped `IMessageBehaviorStore`; configured
+  via `GET/PUT/DELETE /__admin/messages/behaviors` (CQRS). Like HTTP delay/fault, these are
+  **facade directives**: the SMTP session refuses DATA (550) or signals a connection drop, the
+  server holds the DATA acknowledgment for `smtpDelayMs`, the Twilio middleware short-circuits
+  with the simulated error before validation and capture. Validation refuses a negative delay and
+  non-five-digit provider codes rather than storing nonsense.
+- **Capture webhook.** `webhookUrl` posts every captured message as JSON — fire-and-forget,
+  best-effort, decorating `IMessageSink` in the composition root (`NotifyingMessageSink`); a
+  webhook can never slow or fail a capture (the G3 delivery ethos).
+- **Deferred (tracked):** per-message webhook templating (G3-style Handlebars over the envelope);
+  greylisting/tempfail (451) simulation; Twilio status-callback emulation.

@@ -12,6 +12,7 @@ using Mockifyr.Core;
 using Mockifyr.Facade.Admin;
 using Mockifyr.Facade.Http;
 using Mockifyr.Facade.WebSocket;
+using Mockifyr.Stores.InMemory;
 
 namespace Mockifyr.Server;
 
@@ -121,10 +122,22 @@ public static class MockifyrHost
         // message inbox behind /__admin/messages.
         if (int.TryParse(builder.Configuration["smtp-port"], out var smtpPort))
         {
-            builder.Services.AddSingleton(sp =>
-                new Facade.Smtp.SmtpCaptureServer(sp.GetRequiredService<IMessageSink>(), smtpPort));
+            builder.Services.AddSingleton(sp => new Facade.Smtp.SmtpCaptureServer(
+                sp.GetRequiredService<IMessageSink>(), smtpPort, sp.GetRequiredService<IMessageBehaviorStore>()));
             builder.Services.AddHostedService<SmtpCaptureHostedService>();
         }
+
+        // Message behaviors (G18e): a bounded inbox override (--message-limit) and the capture
+        // webhook decorating the sink. Registered after AddMockifyr so they win the resolution.
+        if (int.TryParse(builder.Configuration["message-limit"], out var messageLimit))
+        {
+            builder.Services.AddSingleton<IMessageStore>(new InMemoryMessageStore(messageLimit));
+        }
+
+        builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(
+            new StoreMessageSink(sp.GetRequiredService<IMessageStore>()),
+            sp.GetRequiredService<IMessageBehaviorStore>(),
+            new HttpClient()));
 
         // Git sync (ADR 0007 + #151). Two modes, registered last so they win over the default:
         //  - Pinned: --git-remote (+ --git-branch) fixes the configuration at startup; the dashboard

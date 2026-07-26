@@ -484,7 +484,7 @@ behavior change.
   `POST /2010-04-01/Accounts/{sid}/Messages.json`: form body → SMS envelope → store; realistic
   Twilio JSON reply. Self-test: the official Twilio C# SDK pointed at Mockifyr sends and accepts
   the response. UI: SMS thread view per recipient with OTP badges.
-- [ ] **G18e — Behaviors: faults, webhooks, retention**. SMTP fault injection (550 reject, delay,
+- [x] **G18e — Behaviors: faults, webhooks, retention** (#189). SMTP fault injection (550 reject, delay,
   drop), provider error simulation, message-received events through `IServeEventListener` → the
   G3 webhook infrastructure, store capacity/retention flags.
 - [ ] **G18f — Verify + OTP extraction**. Count/matcher verify on `/__admin/messages` (sibling of

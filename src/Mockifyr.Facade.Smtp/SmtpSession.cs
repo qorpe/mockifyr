@@ -9,6 +9,8 @@ public enum SmtpAction
     Continue,
     ReadData,
     Quit,
+    /// <summary>Close the connection without further replies (the Drop fault directive, G18e).</summary>
+    Drop,
 }
 
 /// <summary>
@@ -17,7 +19,7 @@ public enum SmtpAction
 /// an MTA): AUTH is accepted without checking credentials — <b>the username names the tenant</b> —
 /// and sequencing errors answer 503 without dropping the connection.
 /// </summary>
-public sealed class SmtpSession(IMessageSink sink)
+public sealed class SmtpSession(IMessageSink sink, IMessageBehaviorStore? behaviors = null)
 {
     private string? _from;
     private readonly List<string> _recipients = [];
@@ -60,9 +62,18 @@ public sealed class SmtpSession(IMessageSink sink)
 
                 return (["501 Syntax: RCPT TO:<address>"], SmtpAction.Continue);
             case "DATA":
-                return _recipients.Count == 0
-                    ? (["503 RCPT TO first"], SmtpAction.Continue)
-                    : (["354 End data with <CR><LF>.<CR><LF>"], SmtpAction.ReadData);
+                if (_recipients.Count == 0)
+                {
+                    return (["503 RCPT TO first"], SmtpAction.Continue);
+                }
+
+                // Fault directives (G18e) apply at the DATA gate — where a real server bounces.
+                return (behaviors?.Get(_tenant).SmtpFault ?? SmtpFaultMode.None) switch
+                {
+                    SmtpFaultMode.Reject => (["550 Rejected by fault directive"], SmtpAction.Continue),
+                    SmtpFaultMode.Drop => ([], SmtpAction.Drop),
+                    _ => (["354 End data with <CR><LF>.<CR><LF>"], SmtpAction.ReadData),
+                };
             case "RSET":
                 _from = null;
                 _recipients.Clear();

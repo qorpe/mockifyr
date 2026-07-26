@@ -90,3 +90,19 @@ public sealed class StoreMessageSink(IMessageStore store) : IMessageSink
     /// <inheritdoc />
     public void Accept(TenantId tenant, MessageEnvelope message) => store.Append(tenant, message);
 }
+
+/// <summary>Tenant-scoped in-memory behavior directives (G18e); absent tenants read the no-directives default.</summary>
+public sealed class InMemoryMessageBehaviorStore : IMessageBehaviorStore
+{
+    private readonly ConcurrentDictionary<TenantId, MessageBehaviors> _byTenant = new();
+
+    /// <inheritdoc />
+    public MessageBehaviors Get(TenantId tenant) =>
+        _byTenant.TryGetValue(tenant, out var behaviors) ? behaviors : MessageBehaviors.None;
+
+    /// <inheritdoc />
+    public void Set(TenantId tenant, MessageBehaviors behaviors) => _byTenant[tenant] = behaviors;
+
+    /// <inheritdoc />
+    public void Reset(TenantId tenant) => _byTenant.TryRemove(tenant, out _);
+}
