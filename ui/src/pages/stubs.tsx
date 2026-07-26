@@ -242,14 +242,14 @@ export function StubsPage() {
           </div>
           {/* flex-none: the tree header is a flex column, so SearchBox's own flex-1 would collapse its height. */}
           <SearchBox value={search} onCommit={setSearch} placeholder={t('stubs.filter')} className="flex-none bg-background" />
-          {/* Natural button sizes; justify-between pins Method to the search box's left edge and
-              Protocol to its right edge, so the row reads as one aligned block. */}
-          <div className="flex w-full flex-wrap items-center justify-between gap-1.5">
-            <FacetFilter compact label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
+          {/* One joined segmented group, flush with the search box: three equal cells, shared inner
+              borders, rounded only at the outer ends — no gaps, no wrapping. */}
+          <div className="grid w-full grid-cols-3">
+            <FacetFilter compact className="w-full min-w-0 justify-center overflow-hidden rounded-e-none" label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
               onToggle={(v) => setSelected((s) => toggleSelection(s, 'method', v))} onClear={() => setSelected((s) => clearFacet(s, 'method'))} clearLabel={t('common.clear')} />
-            <FacetFilter compact label={t('stubs.status')} options={statusOptions} selected={selected.status ?? EMPTY_SET}
+            <FacetFilter compact className="w-full min-w-0 justify-center overflow-hidden rounded-none border-x-0" label={t('stubs.status')} options={statusOptions} selected={selected.status ?? EMPTY_SET}
               onToggle={(v) => setSelected((s) => toggleSelection(s, 'status', v))} onClear={() => setSelected((s) => clearFacet(s, 'status'))} clearLabel={t('common.clear')} />
-            <FacetFilter compact label={t('stubs.protocol')} options={protocolOptions} selected={selected.protocol ?? EMPTY_SET}
+            <FacetFilter compact className="w-full min-w-0 justify-center overflow-hidden rounded-s-none" label={t('stubs.protocol')} options={protocolOptions} selected={selected.protocol ?? EMPTY_SET}
               onToggle={(v) => setSelected((s) => toggleSelection(s, 'protocol', v))} onClear={() => setSelected((s) => clearFacet(s, 'protocol'))} clearLabel={t('common.clear')} />
           </div>
         </div>

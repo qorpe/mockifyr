@@ -34,7 +34,7 @@ export function FacetFilter({
             className,
           )}
         >
-          <ListFilter className={compact ? 'size-3.5' : 'size-4'} />
+          <ListFilter className={compact ? 'size-3.5 shrink-0' : 'size-4 shrink-0'} />
           {label}
           {n > 0 && (
             <span className="rounded-md bg-primary px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-primary-foreground">{n}</span>
