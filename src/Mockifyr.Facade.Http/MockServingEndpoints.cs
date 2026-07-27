@@ -34,6 +34,21 @@ public static class MockServingEndpoints
         return endpoints;
     }
 
+    /// <summary>The presented sandbox credential: <c>X-Api-Key</c> (any casing) or a Bearer token.</summary>
+    private static string? PresentedApiKey(HttpContext context)
+    {
+        if (context.Request.Headers.TryGetValue("X-Api-Key", out var header) &&
+            header.FirstOrDefault() is { Length: > 0 } apiKey)
+        {
+            return apiKey;
+        }
+
+        var authorization = context.Request.Headers.Authorization.FirstOrDefault();
+        return authorization is not null && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? authorization["Bearer ".Length..].Trim()
+            : null;
+    }
+
     private static async Task ServeAsync(HttpContext context)
     {
         var request = await BuildRequestAsync(context);
@@ -53,9 +68,50 @@ public static class MockServingEndpoints
         }
 
         var engine = context.RequestServices.GetRequiredService<StubEngine>();
-        var tenant = context.Request.Headers.TryGetValue(TenantHeader, out var t) && !string.IsNullOrEmpty(t)
-            ? new TenantId(t!)
-            : TenantId.Default;
+
+        // Sandbox access (G19d, ADR 0011): with --sandbox-auth, a presented API key resolves the
+        // tenant AHEAD of the host/header chain — an extension of the ADR 0003 chain, not a parallel
+        // mechanism. No credentials presented → the legacy chain below; a presented-but-invalid key
+        // is an honest 401, never a silent fall-through to another tenant. gRPC/GraphQL/WS inherit
+        // this for free (same facade); SMTP keeps AUTH-as-tenant (ADR 0009).
+        TenantId? keyTenant = null;
+        var sandbox = context.RequestServices.GetRequiredService<SandboxAuthOptions>();
+        if (sandbox.Enabled && PresentedApiKey(context) is { } presented)
+        {
+            var keys = context.RequestServices.GetRequiredService<IApiKeyStore>();
+            var key = keys.GetAll().FirstOrDefault(k => ApiKeyMaterial.Verify(presented, k.Salt, k.Hash));
+            if (key is null)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            // Fixed-window quota (race-free; ADR 0011 addendum) with honest rate headers; the
+            // refusal is a realistic 429 with Retry-After.
+            var decision = context.RequestServices.GetRequiredService<FixedWindowRateLimiter>()
+                .Count(key.Id, key.QuotaPerHour);
+            if (decision.Limit > 0)
+            {
+                context.Response.Headers["X-RateLimit-Limit"] = decision.Limit.ToString();
+                context.Response.Headers["X-RateLimit-Remaining"] = decision.Remaining.ToString();
+                context.Response.Headers["X-RateLimit-Reset"] = decision.ResetAt.ToUnixTimeSeconds().ToString();
+            }
+
+            if (!decision.Allowed)
+            {
+                context.Response.Headers.RetryAfter =
+                    Math.Max(1, (int)(decision.ResetAt - DateTimeOffset.UtcNow).TotalSeconds).ToString();
+                context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                return;
+            }
+
+            keyTenant = key.Tenant;
+        }
+
+        var tenant = keyTenant
+            ?? (context.Request.Headers.TryGetValue(TenantHeader, out var t) && !string.IsNullOrEmpty(t)
+                ? new TenantId(t!)
+                : TenantId.Default);
 
         var resolution = engine.Handle(tenant, request);
 

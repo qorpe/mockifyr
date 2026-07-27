@@ -573,3 +573,69 @@ public sealed class ImportOpenApiHandler(IStubStore store, IMatcherRegistry matc
         return ValueTask.FromResult<Result<int>>(stubs.Count);
     }
 }
+
+// ---- Sandbox access (G19d, ADR 0011) -----------------------------------------------------------
+
+/// <summary>
+/// Issues a key: 256-bit CSPRNG token, salted hash stored, token returned EXACTLY once. The name
+/// is a display label (bounded); the quota, when present, must be positive.
+/// </summary>
+public sealed class IssueApiKeyHandler(IApiKeyStore store, IApiKeyPersistence persistence)
+    : ICommandHandler<IssueApiKeyCommand, Result<IssuedApiKey>>
+{
+    public ValueTask<Result<IssuedApiKey>> Handle(IssueApiKeyCommand command, CancellationToken cancellationToken)
+    {
+        var name = command.Name.Trim();
+        if (name.Length is 0 or > 64 || name.Any(char.IsControl))
+        {
+            return ValueTask.FromResult<Result<IssuedApiKey>>(Error.Validation(
+                "ApiKey.InvalidName", "A key name must be 1..64 characters with no control characters."));
+        }
+
+        if (command.QuotaPerHour is <= 0)
+        {
+            return ValueTask.FromResult<Result<IssuedApiKey>>(Error.Validation(
+                "ApiKey.InvalidQuota", "A quota must be a positive number of requests per hour."));
+        }
+
+        var (token, salt, hash) = ApiKeyMaterial.Generate();
+        var key = new ApiKey(
+            Guid.NewGuid().ToString("D"), command.Tenant, name, salt, hash,
+            ApiKeyMaterial.DisplayPrefix(token), DateTimeOffset.UtcNow, command.QuotaPerHour);
+
+        store.Put(key);
+        persistence.Save(key);
+        return ValueTask.FromResult<Result<IssuedApiKey>>(new IssuedApiKey(key, token));
+    }
+}
+
+/// <summary>Lists the tenant's keys with their current-window usage.</summary>
+public sealed class GetApiKeysHandler(IApiKeyStore store, FixedWindowRateLimiter limiter)
+    : IQueryHandler<GetApiKeysQuery, Result<IReadOnlyList<ApiKeyWithUsage>>>
+{
+    public ValueTask<Result<IReadOnlyList<ApiKeyWithUsage>>> Handle(GetApiKeysQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success<IReadOnlyList<ApiKeyWithUsage>>(
+            [.. store.GetKeys(query.Tenant).Select(key => new ApiKeyWithUsage(key, limiter.Used(key.Id)))]));
+}
+
+/// <summary>
+/// Revokes a key. Tenant-checked: one tenant can never revoke another's credential, and a
+/// cross-tenant id answers the same 404 as an unknown one (no existence oracle).
+/// </summary>
+public sealed class RevokeApiKeyHandler(IApiKeyStore store, IApiKeyPersistence persistence)
+    : ICommandHandler<RevokeApiKeyCommand, Result>
+{
+    public ValueTask<Result> Handle(RevokeApiKeyCommand command, CancellationToken cancellationToken)
+    {
+        var key = store.Get(command.Id);
+        if (key is null || key.Tenant != command.Tenant)
+        {
+            return ValueTask.FromResult(Result.Failure(Error.NotFound(
+                "ApiKey.NotFound", $"No API key '{command.Id}'.")));
+        }
+
+        store.Remove(command.Id);
+        persistence.Remove(command.Id);
+        return ValueTask.FromResult(Result.Success());
+    }
+}

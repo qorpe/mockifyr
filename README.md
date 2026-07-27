@@ -118,6 +118,7 @@ The common flags, with the [full reference](https://mockifyr.omercelik.dev/cli/)
 | `--message-limit <n>` | per-tenant message inbox bound (default 1000, oldest evicted first) |
 | `--resource-limit <n>` | per-collection sandbox document bound (default 1000, oldest evicted first) |
 | `--resource-max-body <bytes>` | per-document body cap for `/__admin/resources` (default 1 MiB; 413 beyond it) |
+| `--sandbox-auth` | sandbox API keys (`/__admin/apikeys`): `mfk_…` tokens select the tenant via `X-Api-Key`/Bearer, with optional per-key hourly quotas (`429` + rate headers) |
 | `--dashboard <dir>` | serve the built dashboard under `/__mockifyr` |
 | `--admin-user <u>` · `--admin-pass <p>` | require HTTP Basic auth on the admin API (`/__admin/*`); the dashboard shows a login screen |
 | `--postgres <connstr>` · `--redis <connstr>` · `--litedb <path>` | durable persistence backend |

@@ -101,6 +101,11 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IEnvironmentPersistence>(new FileSystemEnvironmentPersistence(environmentsDir));
             builder.Services.AddSingleton<IEnvironmentsLoader>(new FileSystemEnvironmentsLoader(environmentsDir));
 
+            // API keys persist alongside (G19d, ADR 0011 addendum): a credential that vanishes on
+            // redeploy is not a credential. Host-level directory — the key selects the tenant.
+            var apiKeysDir = Path.Combine(rootDir, "apikeys");
+            builder.Services.AddSingleton<IApiKeyPersistence>(new FileSystemApiKeyPersistence(apiKeysDir));
+
             // gRPC serving (G13, verified by the differential suite): compiled proto descriptors live in
             // the conventional <root-dir>/grpc/*.dsc location. The index is registered even when the
             // directory is empty (G18-pre): the admin descriptor endpoints can then hot-load a first
@@ -132,6 +137,13 @@ public static class MockifyrHost
         if (int.TryParse(builder.Configuration["message-limit"], out var messageLimit))
         {
             builder.Services.AddSingleton<IMessageStore>(new InMemoryMessageStore(messageLimit));
+        }
+
+        // Sandbox access (G19d, ADR 0011): --sandbox-auth turns on key-based tenant resolution
+        // ahead of the host/header chain. Off by default — zero behavior change without the flag.
+        if (builder.Configuration.GetValue<bool>("sandbox-auth"))
+        {
+            builder.Services.AddSingleton(new SandboxAuthOptions(Enabled: true));
         }
 
         // Sandbox resources (G19a, ADR 0011 addendum): both caps are flag-tunable — the
@@ -232,6 +244,8 @@ public static class MockifyrHost
                 new LiteDbEnvironmentPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
             builder.Services.AddSingleton<IEnvironmentsLoader>(sp =>
                 new LiteDbEnvironmentsLoader(sp.GetRequiredService<LiteDB.LiteDatabase>()));
+            builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
+                new LiteDbApiKeyPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
         }
 
         // PostgreSQL persistence (G16c): stubs persist to a SQL table and reload on startup.
@@ -243,6 +257,7 @@ public static class MockifyrHost
                 new PostgresMappingsLoader(postgres, sp.GetRequiredService<IMatcherRegistry>()));
             builder.Services.AddSingleton<IEnvironmentPersistence>(new PostgresEnvironmentPersistence(postgres));
             builder.Services.AddSingleton<IEnvironmentsLoader>(new PostgresEnvironmentsLoader(postgres));
+            builder.Services.AddSingleton<IApiKeyPersistence>(new PostgresApiKeyPersistence(postgres));
 
             // Change-feed reload (G16f): opt-in multi-instance coherence via Postgres LISTEN/NOTIFY —
             // the same seam as Redis (G16e). Each host listens for change announcements and reconciles
@@ -270,6 +285,8 @@ public static class MockifyrHost
                 new RedisEnvironmentPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
             builder.Services.AddSingleton<IEnvironmentsLoader>(sp =>
                 new RedisEnvironmentsLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+            builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
+                new RedisApiKeyPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
 
             // Change-feed reload (G16e): opt-in multi-instance coherence. Each host subscribes to Redis
             // change announcements and reloads its in-memory store, so a mutation on one instance is
@@ -401,6 +418,7 @@ public static class MockifyrHost
 
         ApplyStartupMappings(app);
         ApplyStartupEnvironments(app);
+        ApplyStartupApiKeys(app);
         return app;
     }
 
@@ -421,6 +439,16 @@ public static class MockifyrHost
                     store.Put(tenant, key);
                 }
             }
+        }
+    }
+
+    /// <summary>Rehydrates persisted API keys (G19d) — issued credentials survive restarts.</summary>
+    private static void ApplyStartupApiKeys(WebApplication app)
+    {
+        var store = app.Services.GetRequiredService<IApiKeyStore>();
+        foreach (var key in app.Services.GetRequiredService<IApiKeyPersistence>().LoadAll())
+        {
+            store.Put(key);
         }
     }
 

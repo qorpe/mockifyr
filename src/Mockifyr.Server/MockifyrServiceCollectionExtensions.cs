@@ -47,6 +47,10 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IResourceStore, InMemoryResourceStore>();
         services.AddSingleton<IResourceIdGenerator, GuidResourceIdGenerator>();
         services.AddSingleton(new ResourceOptions());
+        services.AddSingleton<IApiKeyStore, InMemoryApiKeyStore>();
+        services.AddSingleton<IApiKeyPersistence, NullApiKeyPersistence>();
+        services.AddSingleton<FixedWindowRateLimiter>();
+        services.AddSingleton(new SandboxAuthOptions());
         services.AddSingleton<IMessageBehaviorStore, InMemoryMessageBehaviorStore>();
         services.AddSingleton<IMessageSink>(sp => new StoreMessageSink(sp.GetRequiredService<IMessageStore>()));
 

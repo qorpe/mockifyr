@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mockifyr.Server\Mockifyr.Server.csproj" />
     <!-- Direct references (already transitive via Server) so Stryker can target these assemblies. -->
+    <ProjectReference Include="..\..\src\Mockifyr.Core\Mockifyr.Core.csproj" />
     <ProjectReference Include="..\..\src\Mockifyr.Application\Mockifyr.Application.csproj" />
     <ProjectReference Include="..\..\src\Mockifyr.Adapters.MappingJson\Mockifyr.Adapters.MappingJson.csproj" />
     <ProjectReference Include="..\..\src\Mockifyr.Outbound\Mockifyr.Outbound.csproj" />

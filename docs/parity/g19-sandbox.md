@@ -135,3 +135,59 @@ The pre-existing differential suites pass untouched — the parity surface did n
 
 **Deferred (tracked).** GraphQL SDL / AsyncAPI import; OpenAPI *export* of authored stubs;
 `examples` (multi-example) rotation; request-body-aware matchers from `requestBody` schemas.
+
+---
+
+## G19d — Sandbox access: API keys + quotas
+
+**What shipped.** Opt-in `--sandbox-auth`: `mfk_`-prefixed 256-bit CSPRNG tokens issued once via
+`POST /__admin/apikeys` (the response is the only time the token exists — only a 12-char display
+prefix survives), stored as salted SHA-256 (`base64(SHA256(salt + "\n" + token))`, verified with
+`CryptographicOperations.FixedTimeEquals`), tenant-scoped listing (`usedThisHour` joined from the
+limiter) and tenant-checked revocation. A presented key (`X-Api-Key` or `Bearer`) resolves the
+tenant AHEAD of the ADR 0003 host/header chain; no credential falls through to the legacy chain,
+an invalid credential is an honest 401 — never a silent cross-tenant fall-through. Optional
+per-key hourly quota: fixed-window, exact under a lock, `X-RateLimit-Limit/Remaining/Reset` on
+counted responses and `Retry-After` on the realistic 429. Keys persist through the G16 seam
+(FileSystem `<root-dir>/apikeys/`, LiteDB `apikeys`, Postgres `apikeys` table, Redis
+`mockifyr:apikeys` hash) and rehydrate at startup.
+
+**Decisions worth remembering.**
+
+- **Salted SHA-256, not a KDF** — deliberate: the secret is a 256-bit random token (not a human
+  password), so brute-force is information-theoretically hopeless and a KDF would only tax the
+  serve hot path. The salt still provides per-key domain separation; the `"\n"` separator in the
+  preimage is load-bearing (without it `("ab","c")` and `("a","bc")` would collide) and is pinned
+  by a format-contract test because persisted hashes must verify across versions.
+- **A sandbox key never reaches `/__admin/*`** (addendum): the admin surface only ever accepts its
+  own Basic auth; both `Bearer mfk_…` and `X-Api-Key` are refused with 401. Data-plane and
+  control-plane credentials never blur.
+- **Quota ≤ 0 means unlimited**, never an instantly-exhausted key; unlimited keys emit no rate
+  headers (`Limit 0` suppresses them).
+- **Usage counters are in-memory by design** — the credential persists, the hourly counter resets
+  on restart (documented, not accidental).
+- **Stryker survivor (equivalent, 28/29 killed):** `DisplayPrefix`'s `token.Length <=
+  DisplayPrefixLength` mutated to `<` — when the length is exactly 12, `token[..12]` IS the token,
+  so both branches return the same string; no observable difference exists. The 6 CompileErrors
+  are impossible mutants (string `-` operator; tuple member `.Count` "mutated" to LINQ `.Sum`).
+  The out-var-in-compound-condition restructure (the EnvironmentJsonReader lesson) was applied to
+  the limiter so its condition mutants compile and are genuinely tested.
+
+**Validation story.** No oracle exists (WireMock has no sandbox-key concept), so per the G18
+precedent: `G19dApiKeyTests` (10 unit tests — token shape/uniqueness, constant-time verify incl.
+wrong-salt, the pinned hash format, exact window boundaries with a `TimeProvider` test clock,
+window rollover invisible to `Used()` before the next request, 8×50 parallel requests against a
+budget of 100 admitting exactly 100, FileSystem + LiteDB round-trips incl. garbage skip) and
+`G19dSandboxAccessTests` (5 wire self-tests against a REAL `MockifyrHost.Build` host with
+`--sandbox-auth` + admin Basic + `--root-dir`: key-ahead-of-chain with provable tenant isolation
+and key-wins-over-contradicting-header, legacy chain untouched without credentials + garbled-key
+401 + tenant-checked revoke (cross-tenant delete is 404, no existence oracle) + revoked-key 401,
+admin refusing sandbox keys on both carriers + listing exposing prefix but never token/salt/hash,
+sequential rate headers then 60 parallel requests across a quota of 40 yielding exactly 39 more
+200s / 21 429s + `Retry-After` + `usedThisHour=40`, and issued keys surviving a full host
+restart). Discovered while testing: per-tenant stubs on the FILE backend are not rehydrated on
+restart (`DirectoryMappingsLoader` only reads the top level for the default tenant) — a
+pre-existing G16 edge, tracked separately, out of this vertical's scope.
+
+**Deferred (tracked).** Key expiry (`expiresAt`) and rotation; per-key scopes (read-only keys);
+quota windows other than hourly; usage counters surviving restarts; per-key scenario isolation.
