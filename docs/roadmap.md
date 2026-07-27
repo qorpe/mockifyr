@@ -452,6 +452,15 @@ is now end-to-end: engine + platform + dashboard.
   are refused (`Environment.ReservedKey`). No WireMock oracle exists for this, so it is validated by
   unit + behavioral self-tests and a 26-check end-to-end script including a restart; see
   `docs/parity/g17-environments.md` and ADR 0008. `dotnet`/`pnpm` green; verified in-browser.
+- [x] **G17b — Environments ride in export/import bundles** (#198). The dashboard export switches to
+  the `{"mappings":[…]}` wrapper when the tenant has environments and adds a sibling `environments`
+  section (keys, values, active selection — `resolved` stays out, it is computed); the import path
+  (`POST /__admin/mappings/import`, and therefore the UI import tab) restores that section before
+  loading the mappings, through the same validation as the admin PUT. Overwrite-by-key semantics;
+  invalid entries are skipped without failing the import; bare-array and section-less exports import
+  unchanged. `EnvironmentJsonReader` mutation-tested to **100 %** (37/37 killed); behavioral
+  self-tests in `G17EnvironmentExportImportTests` (no oracle — WireMock has no environments).
+  Verified in-browser end-to-end (export file inspected, import restores the Environments page).
 
 ## G18 — Message mocking: email + SMS (ADR 0009, ADR 0010)
 

@@ -83,20 +83,42 @@ public sealed class DeleteStubHandler(IStubStore store, IStubPersistence persist
     }
 }
 
-/// <summary>Imports one stub or a bundle of them, returning how many were loaded.</summary>
-public sealed class ImportMappingsHandler(IStubStore store, IMatcherRegistry matchers, IStubPersistence persistence)
+/// <summary>
+/// Imports one stub or a bundle of them, returning how many were loaded. A bundle wrapper may carry
+/// an <c>environments</c> section (issue #198) — those keys are restored first, so the imported
+/// stubs' <c>{{key}}</c> references resolve from the same bundle. Each imported key goes through the
+/// same validation as the admin PUT and <b>replaces</b> an existing key of the same name (an import
+/// restores the exported state); an entry that fails validation is skipped without failing the
+/// import — the mappings, which never depend on it having been stored, still load.
+/// </summary>
+public sealed class ImportMappingsHandler(
+    IStubStore store, IMatcherRegistry matchers, IStubPersistence persistence,
+    IEnvironmentStore environments, IEnvironmentPersistence environmentPersistence)
     : ICommandHandler<ImportMappingsCommand, Result<int>>
 {
     public ValueTask<Result<int>> Handle(ImportMappingsCommand command, CancellationToken cancellationToken)
     {
         IReadOnlyList<(StubMapping Stub, string Source)> stubs;
+        IReadOnlyList<EnvironmentKey> importedKeys;
         try
         {
             stubs = MappingJsonReader.ReadWithSource(command.MappingJson, command.Tenant, matchers);
+            importedKeys = EnvironmentJsonReader.Read(command.MappingJson);
         }
         catch (JsonException)
         {
             return ValueTask.FromResult<Result<int>>(Error.Validation("Mappings.Invalid", "The mappings JSON is malformed."));
+        }
+
+        foreach (var key in importedKeys)
+        {
+            if (EnvironmentKeyRules.Validate(key) is not null)
+            {
+                continue;
+            }
+
+            environments.Put(command.Tenant, key);
+            environmentPersistence.Save(command.Tenant, key);
         }
 
         foreach (var (stub, source) in stubs)
@@ -261,43 +283,56 @@ public sealed class PutEnvironmentKeyHandler(IEnvironmentStore store, IEnvironme
 {
     public ValueTask<Result> Handle(PutEnvironmentKeyCommand command, CancellationToken cancellationToken)
     {
-        var key = command.Key;
+        if (EnvironmentKeyRules.Validate(command.Key) is { } error)
+        {
+            return ValueTask.FromResult(Result.Failure(error));
+        }
 
+        store.Put(command.Tenant, command.Key);
+        persistence.Save(command.Tenant, command.Key);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
+/// <summary>
+/// The single definition of what makes an environment key storable, shared by the admin PUT and the
+/// bundle import (#198) so an imported key can never bypass a rule the editor enforces.
+/// </summary>
+internal static class EnvironmentKeyRules
+{
+    public static Error? Validate(EnvironmentKey key)
+    {
         if (!ReservedEnvironmentKeys.IsWellFormed(key.Key))
         {
-            return ValueTask.FromResult(Result.Failure(Error.Validation(
+            return Error.Validation(
                 "Environment.InvalidKey",
-                "A key must start with a letter or underscore and contain only letters, digits, underscores or hyphens.")));
+                "A key must start with a letter or underscore and contain only letters, digits, underscores or hyphens.");
         }
 
         if (ReservedEnvironmentKeys.IsReserved(key.Key))
         {
-            return ValueTask.FromResult(Result.Failure(Error.Validation(
+            return Error.Validation(
                 "Environment.ReservedKey",
-                $"'{key.Key}' is a built-in templating helper; a key of that name would shadow it in every stub.")));
+                $"'{key.Key}' is a built-in templating helper; a key of that name would shadow it in every stub.");
         }
 
         if (key.Values.Count == 0)
         {
-            return ValueTask.FromResult(Result.Failure(Error.Validation(
-                "Environment.NoValues", "A key must define at least one value.")));
+            return Error.Validation("Environment.NoValues", "A key must define at least one value.");
         }
 
         if (key.Values.Select(v => v.Name).Distinct(StringComparer.Ordinal).Count() != key.Values.Count)
         {
-            return ValueTask.FromResult(Result.Failure(Error.Validation(
-                "Environment.DuplicateValue", "Value names must be unique within a key.")));
+            return Error.Validation("Environment.DuplicateValue", "Value names must be unique within a key.");
         }
 
         if (key.Resolve() is null)
         {
-            return ValueTask.FromResult(Result.Failure(Error.Validation(
-                "Environment.UnknownActiveValue", $"'{key.ActiveValue}' does not name any of the key's values.")));
+            return Error.Validation(
+                "Environment.UnknownActiveValue", $"'{key.ActiveValue}' does not name any of the key's values.");
         }
 
-        store.Put(command.Tenant, key);
-        persistence.Save(command.Tenant, key);
-        return ValueTask.FromResult(Result.Success());
+        return null;
     }
 }
 

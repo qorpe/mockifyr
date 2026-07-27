@@ -205,7 +205,8 @@ gRPC (G13 — unary, codec incl. enum/map/repeated/oneof/wrappers, error status,
 GraphQL (G14 — query/variables/operationName matching + response templating); message-based extras
 (G15 — Faker, JWT, multi-domain host/port/scheme, WebSocket message serving); persistence
 (G16 — FileBased/LiteDB/Postgres/Redis + change-feed reload); and environments (G17 — tenant-scoped
-`{{key}}` config resolved at serve time, across all four persistence providers). Correctness is proven **differentially
+`{{key}}` config resolved at serve time, across all four persistence providers; since #198 they also
+ride along in export/import bundles). Correctness is proven **differentially
 against the Java WireMock oracle** except where no stable oracle exists — racy helpers (Faker/JWT/
 random/`now`) use structural/content validation, and WebSocket (WireMock beta) uses a self-test —
 each such case is stated in `docs/parity/`. **G18 — message mocking (ADR 0009/0010)** is complete:

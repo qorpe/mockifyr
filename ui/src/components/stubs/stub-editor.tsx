@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
@@ -88,6 +88,7 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
 }) {
   const { t } = useTranslation()
   const { tenant } = useUi()
+  const queryClient = useQueryClient()
   // The tenant's keys, for the live preview only. Same query key as the environments page, so an
   // edit there is reflected here without a reload.
   const { data: environmentData } = useQuery({
@@ -160,6 +161,9 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
     const isBundle = !editing && (Array.isArray(parsed) || (typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as { mappings?: unknown }).mappings)))
     setSaving(true)
     const { mock } = isBundle ? await importMappings(tenant, json) : await saveStub(tenant, json, editing?.id)
+    // A bundle may have carried an environments section (#198) — drop the cached keys so the
+    // Environments page and the {{key}} previews pick up what the import just restored.
+    if (isBundle && !mock) void queryClient.invalidateQueries({ queryKey: ['environments', tenant] })
     setSaving(false)
     toast[mock ? 'message' : 'success'](mock ? t('editor.savedSample') : t('editor.saved'))
     initialJson.current = json
