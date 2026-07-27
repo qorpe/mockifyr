@@ -554,11 +554,16 @@ each item's definition of done, not follow-ups.
   handler + 7 wire tests; **Stryker 100 %** on `ResourceRules` (24/24) and
   `InMemoryResourceStore` (24/24); differential suites untouched and green. See
   `docs/parity/g19-sandbox.md`.
-- [ ] **G19b — State directive + templating.** Opt-in `state` directive on stub responses
-  (create/read/update/delete/list on a named collection; facade-applied after matching, engine
-  untouched); operation result exposed as `{{state.*}}` to the G2 template context; unknown-id
-  misses short-circuit to a configurable status (default 404). Self-test: a real `HttpClient`
-  drives POST→GET→PUT→LIST→DELETE end-to-end; Stryker mutation testing on the directive logic.
+- [x] **G19b — State directive + templating.** Opt-in `state` directive on stub responses
+  (create/read/update/delete/list on a named collection; applied by the templating renderer —
+  the engine keeps calling the same `IResponseRenderer` seam, untouched); operation result exposed
+  as `{{state.id|body|version|count|list}}`; `id`/`document` are templates over the request with
+  generator/request-body defaults; unknown-id misses short-circuit to a configurable status
+  (default 404), and the serve-time guards reuse `ResourceGuards` (413 over the cap, 422 non-JSON/
+  unknown operation). Declaring the directive is the templating opt-in. Self-tested end-to-end
+  over the wire (POST→GET→PUT→LIST→DELETE incl. admin-surface agreement, tenant isolation, and a
+  zero-change proof); **Stryker 100 %** on `StateDirectiveApplier` (44/44). See
+  `docs/parity/g19-sandbox.md`.
 - [ ] **G19c — OpenAPI import.** `Mockifyr.Adapters.OpenApi` (Microsoft.OpenApi, MIT, edge-only):
   OpenAPI 3.0/3.1 → ordinary mappings (paths→`urlPathTemplate`, examples→responses, example-less
   schemas→Faker-backed synthesis), optional stateful CRUD emission wiring G19b for

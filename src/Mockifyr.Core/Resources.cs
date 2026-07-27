@@ -45,6 +45,45 @@ public sealed record ResourceOptions(int MaxBodyBytes = ResourceOptions.DefaultM
 }
 
 /// <summary>
+/// The <c>state</c> response directive (G19b, ADR 0011): a sibling of delay/fault that turns a
+/// matched stub into a sandbox CRUD operation. Pure data — the engine never interprets it; the
+/// templating renderer applies it at serve time. <see cref="Id"/> and <see cref="Document"/> are
+/// template expressions rendered against the request (path segments, body, query); an absent
+/// create id comes from <see cref="IResourceIdGenerator"/>, an absent document is the request body.
+/// </summary>
+public sealed record StateDirective(
+    string Operation,
+    string Collection,
+    string? Id = null,
+    string? Document = null,
+    int MissStatus = 404);
+
+/// <summary>
+/// The body checks shared by the admin PUT path and the serve-time state directive — one
+/// definition, two edges (ADR 0011 addendum). BCL-only so Core stays dependency-free.
+/// </summary>
+public static class ResourceGuards
+{
+    /// <summary>Whether the body parses as JSON — resources are JSON documents by contract.</summary>
+    public static bool IsWellFormedJson(string body)
+    {
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(body);
+            return true;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Whether the body's UTF-8 size exceeds the configured cap.</summary>
+    public static bool ExceedsCap(string body, int maxBytes) =>
+        System.Text.Encoding.UTF8.GetByteCount(body) > maxBytes;
+}
+
+/// <summary>
 /// Tenant- and collection-scoped sandbox document store (G19a, ADR 0011). Every entry point takes
 /// the <see cref="TenantId"/> — there is no tenant-less overload (CLAUDE.md §2.6). Bounded per
 /// collection: beyond capacity the oldest document is evicted first. Updates are last-write-wins

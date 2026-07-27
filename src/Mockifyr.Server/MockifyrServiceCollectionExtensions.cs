@@ -75,7 +75,10 @@ public static class MockifyrServiceCollectionExtensions
         // The renderer gets the user's template helpers (G10).
         services.AddSingleton<IResponseRenderer>(sp => new TemplatingResponseRenderer(
             extensions.TemplateHelpers,
-            environments: sp.GetRequiredService<IEnvironmentResolver>()));
+            environments: sp.GetRequiredService<IEnvironmentResolver>(),
+            resources: sp.GetRequiredService<IResourceStore>(),
+            resourceIds: sp.GetRequiredService<IResourceIdGenerator>(),
+            resourceOptions: sp.GetRequiredService<ResourceOptions>()));
 
         // Serve-event listeners: the built-in webhook plus any user extensions.
         services.AddSingleton<IServeEventTemplateRenderer>(sp =>

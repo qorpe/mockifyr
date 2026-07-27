@@ -248,6 +248,9 @@ public sealed record ResponseDefinition
 
     /// <summary>Optional proxy directive: forward the request to an upstream and return its response.</summary>
     public ProxyDirective? Proxy { get; init; }
+
+    /// <summary>Optional sandbox state directive (G19b — applied by the templating renderer, never the engine).</summary>
+    public StateDirective? State { get; init; }
 }
 
 /// <summary>A single stub: a request pattern paired with a response definition.</summary>

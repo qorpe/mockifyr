@@ -780,7 +780,32 @@ public static class MappingJsonReader
             DelayDistribution = ReadDelayDistribution(response),
             Fault = ReadFault(response),
             Proxy = ReadProxy(response),
+            State = ReadState(response),
         };
+    }
+
+    /// <summary>
+    /// Reads the Mockifyr-only <c>state</c> directive (G19b, ADR 0011): a sandbox CRUD operation on
+    /// a named collection. <c>id</c>/<c>document</c> stay raw template text — they render at serve
+    /// time against the request. The field does not exist in the reference dialect, so its absence
+    /// leaves the parity surface untouched.
+    /// </summary>
+    private static StateDirective? ReadState(JsonElement response)
+    {
+        if (response.ValueKind != JsonValueKind.Object ||
+            !response.TryGetProperty("state", out var state) || state.ValueKind != JsonValueKind.Object ||
+            !state.TryGetProperty("operation", out var operation) || operation.ValueKind != JsonValueKind.String ||
+            !state.TryGetProperty("collection", out var collection) || collection.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return new StateDirective(
+            operation.GetString()!,
+            collection.GetString()!,
+            Id: state.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null,
+            Document: state.TryGetProperty("document", out var doc) && doc.ValueKind == JsonValueKind.String ? doc.GetString() : null,
+            MissStatus: state.TryGetProperty("missStatus", out var miss) && miss.TryGetInt32(out var missStatus) ? missStatus : 404);
     }
 
     /// <summary>Reads a <c>uniform</c> <c>delayDistribution</c>; lognormal is deferred (racy to test).</summary>

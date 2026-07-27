@@ -47,3 +47,43 @@ differential suite green throughout (201 tests, none touched).
 **Deferred (tracked).** Durable resource persistence via the G16 seam (in-memory-first is the ADR
 0011 decision — resources are test data; the G19d key store is the one that must persist);
 conditional updates; per-key scenario isolation (G19d+).
+
+## G19b — State directive + templating
+
+**What shipped.** The opt-in `state` response directive: `{"operation":"create|read|update|delete|
+list","collection":…,"id":…,"document":…,"missStatus":…}` on a stub response turns a match into a
+sandbox CRUD operation, with the result exposed to templating as `{{state.id}}`, `{{state.body}}`,
+`{{state.version}}`, `{{state.count}}`, `{{state.list}}`. `id`/`document` are template expressions
+rendered against the request; an absent create id comes from `IResourceIdGenerator`, an absent
+document is the request body verbatim.
+
+**Decisions worth remembering.**
+
+- **The engine never sees state.** `StateDirective` is pure data on `ResponseDefinition` (a sibling
+  of delay/fault); the *templating renderer* applies it — the engine keeps calling the same
+  `IResponseRenderer` seam. `StaticResponseRenderer` ignores it by design (state needs templating).
+- **Declaring the directive IS the templating opt-in** — no separate `response-template`
+  transformer needed; without it `{{state.*}}` could never render.
+- **Misses short-circuit like a real API**: read/update/delete on an unknown (or unrendered) id
+  answers the configurable `missStatus` (default 404) with an empty body — no template renders
+  over nothing, and no store lookup happens for a blank id.
+- **The serve-time guards reuse `ResourceGuards`** (one definition with the admin path): an over-cap
+  document is 413, non-JSON is 422, and an unknown operation or malformed collection name is 422 —
+  nothing half-lands.
+- **Handlebars syntax edge**: `{{state.body}}}` (a JSON object closing right after the expression)
+  breaks the Handlebars parser (triple-stache). Put a space before the closing brace —
+  `{{state.body}} }` — same as any Handlebars-in-JSON template.
+- **The admin surface and the serve path share the store** — a document created by a stub is
+  immediately visible under `/__admin/resources`, and vice versa.
+
+**Validation story.** `G19bStateDirectiveTests` (wire, real `HttpClient`): the full loop
+POST→GET→PUT→LIST→DELETE against authored stubs, generated-id capture, admin-surface agreement,
+configurable miss status, tenant isolation of state, serve-time 413/422, and a state-free stub
+proving zero behavior change. `G19bStateApplierTests` (12 unit tests): the per-operation semantics
+table, boundaries, dispatch case-insensitivity, and the no-id-no-lookup contract via a probe
+store. **Stryker: 100 %** on `StateDirectiveApplier` (44/44); `ResourceRules` re-verified at 100 %
+after adopting the shared `ResourceGuards`. The pre-existing differential suites pass untouched —
+the parity surface did not move.
+
+**Deferred (tracked).** Query/filter parameters on `list`; `{{state.*}}` in webhook templates;
+per-key scenario isolation (G19d+).

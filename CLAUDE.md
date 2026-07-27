@@ -218,6 +218,8 @@ verify/OTP (`/__admin/messages/otp`, `matches` regex filter) — validated by re
 (MailKit, official Twilio SDK) plus Stryker mutation testing (100% on the message logic), no oracle
 existing for message channels (`docs/parity/g18-messages.md`). **G19 — integration sandbox (ADR
 0011)** is underway: G19a (tenant/collection-scoped resource store + `/__admin/resources` with
-pagination, seed import and size caps; `--resource-limit`/`--resource-max-body`) is complete under
-the ADR's enterprise-readiness addendum (`docs/parity/g19-sandbox.md`); G19b–e are next. Remaining
+pagination, seed import and size caps; `--resource-limit`/`--resource-max-body`) and G19b (the
+`state` response directive — sandbox CRUD with `{{state.*}}` templating, applied by the renderer)
+are complete under the ADR's enterprise-readiness addendum (`docs/parity/g19-sandbox.md`); G19c–e
+are next. Remaining
 work is documented **deferred edges** (per group in `docs/parity/`). Builds clean (0 warnings).
