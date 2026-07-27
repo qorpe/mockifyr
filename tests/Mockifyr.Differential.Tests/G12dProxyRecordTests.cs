@@ -208,6 +208,80 @@ public sealed class G12dProxyRecordTests : IAsyncLifetime
         Assert.True(failures.Count == 0, $"{failures.Count} record-matched divergence(s):\n{string.Join("\n", failures)}");
     }
 
+    [Fact]
+    public async Task Recording_AGzippedUpstreamResponse_GeneratesAReplayableStub()
+    {
+        using var oracleClient = _oracle.CreateAdminClient();
+        using var mockifyrClient = _mockifyr.CreateClient();
+        var failures = new List<string>();
+
+        // The /gzip/* upstream path answers gzip-compressed with a Content-Encoding header — like a
+        // real API compressing large payloads (how this surfaced: recording jsonplaceholder from a
+        // browser baked raw gzip bytes into the generated stub body as mojibake).
+        await StartRecordingAsync(oracleClient, $"http://host.docker.internal:{_upstream.Port}");
+        await StartRecordingAsync(mockifyrClient, $"http://127.0.0.1:{_upstream.Port}");
+
+        var request = new RequestSpec { Method = "GET", Url = "/gzip/data" };
+        var oracleLive = await DriveAsync(oracleClient, request);
+        var mockifyrLive = await DriveAsync(mockifyrClient, request);
+
+        // While recording, the compressed exchange passes through to the caller on both sides.
+        if (Payload(oracleLive) != Payload(mockifyrLive))
+        {
+            failures.Add($"live payload diverges: oracle=\"{Payload(oracleLive)}\" mockifyr=\"{Payload(mockifyrLive)}\"");
+        }
+
+        var oracleBundle = await StopRecordingAsync(oracleClient);
+        var mockifyrBundle = await StopRecordingAsync(mockifyrClient);
+
+        // Each side replays its own generated stub; the client-visible payload must match the
+        // upstream's original text on both sides — a stub that baked in raw gzip bytes cannot.
+        await LoadStubAsync(oracleClient, oracleBundle);
+        await LoadStubAsync(mockifyrClient, mockifyrBundle);
+        var oracleReplay = await DriveAsync(oracleClient, request);
+        var mockifyrReplay = await DriveAsync(mockifyrClient, request);
+
+        foreach (var (name, replay) in new[] { ("oracle", oracleReplay), ("mockifyr", mockifyrReplay) })
+        {
+            if (!Payload(replay).Contains("\"from\":\"upstream\""))
+            {
+                failures.Add($"{name} replay payload is not the upstream text: \"{Payload(replay)}\"");
+            }
+        }
+
+        if (oracleReplay.Status != mockifyrReplay.Status || Payload(oracleReplay) != Payload(mockifyrReplay))
+        {
+            failures.Add($"replay diverges: oracle={oracleReplay.Status}/\"{Payload(oracleReplay)}\" " +
+                $"mockifyr={mockifyrReplay.Status}/\"{Payload(mockifyrReplay)}\"");
+        }
+
+        Assert.True(failures.Count == 0, $"{failures.Count} gzip-record divergence(s):\n{string.Join("\n", failures)}");
+    }
+
+    /// <summary>The client-visible payload text: gunzips when the response declares gzip encoding.</summary>
+    private static string Payload(WireResult result)
+    {
+        if (!result.Headers.TryGetValue("Content-Encoding", out var encoding) ||
+            !encoding.Contains("gzip", StringComparison.OrdinalIgnoreCase))
+        {
+            return Text(result.Body);
+        }
+
+        try
+        {
+            using var source = new MemoryStream(result.Body);
+            using var gzip = new System.IO.Compression.GZipStream(source, System.IO.Compression.CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            gzip.CopyTo(output);
+            return Encoding.UTF8.GetString(output.ToArray());
+        }
+        catch (InvalidDataException)
+        {
+            // Declared gzip but the bytes no longer decompress — the corruption this test exists for.
+            return $"<invalid-gzip:{result.Body.Length} bytes>";
+        }
+    }
+
     private static async Task LoadStubAsync(HttpClient client, string stubOrBundleJson)
     {
         await client.PostAsync("/__admin/mappings/reset", content: null);
