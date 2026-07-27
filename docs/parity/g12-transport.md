@@ -103,6 +103,13 @@ behaviors deferred throughout the roadmap are finally implemented and validated.
   `{"mappings":[…]}` envelope. The recorder *logic* was proven in G9; G12d proves the wire *mode* —
   the fallback intercepts while recording, and the stubs it generates over HTTP load into the **real
   oracle** and replay the captured response (status + body + `X-Upstream`).
+- **Learned (oracle-verified): a compressed upstream body is DECODED into the generated stub.**
+  Browsers send `Accept-Encoding`, real APIs compress — the recorder used to write the raw gzip
+  bytes into the stub body (mojibake through the UTF-8 round-trip, unreplayable; surfaced by
+  recording jsonplaceholder from a browser). The oracle records the replayable payload, so
+  `StubRecorder` now decodes gzip/deflate/br for the generated stub and drops `Content-Encoding`;
+  the live pass-through to the caller stays byte-identical, and an undecodable encoding falls back
+  to the raw capture. Raw (zlib-headerless) deflate stays deferred.
 - **Learned (oracle-verified): recording proxies EVERY request — matched ones included.** A stub that
   existed before `recordings/start` does **not** answer while the session is live: the oracle proxies
   the request to the target and captures it like any other, and existing stubs resume only when the
@@ -116,7 +123,8 @@ behaviors deferred throughout the roadmap are finally implemented and validated.
   repeat-request → scenario generation — remain deferred (noted on `StubRecorder` since G9).
 - **Regression cases:** `G12dProxyRecordTests.Proxy_OverTheWire_MatchesOracle`,
   `G12dProxyRecordTests.Record_OverTheWire_GeneratesStubsThatReplayOnOracle`,
-  `G12dProxyRecordTests.Recording_ProxiesEveryRequest_EvenOnesAnExistingStubWouldMatch`.
+  `G12dProxyRecordTests.Recording_ProxiesEveryRequest_EvenOnesAnExistingStubWouldMatch`,
+  `G12dProxyRecordTests.Recording_AGzippedUpstreamResponse_GeneratesAReplayableStub`.
 
 ## Admin-extension routing (G12e)
 

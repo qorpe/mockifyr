@@ -46,6 +46,21 @@ public sealed class UpstreamServer : IDisposable
             }
 
             var payload = Encoding.UTF8.GetBytes($"{{\"from\":\"upstream\",\"path\":\"{context.Request.Url?.PathAndQuery}\"}}");
+
+            // A /gzip/* path answers gzip-compressed regardless of Accept-Encoding — the recording
+            // differential uses it to pin how a compressed upstream body lands in a generated stub.
+            if (context.Request.Url?.AbsolutePath.StartsWith("/gzip", StringComparison.Ordinal) == true)
+            {
+                using var buffer = new MemoryStream();
+                using (var gzip = new System.IO.Compression.GZipStream(buffer, System.IO.Compression.CompressionMode.Compress, leaveOpen: true))
+                {
+                    gzip.Write(payload);
+                }
+
+                payload = buffer.ToArray();
+                context.Response.Headers["Content-Encoding"] = "gzip";
+            }
+
             context.Response.StatusCode = 200;
             context.Response.Headers["X-Upstream"] = "real-server";
             // Echo a proxy-added request header back (for validating additionalProxyRequestHeaders).

@@ -439,6 +439,11 @@ is now end-to-end: engine + platform + dashboard.
   prefix (static + SPA fallback), scoped so mock-serving is untouched (`G12gDashboardTests`);
   `pnpm build:embedded` (base `/__mockifyr/`); a multi-stage **Dockerfile** builds one image serving the
   engine + admin + dashboard; **CI** now also builds the dashboard on every PR.
+- [x] **Recording decodes compressed upstream bodies** — a gzip/deflate/br response (any browser-driven
+  recording of a real API) used to bake its raw compressed bytes into the generated stub as mojibake;
+  the stub now stores the decoded payload without `Content-Encoding`, matching the oracle
+  (`Recording_AGzippedUpstreamResponse_GeneratesAReplayableStub`; learned note in
+  `docs/parity/g12-transport.md`). Live pass-through unchanged.
 - [x] **Recordings flow completed** — the captured-stub list's dead-end closed: **View JSON** now
   actually renders the generated mapping (it was an empty `<details>`), and captured stubs can be
   saved — per-row **Add to stubs** and **Import all** go through the standard bulk-import path,
