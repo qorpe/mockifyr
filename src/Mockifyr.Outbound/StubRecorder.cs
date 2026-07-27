@@ -1,11 +1,13 @@
 using System.IO.Compression;
-using Mockifyr.Adapters.MappingJson;
 using Mockifyr.Core;
 
 namespace Mockifyr.Outbound;
 
-/// <summary>A recorded exchange: the generated stub JSON plus the response that was captured.</summary>
-public sealed record RecordedExchange(string StubJson, CanonicalResponse CapturedResponse);
+/// <summary>
+/// A recorded exchange: the wire response to relay to the caller untouched, plus the decoded copy
+/// the generated stub is built from (compressed bodies decoded, <c>Content-Encoding</c> dropped).
+/// </summary>
+public sealed record RecordedExchange(CanonicalResponse CapturedResponse, CanonicalResponse StubResponse);
 
 /// <summary>
 /// Record mode (G9, verified by the differential suite): proxy a request to the target upstream,
@@ -24,7 +26,7 @@ public sealed class StubRecorder(HttpClient? client = null)
             .ConfigureAwait(false);
 
         // The caller gets the wire response untouched; only the GENERATED STUB sees the decoded copy.
-        return new RecordedExchange(RecordingJsonWriter.ToStubJson(request, DecodedForStub(response)), response);
+        return new RecordedExchange(response, DecodedForStub(response));
     }
 
     /// <summary>

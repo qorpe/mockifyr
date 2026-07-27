@@ -439,6 +439,13 @@ is now end-to-end: engine + platform + dashboard.
   prefix (static + SPA fallback), scoped so mock-serving is untouched (`G12gDashboardTests`);
   `pnpm build:embedded` (base `/__mockifyr/`); a multi-stage **Dockerfile** builds one image serving the
   engine + admin + dashboard; **CI** now also builds the dashboard on every PR.
+- [x] **Recording chains repeated requests into scenarios** — capturing the same request twice used to
+  produce two disconnected duplicate stubs; the oracle showed WireMock chains repeats into a
+  generated scenario instead (first capture serves at `Started` and advances; replay yields the
+  recorded responses in recorded order; distinct requests stay scenario-free). `RecordingSession`
+  now generates identically (oracle-pinned by
+  `Recording_RepeatedIdenticalRequests_CaptureLikeTheOracle`; chain rules unit-tested and
+  mutation-tested to 100 %). Closes the G9-era "repeats → scenarios" deferral.
 - [x] **Recording decodes compressed upstream bodies** — a gzip/deflate/br response (any browser-driven
   recording of a real API) used to bake its raw compressed bytes into the generated stub as mojibake;
   the stub now stores the decoded payload without `Content-Encoding`, matching the oracle

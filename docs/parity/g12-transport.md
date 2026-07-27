@@ -103,6 +103,14 @@ behaviors deferred throughout the roadmap are finally implemented and validated.
   `{"mappings":[…]}` envelope. The recorder *logic* was proven in G9; G12d proves the wire *mode* —
   the fallback intercepts while recording, and the stubs it generates over HTTP load into the **real
   oracle** and replay the captured response (status + body + `X-Upstream`).
+- **Learned (oracle-verified): repeats are NOT deduplicated — they become a scenario chain.** The
+  guess was "identical repeats collapse to one stub"; the oracle refuted that too: recording the
+  same request twice produces TWO stubs chained into a generated scenario (first capture serves at
+  `Started` and advances, each later one serves from the prior state, the last does not advance), so
+  a replay yields the recorded responses in recorded order. Distinct requests stay scenario-free.
+  `RecordingSession` now generates stubs at snapshot/stop time with the same chaining (identity =
+  method + URL + request body; scenario names `scenario-{n}-{url-slug}`, mutation-tested to 100 %).
+  This closes the "repeat-request → scenario generation" deferral below.
 - **Learned (oracle-verified): a compressed upstream body is DECODED into the generated stub.**
   Browsers send `Accept-Encoding`, real APIs compress — the recorder used to write the raw gzip
   bytes into the stub body (mojibake through the UTF-8 round-trip, unreplayable; surfaced by
@@ -119,12 +127,15 @@ behaviors deferred throughout the roadmap are finally implemented and validated.
 - **Deferred to G12e (explicitly tracked — not a silent gap):** `/__admin/ext/*` admin-extension
   routing (the `IAdminApiExtension` seam is public; dispatching it over HTTP is a small follow-up) and
   standalone/deploy + config (host config, `--port`/`--https-port`, mappings-dir load). Then G11
-  (HTTPS/TLS + HTTP/2). Recording refinements from WireMock — filters, body-file extraction, and
-  repeat-request → scenario generation — remain deferred (noted on `StubRecorder` since G9).
+  (HTTPS/TLS + HTTP/2). Recording refinements from WireMock — filters and body-file extraction —
+  remain deferred (noted on `StubRecorder` since G9); repeat-request → scenario generation was
+  delivered later (see the learned note above).
 - **Regression cases:** `G12dProxyRecordTests.Proxy_OverTheWire_MatchesOracle`,
   `G12dProxyRecordTests.Record_OverTheWire_GeneratesStubsThatReplayOnOracle`,
   `G12dProxyRecordTests.Recording_ProxiesEveryRequest_EvenOnesAnExistingStubWouldMatch`,
-  `G12dProxyRecordTests.Recording_AGzippedUpstreamResponse_GeneratesAReplayableStub`.
+  `G12dProxyRecordTests.Recording_AGzippedUpstreamResponse_GeneratesAReplayableStub`,
+  `G12dProxyRecordTests.Recording_RepeatedIdenticalRequests_CaptureLikeTheOracle`,
+  `RecordingSessionTests` (chain rules: lengths, state naming, identity, snapshot-then-continue).
 
 ## Admin-extension routing (G12e)
 

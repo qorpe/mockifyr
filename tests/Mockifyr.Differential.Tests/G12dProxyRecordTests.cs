@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Mockifyr.Differential.Generator;
 using Mockifyr.Differential.Harness;
@@ -256,6 +257,82 @@ public sealed class G12dProxyRecordTests : IAsyncLifetime
         }
 
         Assert.True(failures.Count == 0, $"{failures.Count} gzip-record divergence(s):\n{string.Join("\n", failures)}");
+    }
+
+    [Fact]
+    public async Task Recording_RepeatedIdenticalRequests_CaptureLikeTheOracle()
+    {
+        using var oracleClient = _oracle.CreateAdminClient();
+        using var mockifyrClient = _mockifyr.CreateClient();
+        var failures = new List<string>();
+
+        await StartRecordingAsync(oracleClient, $"http://host.docker.internal:{_upstream.Port}");
+        await StartRecordingAsync(mockifyrClient, $"http://127.0.0.1:{_upstream.Port}");
+
+        // The same request twice — spaced across a Date-header second boundary, so the diff also
+        // answers whether volatile headers break the oracle's identity — plus one distinct request.
+        var dup = new RequestSpec { Method = "GET", Url = "/rec/dup" };
+        var other = new RequestSpec { Method = "GET", Url = "/rec/other" };
+        await DriveAsync(oracleClient, dup);
+        await DriveAsync(mockifyrClient, dup);
+        await Task.Delay(1100);
+        await DriveAsync(oracleClient, dup);
+        await DriveAsync(mockifyrClient, dup);
+        await DriveAsync(oracleClient, other);
+        await DriveAsync(mockifyrClient, other);
+
+        var oracleBundle = await StopRecordingAsync(oracleClient);
+        var mockifyrBundle = await StopRecordingAsync(mockifyrClient);
+
+        // Learned from this diff: the oracle does NOT deduplicate — a repeated request becomes a
+        // SCENARIO CHAIN (first capture serves at Started and advances, the next serves from that
+        // state), so a replay yields the recorded responses in recorded order. Distinct requests
+        // stay scenario-free. Names/ids are generated values, so the comparison is structural.
+        foreach (var (name, bundle) in new[] { ("oracle", oracleBundle), ("mockifyr", mockifyrBundle) })
+        {
+            using var doc = JsonDocument.Parse(bundle);
+            var mappings = doc.RootElement.GetProperty("mappings").EnumerateArray().ToList();
+            if (mappings.Count != 3)
+            {
+                failures.Add($"{name}: captured {mappings.Count} stub(s), expected 3 (two chained + one plain)");
+                continue;
+            }
+
+            var dups = mappings.Where(m => m.GetProperty("request").GetProperty("url").GetString() == "/rec/dup").ToList();
+            var plain = mappings.Single(m => m.GetProperty("request").GetProperty("url").GetString() == "/rec/other");
+
+            if (plain.TryGetProperty("scenarioName", out _))
+            {
+                failures.Add($"{name}: the distinct request must stay scenario-free");
+            }
+
+            string? Field(JsonElement m, string field) => m.TryGetProperty(field, out var v) ? v.GetString() : null;
+            var first = dups.SingleOrDefault(m => Field(m, "requiredScenarioState") == "Started");
+            var second = dups.SingleOrDefault(m => Field(m, "requiredScenarioState") != "Started");
+            if (first.ValueKind == JsonValueKind.Undefined || second.ValueKind == JsonValueKind.Undefined)
+            {
+                failures.Add($"{name}: repeated request did not form a Started→next scenario chain: {bundle}");
+                continue;
+            }
+
+            var scenario = Field(first, "scenarioName");
+            if (scenario is null || Field(second, "scenarioName") != scenario)
+            {
+                failures.Add($"{name}: chained stubs must share one scenarioName");
+            }
+
+            if (Field(first, "newScenarioState") is not { } next || Field(second, "requiredScenarioState") != next)
+            {
+                failures.Add($"{name}: first capture must advance to the state the second serves from");
+            }
+
+            if (Field(second, "newScenarioState") is not null)
+            {
+                failures.Add($"{name}: the last capture in a chain must not advance further");
+            }
+        }
+
+        Assert.True(failures.Count == 0, $"{failures.Count} repeat-capture divergence(s):\n{string.Join("\n", failures)}");
     }
 
     /// <summary>The client-visible payload text: gunzips when the response declares gzip encoding.</summary>

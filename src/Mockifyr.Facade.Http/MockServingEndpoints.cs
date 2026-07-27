@@ -47,7 +47,7 @@ public static class MockServingEndpoints
         {
             var recorder = context.RequestServices.GetRequiredService<StubRecorder>();
             var exchange = await recorder.RecordAsync(target, request, context.RequestAborted);
-            recording.Record(exchange.StubJson);
+            recording.Record(request, exchange.StubResponse);
             await WriteUpstreamAsync(context, exchange.CapturedResponse);
             return;
         }

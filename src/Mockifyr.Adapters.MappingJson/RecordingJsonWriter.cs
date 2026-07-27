@@ -17,7 +17,15 @@ public static class RecordingJsonWriter
     private static readonly HashSet<string> SkipResponseHeaders =
         new(StringComparer.OrdinalIgnoreCase) { "Content-Length", "Transfer-Encoding", "Connection" };
 
-    public static string ToStubJson(CanonicalRequest request, CanonicalResponse response)
+    /// <summary>
+    /// Generates the stub JSON for one captured exchange. The scenario parameters chain REPEATED
+    /// captures of the same request the way the oracle's recorder does (a repeat is not deduplicated:
+    /// the first capture serves at Started and advances, each later one serves from the prior state),
+    /// so a replay yields the recorded responses in recorded order.
+    /// </summary>
+    public static string ToStubJson(
+        CanonicalRequest request, CanonicalResponse response,
+        string? scenarioName = null, string? requiredScenarioState = null, string? newScenarioState = null)
     {
         var requestPattern = new Dictionary<string, object>
         {
@@ -53,6 +61,21 @@ public static class RecordingJsonWriter
             ["request"] = requestPattern,
             ["response"] = responseDefinition,
         };
+
+        if (scenarioName is not null)
+        {
+            mapping["scenarioName"] = scenarioName;
+        }
+
+        if (requiredScenarioState is not null)
+        {
+            mapping["requiredScenarioState"] = requiredScenarioState;
+        }
+
+        if (newScenarioState is not null)
+        {
+            mapping["newScenarioState"] = newScenarioState;
+        }
 
         return JsonSerializer.Serialize(mapping);
     }
