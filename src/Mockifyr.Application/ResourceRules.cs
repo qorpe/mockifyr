@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Mediant.Results;
 using Mockifyr.Core;
 
@@ -41,18 +40,14 @@ internal static class ResourceRules
 
     public static Error? ValidateBody(string body, ResourceOptions options)
     {
-        if (System.Text.Encoding.UTF8.GetByteCount(body) > options.MaxBodyBytes)
+        if (ResourceGuards.ExceedsCap(body, options.MaxBodyBytes))
         {
             return Error.Validation(
                 "Resource.BodyTooLarge",
                 $"The document exceeds the {options.MaxBodyBytes}-byte body cap.");
         }
 
-        try
-        {
-            using var document = JsonDocument.Parse(body);
-        }
-        catch (JsonException)
+        if (!ResourceGuards.IsWellFormedJson(body))
         {
             return Error.Validation("Resource.InvalidBody", "The document body is not well-formed JSON.");
         }

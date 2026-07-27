@@ -37,14 +37,24 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
     /// <paramref name="environments"/> resolves <c>{{key}}</c> environment references (G17); null
     /// disables the pass entirely, which is what a facade with no environment store configured wants.
     /// </summary>
+    private readonly IResourceStore? _resources;
+    private readonly IResourceIdGenerator? _resourceIds;
+    private readonly ResourceOptions _resourceOptions;
+
     public TemplatingResponseRenderer(
         IEnumerable<TemplateHelperExtension>? extraHelpers = null,
         bool globalTemplating = false,
-        IEnvironmentResolver? environments = null)
+        IEnvironmentResolver? environments = null,
+        IResourceStore? resources = null,
+        IResourceIdGenerator? resourceIds = null,
+        ResourceOptions? resourceOptions = null)
     {
         _handlebars = HandlebarsFactory.Create(extraHelpers);
         _globalTemplating = globalTemplating;
         _environments = environments;
+        _resources = resources;
+        _resourceIds = resourceIds;
+        _resourceOptions = resourceOptions ?? new ResourceOptions();
     }
 
     /// <inheritdoc />
@@ -55,7 +65,38 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         // Putting this after the guard would silently skip the majority of stubs (G17, issue #165).
         definition = ApplyEnvironment(definition, context.Tenant);
 
-        if (!_globalTemplating && !definition.Transformers.Contains(ResponseTemplateTransformer))
+        // The state directive (G19b) runs the sandbox CRUD operation BEFORE body/header rendering so
+        // {{state.*}} is a real model value. Declaring the directive IS the templating opt-in — no
+        // separate transformer needed — and a miss/refusal short-circuits to a bare status, like a
+        // real API answering 404 rather than rendering a template over nothing.
+        Dictionary<string, object?>? stateModel = null;
+        if (definition.State is { } state && _resources is { } resources && _resourceIds is { } resourceIds)
+        {
+            var requestModel = BuildModel(context);
+            var outcome = StateDirectiveApplier.Apply(
+                state,
+                context.Tenant,
+                state.Id is { } idTemplate ? RenderTemplate(idTemplate, requestModel) : null,
+                state.Document is { } documentTemplate ? RenderTemplate(documentTemplate, requestModel) : null,
+                context.Request.Body,
+                resources,
+                resourceIds,
+                _resourceOptions);
+
+            if (outcome.ShortCircuitStatus is { } shortCircuit)
+            {
+                return new CanonicalResponse
+                {
+                    Status = shortCircuit,
+                    Headers = Array.Empty<KeyValuePair<string, string>>().ToLookup(p => p.Key, p => p.Value),
+                    Body = [],
+                };
+            }
+
+            stateModel = new Dictionary<string, object?>(outcome.Model!);
+        }
+
+        if (stateModel is null && !_globalTemplating && !definition.Transformers.Contains(ResponseTemplateTransformer))
         {
             return new CanonicalResponse
             {
@@ -71,6 +112,10 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         }
 
         var model = BuildModel(context);
+        if (stateModel is not null)
+        {
+            model["state"] = stateModel;
+        }
 
         var body = definition.Body is { } raw
             ? Encoding.UTF8.GetBytes(RenderTemplate(Encoding.UTF8.GetString(raw), model))
