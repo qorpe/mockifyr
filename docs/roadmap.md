@@ -439,6 +439,13 @@ is now end-to-end: engine + platform + dashboard.
   prefix (static + SPA fallback), scoped so mock-serving is untouched (`G12gDashboardTests`);
   `pnpm build:embedded` (base `/__mockifyr/`); a multi-stage **Dockerfile** builds one image serving the
   engine + admin + dashboard; **CI** now also builds the dashboard on every PR.
+- [x] **UI test runner** (#203) — a **Test** button on HTTP/GraphQL stubs opens a dialog that fires a
+  REAL request at the host (embedded: same origin; dev: a `/__mock/` proxy tunnel): method/URL +
+  Params/Headers/Body tabs seeded from the stub's exact-match matchers, client-side `{{key}}` preview,
+  and the response (status/time/size, headers, pretty body) in the journal's visual language
+  (`http-view` shared components) with copy-body / copy-as-curl and a body Beautify. The request runs
+  the full serving pipeline — environments resolve, scenarios advance, and it lands in the journal.
+  No server change; verified in-browser (matched 200, unmatched 404, network error, reopen-resets).
 
 ## G17 — Environments (post-UI)
 
