@@ -66,11 +66,35 @@ is currently in** — the legacy data carried no tenant, so writing it to every 
 the leak #166 reports. The legacy blob is removed only after the server accepts the writes, so a
 failed migration retries rather than losing data.
 
+## Export/import (issue #198)
+
+The dashboard export includes the tenant's environments so a re-import restores what the stubs'
+`{{key}}` references depend on. Decisions worth remembering:
+
+- **Format**: with no environments the export stays a bare mapping array (unchanged, maximally
+  interoperable); with environments it switches to the `{"mappings":[…]}` wrapper plus a sibling
+  `environments` array in exactly the shape the admin API serves — minus `resolved`, which is
+  computed, not state. The wrapper was already an accepted import shape, so old and new exports both
+  round-trip.
+- **Restore path is the server**, not the UI: `ImportMappingsCommand` reads the section
+  (`EnvironmentJsonReader`) and stores each key through the same validation as the admin PUT
+  (`EnvironmentKeyRules`, one definition for both paths) — a `curl` import restores environments
+  identically to the dashboard.
+- **Semantics**: an imported key **replaces** an existing key of the same name (an import restores
+  the exported state — merge would silently keep values the export never had). An entry that fails
+  validation (reserved name, malformed key, no usable values) is **skipped without failing the
+  import**; the mappings still load. Hostile shapes (section not an array, non-object entries,
+  non-string key, half-formed value items) are dropped, never stored half-formed, never a 500.
+- **Ordering**: environments restore before mappings so one bundle is self-consistent at first serve.
+- **Mutation testing**: `EnvironmentJsonReader` at 100 % (37/37 killed). Learned: Stryker's
+  condition-rewriting mutants cannot compile when a `TryGetProperty` out-var binds inside a compound
+  condition or ternary — "safe mode" then voids the whole method's score. The reader binds out-vars
+  in standalone statements for that reason; keep the pattern when touching it.
+
 ## Deferred (tracked)
 
 - Change-feed reload (G16e/f) does not yet cover environments: `IEnvironmentStore.GetTenants()` exists
   for it, but no reconciler subscribes. Multi-instance hosts see key changes after a restart.
-- No import/export of environments alongside the mappings bundle.
 - Values are stored in plaintext; a secret-typed value (masked in the dashboard) is not modelled.
 
 ## Regression cases
@@ -79,3 +103,5 @@ failed migration retries rather than losing data.
   `EnvironmentKey.Resolve()` including the deleted-active-value case.
 - `G17EnvironmentTests` — dynamic resolution (active-value switch reaching a saved stub), per-key
   independence, verbatim storage, non-templated stubs, and the full tenant-isolation matrix.
+- `G17EnvironmentExportImportTests` — bundle restore (keys/values/active), backward compatibility,
+  overwrite-by-key, skip-on-invalid, hostile section shapes, and tenant scoping of imports.

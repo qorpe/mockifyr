@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Download, Import, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
-import { deleteMessageMapping, deleteStub, fetchMessageMappings, fetchStubs, type MessageMapping, type Stub } from '@/lib/api'
+import { deleteMessageMapping, deleteStub, fetchEnvironments, fetchMessageMappings, fetchStubs, type MessageMapping, type Stub } from '@/lib/api'
 import { buildStubTree, countStubs, type StubTreeNode } from '@/lib/stub-tree'
 import { MethodChip, ProtocolChip, StatusCode } from '@/components/ui/badges'
 import { NewStubWorkspace } from '@/components/stubs/channel-editors'
@@ -161,10 +161,16 @@ export function StubsPage() {
   }, [searchParams, setSearchParams, openBlank, openStub, stubs, isLoading, t])
 
   // Exports a bare top-level array (no {"mappings":…} wrapper) — the import path (UI and host) accepts
-  // both shapes, so an export always round-trips unmodified.
-  const exportAll = useCallback(() => {
+  // both shapes, so an export always round-trips unmodified. When the tenant has environments, the
+  // export switches to the wrapper and carries them (#198): re-importing then restores the keys the
+  // stubs' {{key}} references depend on. `resolved` stays out — it is computed, not state.
+  const exportAll = useCallback(async () => {
     const mappings = stubs.map((s) => s.raw).filter(Boolean)
-    const blob = new Blob([JSON.stringify(mappings, null, 2)], { type: 'application/json' })
+    const { environments } = await fetchEnvironments(tenant)
+    const bundle = environments.length > 0
+      ? { mappings, environments: environments.map(({ key, activeValue, values }) => ({ key, activeValue, values })) }
+      : mappings
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -229,7 +235,7 @@ export function StubsPage() {
                   <Button variant="ghost" size="iconSm" aria-label={t('stubs.collapseAll')} onClick={() => setAllOpen(false)} disabled={!filtered.length}><ChevronsDownUp /></Button>
                 </TooltipTrigger><TooltipContent>{t('stubs.collapseAll')}</TooltipContent></Tooltip>
                 <Tooltip><TooltipTrigger asChild>
-                  <Button variant="ghost" size="iconSm" aria-label={t('stubs.export')} onClick={exportAll} disabled={!stubs.length}><Download /></Button>
+                  <Button variant="ghost" size="iconSm" aria-label={t('stubs.export')} onClick={() => void exportAll()} disabled={!stubs.length}><Download /></Button>
                 </TooltipTrigger><TooltipContent>{t('stubs.export')}</TooltipContent></Tooltip>
                 <Tooltip><TooltipTrigger asChild>
                   <Button variant="ghost" size="iconSm" aria-label={t('stubs.import')} onClick={() => openBlank('json')}><Import /></Button>
