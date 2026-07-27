@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Mockifyr.Adapters.MappingJson;
 using Mockifyr.Core;
 using Mockifyr.Differential.Generator;
 using Mockifyr.Facade.Library;
@@ -164,7 +165,7 @@ public sealed class DifferentialRunner : IAsyncDisposable
         {
             var request = CanonicalRequestBuilder.Build(spec.Method, spec.Url, spec.Headers, spec.Body);
             var exchange = await recorder.RecordAsync($"http://127.0.0.1:{upstream.Port}", request);
-            stubs.Add(exchange.StubJson);
+            stubs.Add(RecordingJsonWriter.ToStubJson(request, exchange.StubResponse));
             captured.Add(ToSnapshot(exchange.CapturedResponse));
         }
 
