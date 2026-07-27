@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Activity, Bug, ChevronsRight, Disc, Globe, Inbox, LayoutDashboard, LayoutGrid,
+  Activity, Bug, ChevronsRight, Database, Disc, Globe, Inbox, KeyRound, LayoutDashboard, LayoutGrid,
   ListTree, LogOut, Moon, Search, Settings, SlidersHorizontal, Waypoints,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -29,6 +29,10 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
     { to: '/scenarios', key: 'nav.scenarios', icon: Waypoints },
     { to: '/recordings', key: 'nav.recordings', icon: Disc },
     { to: '/environments', key: 'nav.environments', icon: Globe },
+  ] },
+  { label: 'nav.sandbox', items: [
+    { to: '/resources', key: 'nav.resources', icon: Database },
+    { to: '/access', key: 'nav.access', icon: KeyRound },
   ] },
   { label: 'nav.platform', items: [
     { to: '/extensions', key: 'nav.extensions', icon: LayoutGrid },

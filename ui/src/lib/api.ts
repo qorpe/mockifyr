@@ -864,3 +864,111 @@ export const trustHost = (tenant: string, host: string) =>
 
 export const distrustHost = (tenant: string, host: string) =>
   trustOp(`/outbound-trust/hosts/${encodeURIComponent(host)}`, tenant, { method: 'DELETE' })
+
+// ---- integration sandbox (G19e: resources + access) ---------------------------------------------
+
+/** One sandbox collection as the admin lists it. */
+export interface ResourceCollection { name: string; count: number }
+
+/** One sandbox document — the body is real JSON (the server re-embeds it, never double-encoded). */
+export interface ResourceDoc {
+  id: string
+  collection: string
+  body: unknown
+  createdAt: string
+  updatedAt: string
+  version: number
+}
+
+/** A tenant's API key as the admin lists it — never the token itself, only the display prefix. */
+export interface ApiKeyEntry {
+  id: string
+  name: string
+  prefix: string
+  createdAt: string
+  quotaPerHour: number | null
+  usedThisHour: number
+}
+
+/** Reads a typed admin error ({error, message}) off a failed response, falling back to the status. */
+async function sandboxError(res: Response): Promise<Error> {
+  try {
+    const body = (await res.json()) as { error?: string; message?: string }
+    return new Error(body.message ?? body.error ?? String(res.status))
+  } catch {
+    return new Error(String(res.status))
+  }
+}
+
+/** Lists the tenant's sandbox collections (GET /__admin/resources). */
+export async function fetchResourceCollections(tenant: string): Promise<{ collections: ResourceCollection[]; mock: boolean }> {
+  try {
+    const res = await adminFetch('/resources', tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { collections?: ResourceCollection[] }
+    return { collections: body.collections ?? [], mock: false }
+  } catch {
+    // Server state — nothing meaningful to fake (the environments precedent).
+    return { collections: [], mock: true }
+  }
+}
+
+/** Pages through one collection (GET /__admin/resources/{collection}?limit=&offset=). */
+export async function fetchResourceDocuments(
+  tenant: string, collection: string, limit: number, offset: number,
+): Promise<{ documents: ResourceDoc[]; total: number }> {
+  const res = await adminFetch(`/resources/${encodeURIComponent(collection)}?limit=${limit}&offset=${offset}`, tenant)
+  if (!res.ok) throw await sandboxError(res)
+  return (await res.json()) as { documents: ResourceDoc[]; total: number }
+}
+
+/** Creates or replaces one document (PUT — last-write-wins; the version advances). */
+export async function putResourceDocument(tenant: string, collection: string, id: string, body: string): Promise<void> {
+  const res = await adminFetch(`/resources/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, tenant, { method: 'PUT', body })
+  if (!res.ok) throw await sandboxError(res)
+}
+
+export async function deleteResourceDocument(tenant: string, collection: string, id: string): Promise<void> {
+  const res = await adminFetch(`/resources/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, tenant, { method: 'DELETE' })
+  if (!res.ok) throw await sandboxError(res)
+}
+
+/** Clears one collection, or every collection of the tenant when none is given. */
+export async function resetResources(tenant: string, collection?: string): Promise<void> {
+  const path = collection ? `/resources/${encodeURIComponent(collection)}/reset` : '/resources/reset'
+  const res = await adminFetch(path, tenant, { method: 'POST' })
+  if (!res.ok) throw await sandboxError(res)
+}
+
+/** Seeds a collection from a JSON array (transactional on the server). */
+export async function seedResourceCollection(tenant: string, collection: string, json: string): Promise<void> {
+  const res = await adminFetch(`/resources/${encodeURIComponent(collection)}/seed`, tenant, { method: 'POST', body: json })
+  if (!res.ok) throw await sandboxError(res)
+}
+
+/** Lists the tenant's sandbox API keys (GET /__admin/apikeys). */
+export async function fetchApiKeys(tenant: string): Promise<{ keys: ApiKeyEntry[]; mock: boolean }> {
+  try {
+    const res = await adminFetch('/apikeys', tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { keys?: ApiKeyEntry[] }
+    return { keys: body.keys ?? [], mock: false }
+  } catch {
+    return { keys: [], mock: true }
+  }
+}
+
+/** Issues a key. The returned `key` is the ONLY time the token exists — show it once, never store it. */
+export async function issueApiKey(tenant: string, name: string, quotaPerHour: number | null): Promise<{ key: string; prefix: string }> {
+  const res = await adminFetch('/apikeys', tenant, {
+    method: 'POST',
+    body: JSON.stringify(quotaPerHour === null ? { name } : { name, quotaPerHour }),
+  })
+  if (!res.ok) throw await sandboxError(res)
+  return (await res.json()) as { key: string; prefix: string }
+}
+
+export async function revokeApiKey(tenant: string, id: string): Promise<void> {
+  const res = await adminFetch(`/apikeys/${encodeURIComponent(id)}`, tenant, { method: 'DELETE' })
+  if (!res.ok) throw await sandboxError(res)
+}

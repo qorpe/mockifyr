@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Command } from 'cmdk'
 import { Globe,
-  Activity, BookOpen, Disc, LayoutDashboard, LayoutGrid, ListTree, Moon, Plus, Search, Settings, Sun, Waypoints,
+  Activity, BookOpen, Database, Disc, KeyRound, LayoutDashboard, LayoutGrid, ListTree, Moon, Plus, Search, Settings, Sun, Waypoints,
 } from 'lucide-react'
 import { useUi } from '@/components/providers'
 import { openHelpers } from '@/components/templating/helpers-dialog'
@@ -15,6 +15,8 @@ const NAV = [
   { to: '/scenarios', key: 'nav.scenarios', icon: Waypoints },
   { to: '/recordings', key: 'nav.recordings', icon: Disc },
   { to: '/environments', key: 'nav.environments', icon: Globe },
+  { to: '/resources', key: 'nav.resources', icon: Database },
+  { to: '/access', key: 'nav.access', icon: KeyRound },
   { to: '/extensions', key: 'nav.extensions', icon: LayoutGrid },
   { to: '/settings', key: 'nav.settings', icon: Settings },
 ]

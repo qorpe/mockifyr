@@ -12,6 +12,8 @@ const MessagesPage = lazy(() => import('@/pages/messages').then((m) => ({ defaul
 const ScenariosPage = lazy(() => import('@/pages/scenarios').then((m) => ({ default: m.ScenariosPage })))
 const RecordingsPage = lazy(() => import('@/pages/recordings').then((m) => ({ default: m.RecordingsPage })))
 const EnvironmentsPage = lazy(() => import('@/pages/environments').then((m) => ({ default: m.EnvironmentsPage })))
+const ResourcesPage = lazy(() => import('@/pages/resources').then((m) => ({ default: m.ResourcesPage })))
+const AccessPage = lazy(() => import('@/pages/access').then((m) => ({ default: m.AccessPage })))
 const ExtensionsPage = lazy(() => import('@/pages/extensions').then((m) => ({ default: m.ExtensionsPage })))
 const SettingsPage = lazy(() => import('@/pages/settings').then((m) => ({ default: m.SettingsPage })))
 
@@ -33,6 +35,8 @@ const router = createBrowserRouter([
       { path: 'scenarios', element: <Page><ScenariosPage /></Page> },
       { path: 'recordings', element: <Page><RecordingsPage /></Page> },
       { path: 'environments', element: <Page><EnvironmentsPage /></Page> },
+      { path: 'resources', element: <Page><ResourcesPage /></Page> },
+      { path: 'access', element: <Page><AccessPage /></Page> },
       { path: 'extensions', element: <Page><ExtensionsPage /></Page> },
       { path: 'settings', element: <Page><SettingsPage /></Page> },
     ],
