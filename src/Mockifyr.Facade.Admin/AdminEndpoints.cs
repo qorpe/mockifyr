@@ -348,6 +348,74 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Ok() : EnvironmentFailure(result.Error);
         });
 
+        // Sandbox resources (G19a, ADR 0011): tenant- and collection-scoped JSON documents. Thin
+        // HTTP -> CQRS dispatch; every rule (names, ids, body cap, well-formedness) lives in the
+        // Application handlers so the Library facade shares it verbatim.
+        admin.MapGet("/resources", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetResourceCollectionsQuery(TenantOf(request)));
+            return Results.Json(new { collections = result.Value.Select(c => new { name = c.Name, count = c.Count }) });
+        });
+
+        admin.MapGet("/resources/{collection}", async (string collection, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new ListResourcesQuery(
+                collection,
+                int.TryParse(request.Query["limit"].FirstOrDefault(), out var limit) ? limit : null,
+                int.TryParse(request.Query["offset"].FirstOrDefault(), out var offset) ? offset : null,
+                TenantOf(request)));
+            return result.IsSuccess
+                ? Results.Json(new { documents = result.Value.Documents.Select(ResourceJson), total = result.Value.Total })
+                : ResourceFailure(result.Error);
+        });
+
+        admin.MapGet("/resources/{collection}/{id}", async (string collection, string id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetResourceQuery(collection, id, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(ResourceJson(result.Value)) : ResourceFailure(result.Error);
+        });
+
+        admin.MapPut("/resources/{collection}/{id}", async (string collection, string id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new PutResourceCommand(collection, id, await ReadBody(request), TenantOf(request)));
+            return result.IsSuccess ? Results.Json(ResourceJson(result.Value)) : ResourceFailure(result.Error);
+        });
+
+        admin.MapDelete("/resources/{collection}/{id}", async (string collection, string id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new DeleteResourceCommand(collection, id, TenantOf(request)));
+            return result.IsSuccess ? Results.Ok() : ResourceFailure(result.Error);
+        });
+
+        admin.MapPost("/resources/reset", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ResetResourcesCommand(Collection: null, TenantOf(request)));
+            return Results.Ok();
+        });
+
+        admin.MapPost("/resources/{collection}/reset", async (string collection, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new ResetResourcesCommand(collection, TenantOf(request)));
+            return result.IsSuccess ? Results.Ok() : ResourceFailure(result.Error);
+        });
+
+        admin.MapPost("/resources/{collection}/seed", async (string collection, HttpRequest request, ISender sender) =>
+        {
+            IReadOnlyList<SeedResourceItem> items;
+            try
+            {
+                items = ReadSeedItems(await ReadBody(request));
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return ResourceFailure(Mediant.Results.Error.Validation(
+                    "Resource.InvalidBody", "The seed payload must be a JSON array of documents."));
+            }
+
+            var result = await sender.Send(new SeedResourcesCommand(collection, items, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(new { seeded = result.Value }) : ResourceFailure(result.Error);
+        });
+
         admin.MapPost("/environments/reset", async (HttpRequest request, ISender sender) =>
         {
             await sender.Send(new ResetEnvironmentsCommand(TenantOf(request)));
@@ -729,6 +797,52 @@ public static class AdminEndpoints
             "Trust.UnknownHost" => StatusCodes.Status404NotFound,
             "Trust.Unavailable" => StatusCodes.Status501NotImplemented,
             _ => StatusCodes.Status400BadRequest,
+        });
+
+    /// <summary>
+    /// A seed payload is a JSON array; each object element may carry a string <c>id</c> (absent ids
+    /// are generated) and is stored as its own raw JSON text — the body round-trips verbatim.
+    /// </summary>
+    private static IReadOnlyList<SeedResourceItem> ReadSeedItems(string body)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+        {
+            throw new System.Text.Json.JsonException("The seed payload must be a JSON array.");
+        }
+
+        var items = new List<SeedResourceItem>();
+        foreach (var element in doc.RootElement.EnumerateArray())
+        {
+            var id = element.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                     element.TryGetProperty("id", out var idProperty) &&
+                     idProperty.ValueKind == System.Text.Json.JsonValueKind.String
+                ? idProperty.GetString()
+                : null;
+            items.Add(new SeedResourceItem(id, element.GetRawText()));
+        }
+
+        return items;
+    }
+
+    // The body is stored as opaque text but was validated as well-formed JSON, so it re-embeds
+    // as a real JSON value here — clients read a document, not a double-encoded string.
+    private static object ResourceJson(ResourceDocument document) => new
+    {
+        id = document.Id,
+        collection = document.Collection,
+        body = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(document.Body),
+        createdAt = document.CreatedAt,
+        updatedAt = document.UpdatedAt,
+        version = document.Version,
+    };
+
+    private static IResult ResourceFailure(Mediant.Results.Error error) =>
+        Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
+        {
+            "Resource.NotFound" => StatusCodes.Status404NotFound,
+            "Resource.BodyTooLarge" => StatusCodes.Status413PayloadTooLarge,
+            _ => StatusCodes.Status422UnprocessableEntity,
         });
 
     private static IResult EnvironmentFailure(Mediant.Results.Error error) =>

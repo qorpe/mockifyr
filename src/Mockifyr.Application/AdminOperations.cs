@@ -71,3 +71,34 @@ public sealed record DeleteEnvironmentKeyCommand(string Key, TenantId Tenant) : 
 
 /// <summary>Deletes every environment key owned by the tenant.</summary>
 public sealed record ResetEnvironmentsCommand(TenantId Tenant) : ICommand<Result>;
+
+// Sandbox resources (G19a, ADR 0011): tenant- and collection-scoped JSON documents behind
+// /__admin/resources. Bodies are opaque JSON text — validated well-formed and size-capped at the
+// management edge, never parsed by Core.
+
+/// <summary>One page of a collection listing plus the collection's total count.</summary>
+public sealed record ResourcePage(IReadOnlyList<ResourceDocument> Documents, int Total);
+
+/// <summary>A seed item: an optional explicit id (absent ids are generated) and the document body.</summary>
+public sealed record SeedResourceItem(string? Id, string Body);
+
+/// <summary>Lists the tenant's collections with document counts.</summary>
+public sealed record GetResourceCollectionsQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<ResourceCollectionInfo>>>;
+
+/// <summary>Lists one collection, paginated (limit clamped to 1..500, default 100).</summary>
+public sealed record ListResourcesQuery(string Collection, int? Limit, int? Offset, TenantId Tenant) : IQuery<Result<ResourcePage>>;
+
+/// <summary>Reads one document, or a not-found error.</summary>
+public sealed record GetResourceQuery(string Collection, string Id, TenantId Tenant) : IQuery<Result<ResourceDocument>>;
+
+/// <summary>Creates or replaces one document (last-write-wins; ADR 0011 addendum).</summary>
+public sealed record PutResourceCommand(string Collection, string Id, string Body, TenantId Tenant) : ICommand<Result<ResourceDocument>>;
+
+/// <summary>Deletes one document, or a not-found error.</summary>
+public sealed record DeleteResourceCommand(string Collection, string Id, TenantId Tenant) : ICommand<Result>;
+
+/// <summary>Clears one collection, or — with a null collection — every collection of the tenant.</summary>
+public sealed record ResetResourcesCommand(string? Collection, TenantId Tenant) : ICommand<Result>;
+
+/// <summary>Seeds a collection from a JSON array; transactional — on any invalid item nothing lands.</summary>
+public sealed record SeedResourcesCommand(string Collection, IReadOnlyList<SeedResourceItem> Items, TenantId Tenant) : ICommand<Result<int>>;

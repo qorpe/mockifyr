@@ -116,6 +116,8 @@ The common flags, with the [full reference](https://mockifyr.omercelik.dev/cli/)
 | `--smtp-port <n>` | capture real SMTP mail into the tenant-scoped message inbox (`/__admin/messages`); the AUTH username names the tenant |
 | `--sms-profile twilio` | emulate Twilio's send-message API: realistic responses the official SDK accepts, every SMS captured into the message inbox |
 | `--message-limit <n>` | per-tenant message inbox bound (default 1000, oldest evicted first) |
+| `--resource-limit <n>` | per-collection sandbox document bound (default 1000, oldest evicted first) |
+| `--resource-max-body <bytes>` | per-document body cap for `/__admin/resources` (default 1 MiB; 413 beyond it) |
 | `--dashboard <dir>` | serve the built dashboard under `/__mockifyr` |
 | `--admin-user <u>` · `--admin-pass <p>` | require HTTP Basic auth on the admin API (`/__admin/*`); the dashboard shows a login screen |
 | `--postgres <connstr>` · `--redis <connstr>` · `--litedb <path>` | durable persistence backend |

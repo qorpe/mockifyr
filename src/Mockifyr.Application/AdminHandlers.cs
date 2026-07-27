@@ -395,3 +395,143 @@ public sealed class ResetEnvironmentsHandler(IEnvironmentStore store, IEnvironme
         return ValueTask.FromResult(Result.Success());
     }
 }
+
+// ---- Sandbox resources (G19a, ADR 0011) --------------------------------------------------------
+
+/// <summary>Lists the tenant's collections with counts.</summary>
+public sealed class GetResourceCollectionsHandler(IResourceStore store)
+    : IQueryHandler<GetResourceCollectionsQuery, Result<IReadOnlyList<ResourceCollectionInfo>>>
+{
+    public ValueTask<Result<IReadOnlyList<ResourceCollectionInfo>>> Handle(GetResourceCollectionsQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(store.GetCollections(query.Tenant)));
+}
+
+/// <summary>Pages through one collection. An unknown collection is an honest empty page, not an error.</summary>
+public sealed class ListResourcesHandler(IResourceStore store)
+    : IQueryHandler<ListResourcesQuery, Result<ResourcePage>>
+{
+    public ValueTask<Result<ResourcePage>> Handle(ListResourcesQuery query, CancellationToken cancellationToken)
+    {
+        if (ResourceRules.ValidateCollection(query.Collection) is { } error)
+        {
+            return ValueTask.FromResult<Result<ResourcePage>>(error);
+        }
+
+        var limit = Math.Clamp(query.Limit ?? 100, 1, 500);
+        var offset = Math.Max(query.Offset ?? 0, 0);
+        var documents = store.List(query.Tenant, query.Collection);
+        var page = documents.Skip(offset).Take(limit).ToArray();
+        return ValueTask.FromResult<Result<ResourcePage>>(new ResourcePage(page, documents.Count));
+    }
+}
+
+/// <summary>Reads one document.</summary>
+public sealed class GetResourceHandler(IResourceStore store)
+    : IQueryHandler<GetResourceQuery, Result<ResourceDocument>>
+{
+    public ValueTask<Result<ResourceDocument>> Handle(GetResourceQuery query, CancellationToken cancellationToken)
+    {
+        if (ResourceRules.ValidateCollection(query.Collection) is { } error)
+        {
+            return ValueTask.FromResult<Result<ResourceDocument>>(error);
+        }
+
+        var document = store.Get(query.Tenant, query.Collection, query.Id);
+        return document is null
+            ? ValueTask.FromResult<Result<ResourceDocument>>(Error.NotFound(
+                "Resource.NotFound", $"No document '{query.Id}' in collection '{query.Collection}'."))
+            : ValueTask.FromResult<Result<ResourceDocument>>(document);
+    }
+}
+
+/// <summary>Creates or replaces one document after the shared validation.</summary>
+public sealed class PutResourceHandler(IResourceStore store, ResourceOptions options)
+    : ICommandHandler<PutResourceCommand, Result<ResourceDocument>>
+{
+    public ValueTask<Result<ResourceDocument>> Handle(PutResourceCommand command, CancellationToken cancellationToken)
+    {
+        var error = ResourceRules.ValidateCollection(command.Collection)
+            ?? ResourceRules.ValidateId(command.Id)
+            ?? ResourceRules.ValidateBody(command.Body, options);
+        if (error is not null)
+        {
+            return ValueTask.FromResult<Result<ResourceDocument>>(error);
+        }
+
+        return ValueTask.FromResult<Result<ResourceDocument>>(
+            store.Put(command.Tenant, command.Collection, command.Id, command.Body));
+    }
+}
+
+/// <summary>Deletes one document; unknown ids are an honest 404, mirroring a real API.</summary>
+public sealed class DeleteResourceHandler(IResourceStore store)
+    : ICommandHandler<DeleteResourceCommand, Result>
+{
+    public ValueTask<Result> Handle(DeleteResourceCommand command, CancellationToken cancellationToken)
+    {
+        if (ResourceRules.ValidateCollection(command.Collection) is { } error)
+        {
+            return ValueTask.FromResult(Result.Failure(error));
+        }
+
+        return store.Delete(command.Tenant, command.Collection, command.Id)
+            ? ValueTask.FromResult(Result.Success())
+            : ValueTask.FromResult(Result.Failure(Error.NotFound(
+                "Resource.NotFound", $"No document '{command.Id}' in collection '{command.Collection}'.")));
+    }
+}
+
+/// <summary>Clears one collection, or the tenant's whole resource state.</summary>
+public sealed class ResetResourcesHandler(IResourceStore store)
+    : ICommandHandler<ResetResourcesCommand, Result>
+{
+    public ValueTask<Result> Handle(ResetResourcesCommand command, CancellationToken cancellationToken)
+    {
+        if (command.Collection is null)
+        {
+            store.ResetAll(command.Tenant);
+            return ValueTask.FromResult(Result.Success());
+        }
+
+        if (ResourceRules.ValidateCollection(command.Collection) is { } error)
+        {
+            return ValueTask.FromResult(Result.Failure(error));
+        }
+
+        store.Reset(command.Tenant, command.Collection);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
+/// <summary>
+/// Seeds a collection from a JSON array. Transactional per the ADR 0011 addendum: every item is
+/// validated before anything is stored, so a bad element means nothing landed.
+/// </summary>
+public sealed class SeedResourcesHandler(IResourceStore store, IResourceIdGenerator ids, ResourceOptions options)
+    : ICommandHandler<SeedResourcesCommand, Result<int>>
+{
+    public ValueTask<Result<int>> Handle(SeedResourcesCommand command, CancellationToken cancellationToken)
+    {
+        if (ResourceRules.ValidateCollection(command.Collection) is { } collectionError)
+        {
+            return ValueTask.FromResult<Result<int>>(collectionError);
+        }
+
+        foreach (var item in command.Items)
+        {
+            var error = (item.Id is { } id ? ResourceRules.ValidateId(id) : null)
+                ?? ResourceRules.ValidateBody(item.Body, options);
+            if (error is not null)
+            {
+                return ValueTask.FromResult<Result<int>>(error);
+            }
+        }
+
+        foreach (var item in command.Items)
+        {
+            store.Put(command.Tenant, command.Collection, item.Id ?? ids.NextId(command.Collection), item.Body);
+        }
+
+        return ValueTask.FromResult<Result<int>>(command.Items.Count);
+    }
+}

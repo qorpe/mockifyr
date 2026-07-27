@@ -134,6 +134,18 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IMessageStore>(new InMemoryMessageStore(messageLimit));
         }
 
+        // Sandbox resources (G19a, ADR 0011 addendum): both caps are flag-tunable — the
+        // per-collection document bound and the per-document body bytes (413 beyond it).
+        if (int.TryParse(builder.Configuration["resource-limit"], out var resourceLimit))
+        {
+            builder.Services.AddSingleton<IResourceStore>(new InMemoryResourceStore(resourceLimit));
+        }
+
+        if (int.TryParse(builder.Configuration["resource-max-body"], out var resourceMaxBody) && resourceMaxBody > 0)
+        {
+            builder.Services.AddSingleton(new ResourceOptions(resourceMaxBody));
+        }
+
         builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(
             new StoreMessageSink(sp.GetRequiredService<IMessageStore>()),
             sp.GetRequiredService<IMessageBehaviorStore>(),
