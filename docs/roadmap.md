@@ -564,12 +564,17 @@ each item's definition of done, not follow-ups.
   over the wire (POST→GET→PUT→LIST→DELETE incl. admin-surface agreement, tenant isolation, and a
   zero-change proof); **Stryker 100 %** on `StateDirectiveApplier` (44/44). See
   `docs/parity/g19-sandbox.md`.
-- [ ] **G19c — OpenAPI import.** `Mockifyr.Adapters.OpenApi` (Microsoft.OpenApi, MIT, edge-only):
-  OpenAPI 3.0/3.1 → ordinary mappings (paths→`urlPathTemplate`, examples→responses, example-less
-  schemas→Faker-backed synthesis), optional stateful CRUD emission wiring G19b for
-  resource-shaped path pairs; `/__admin/openapi/import`; UI: **Import OpenAPI** in the Add-stub
-  channel chooser (ADR 0010). Golden-file round-trips against curated public specs, then *serve*
-  the imported stubs and assert responses — import proven by serving, not inspection.
+- [x] **G19c — OpenAPI import.** `Mockifyr.Adapters.OpenApi` (Microsoft.OpenApi.Readers, MIT,
+  edge-only): OpenAPI 3.0/3.1 (JSON + YAML) → ordinary mappings — generated as mapping JSON and
+  read back through the SAME reader as any bundle, so dialect compliance holds by construction.
+  Examples serve as-is; example-less schemas synthesize via `SchemaSample` (Faker-backed formats,
+  enum-first, deterministic dates); `?stateful=true` wires resource-shaped pairs to the G19b
+  directive (create incl. `Location` header, read/update/delete/list). `/__admin/openapi/import`
+  + the **OpenAPI** channel in the Add-stub chooser (all six locales). Addendum delivered: no
+  remote `$ref` fetch (typed refusal names the pointer), 5 MiB + 32-depth spec-bomb guards,
+  transactional import. Golden-file fixtures pin the output byte-for-byte; wire tests prove
+  import BY SERVING (incl. the full stateful CRUD loop from YAML); **Stryker 97.3 %** with the
+  five survivors analyzed as equivalents in `docs/parity/g19-sandbox.md`.
 - [ ] **G19d — Sandbox access: API keys + quotas.** Opt-in `--sandbox-auth`: hashed per-tenant keys
   (`IApiKeyStore` in Core, **persisted via the G16 seam** — keys survive restarts) managed via
   `/__admin/apikeys`; key-based tenant resolution ahead of the ADR 0003 host/header chain

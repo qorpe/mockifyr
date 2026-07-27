@@ -133,6 +133,7 @@ src/
   Mockifyr.Templating/           Handlebars.Net renderer + ITemplateHelper set
   Mockifyr.Stores.InMemory/      tenant-scoped in-memory stores
   Mockifyr.Adapters.MappingJson/ mapping JSON <-> domain model import adapter
+  Mockifyr.Adapters.OpenApi/     OpenAPI 3.x -> mapping JSON generator (G19c; Microsoft.OpenApi)
   Mockifyr.ServeEvents.Webhook/  IServeEventListener impl (outbound I/O)
   Mockifyr.Application/          CQRS handlers (Mediant) — MANAGEMENT PATH ONLY
   Mockifyr.Facade.Library/       in-process API
@@ -217,9 +218,9 @@ behaviors (SMTP faults/delay, simulated provider errors, capture webhook, `--mes
 verify/OTP (`/__admin/messages/otp`, `matches` regex filter) — validated by real-client self-tests
 (MailKit, official Twilio SDK) plus Stryker mutation testing (100% on the message logic), no oracle
 existing for message channels (`docs/parity/g18-messages.md`). **G19 — integration sandbox (ADR
-0011)** is underway: G19a (tenant/collection-scoped resource store + `/__admin/resources` with
-pagination, seed import and size caps; `--resource-limit`/`--resource-max-body`) and G19b (the
-`state` response directive — sandbox CRUD with `{{state.*}}` templating, applied by the renderer)
-are complete under the ADR's enterprise-readiness addendum (`docs/parity/g19-sandbox.md`); G19c–e
-are next. Remaining
+0011)** is underway: G19a (tenant/collection-scoped resource store + `/__admin/resources`), G19b
+(the `state` response directive — sandbox CRUD with `{{state.*}}` templating), and G19c (OpenAPI
+3.x import — `/__admin/openapi/import` + the Add-stub OpenAPI channel, optional stateful CRUD
+wiring) are complete under the ADR's enterprise-readiness addendum
+(`docs/parity/g19-sandbox.md`); G19d–e are next. Remaining
 work is documented **deferred edges** (per group in `docs/parity/`). Builds clean (0 warnings).

@@ -348,6 +348,21 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Ok() : EnvironmentFailure(result.Error);
         });
 
+        // OpenAPI import (G19c, ADR 0011): spec in, working sandbox out. The body is the raw
+        // OpenAPI 3.x document (JSON or YAML); ?stateful=true wires resource-shaped path pairs to
+        // the G19b state directive. Refusals are typed 422s (413 for the size guard).
+        admin.MapPost("/openapi/import", async (HttpRequest request, ISender sender) =>
+        {
+            var stateful = request.Query.TryGetValue("stateful", out var flag) && flag.FirstOrDefault() == "true";
+            var result = await sender.Send(new ImportOpenApiCommand(await ReadBody(request), stateful, TenantOf(request)));
+            return result.IsSuccess
+                ? Results.Json(new { imported = result.Value })
+                : Results.Json(new { error = result.Error.Code, message = result.Error.Description },
+                    statusCode: result.Error.Code == "OpenApi.TooLarge"
+                        ? StatusCodes.Status413PayloadTooLarge
+                        : StatusCodes.Status422UnprocessableEntity);
+        });
+
         // Sandbox resources (G19a, ADR 0011): tenant- and collection-scoped JSON documents. Thin
         // HTTP -> CQRS dispatch; every rule (names, ids, body cap, well-formedness) lives in the
         // Application handlers so the Library facade shares it verbatim.
