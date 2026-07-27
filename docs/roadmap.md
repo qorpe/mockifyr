@@ -439,6 +439,13 @@ is now end-to-end: engine + platform + dashboard.
   prefix (static + SPA fallback), scoped so mock-serving is untouched (`G12gDashboardTests`);
   `pnpm build:embedded` (base `/__mockifyr/`); a multi-stage **Dockerfile** builds one image serving the
   engine + admin + dashboard; **CI** now also builds the dashboard on every PR.
+- [x] **Recordings flow completed** — the captured-stub list's dead-end closed: **View JSON** now
+  actually renders the generated mapping (it was an empty `<details>`), and captured stubs can be
+  saved — per-row **Add to stubs** and **Import all** go through the standard bulk-import path,
+  imported rows leave the list, and the tenant switch clears it. The session hint corrected to match
+  the oracle-verified semantics (recording proxies EVERY request — see `docs/parity/g12-transport.md`)
+  and a new differential test pins that behavior. Verified in-browser end-to-end against a live
+  upstream (record → snapshot → view → import → replay, including a faithful 404 replay).
 - [x] **UI test runner** (#203) — a **Test** button on HTTP/GraphQL stubs opens a dialog that fires a
   REAL request at the host (embedded: same origin; dev: a `/__mock/` proxy tunnel): method/URL +
   Params/Headers/Body tabs seeded from the stub's exact-match matchers, client-side `{{key}}` preview,

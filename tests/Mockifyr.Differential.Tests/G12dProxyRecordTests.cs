@@ -156,6 +156,58 @@ public sealed class G12dProxyRecordTests : IAsyncLifetime
         Assert.True(failures.Count == 0, $"{failures.Count} record-over-wire divergence(s):\n{string.Join("\n", failures)}");
     }
 
+    [Fact]
+    public async Task Recording_ProxiesEveryRequest_EvenOnesAnExistingStubWouldMatch()
+    {
+        using var oracleClient = _oracle.CreateAdminClient();
+        using var mockifyrClient = _mockifyr.CreateClient();
+        var failures = new List<string>();
+
+        // A stub that exists BEFORE recording starts, with a body that deliberately lacks "upstream"
+        // so a proxied answer is unmistakable. Learned from this diff (recorded in docs/parity):
+        // while a recording is live the oracle proxies EVERY request to the target — a request an
+        // existing stub would match is proxied and captured too, it does NOT serve the stub. Mockifyr
+        // must diverge in neither direction: same upstream answer, same capture count.
+        const string keptStub =
+            """{"request":{"method":"GET","urlPath":"/kept"},"response":{"status":200,"body":"stub-wins"}}""";
+        await LoadStubAsync(oracleClient, keptStub);
+        await LoadStubAsync(mockifyrClient, keptStub);
+
+        await StartRecordingAsync(oracleClient, $"http://host.docker.internal:{_upstream.Port}", reset: false);
+        await StartRecordingAsync(mockifyrClient, $"http://127.0.0.1:{_upstream.Port}", reset: false);
+
+        var requests = new[]
+        {
+            new RequestSpec { Method = "GET", Url = "/kept" },      // an existing stub matches this
+            new RequestSpec { Method = "GET", Url = "/rec/extra" }, // nothing matches this
+        };
+        foreach (var request in requests)
+        {
+            var oracle = await DriveAsync(oracleClient, request);
+            var mockifyr = await DriveAsync(mockifyrClient, request);
+            if (oracle.Status != mockifyr.Status || Text(oracle.Body) != Text(mockifyr.Body))
+            {
+                failures.Add($"{request.Url} while recording diverges: oracle={oracle.Status}/\"{Text(oracle.Body)}\" " +
+                    $"mockifyr={mockifyr.Status}/\"{Text(mockifyr.Body)}\"");
+            }
+
+            if (!Text(mockifyr.Body).Contains("upstream"))
+            {
+                failures.Add($"{request.Url}: expected the upstream's answer while recording, got \"{Text(mockifyr.Body)}\"");
+            }
+        }
+
+        // Both exchanges were captured on both sides — the matched one included.
+        var oracleCount = (await StopRecordingAsync(oracleClient)).Split("\"request\"").Length - 1;
+        var mockifyrCount = (await StopRecordingAsync(mockifyrClient)).Split("\"request\"").Length - 1;
+        if (oracleCount != mockifyrCount)
+        {
+            failures.Add($"captured-stub count diverges: oracle={oracleCount} mockifyr={mockifyrCount}");
+        }
+
+        Assert.True(failures.Count == 0, $"{failures.Count} record-matched divergence(s):\n{string.Join("\n", failures)}");
+    }
+
     private static async Task LoadStubAsync(HttpClient client, string stubOrBundleJson)
     {
         await client.PostAsync("/__admin/mappings/reset", content: null);
@@ -165,9 +217,12 @@ public sealed class G12dProxyRecordTests : IAsyncLifetime
         await client.PostAsync(path, load);
     }
 
-    private static async Task StartRecordingAsync(HttpClient client, string targetBaseUrl)
+    private static async Task StartRecordingAsync(HttpClient client, string targetBaseUrl, bool reset = true)
     {
-        await client.PostAsync("/__admin/mappings/reset", content: null);
+        if (reset)
+        {
+            await client.PostAsync("/__admin/mappings/reset", content: null);
+        }
         using var body = new StringContent(
             "{\"targetBaseUrl\":\"" + targetBaseUrl + "\"}", Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/__admin/recordings/start", body);
