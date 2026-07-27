@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2 } from 'lucide-react'
+import { FlaskConical, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
@@ -18,6 +18,7 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { JsonField } from '@/components/ui/json-editor'
 import { HelpersButton } from '@/components/templating/helpers-dialog'
+import { TestRequestDialog, type TestSeed } from '@/components/stubs/test-request-dialog'
 
 function seedFrom(stub: Stub | null, prefillUrl?: string, template?: Partial<StubForm>): StubForm {
   if (!stub) return { ...emptyStub, ...(template ?? {}), ...(prefillUrl ? { urlValue: prefillUrl } : {}) }
@@ -105,6 +106,7 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
   const [tab, setTab] = useState(jsonOnly ? 'json' : initialTab)
   const [rawJson, setRawJson] = useState('')
   const [saving, setSaving] = useState(false)
+  const [testOpen, setTestOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // zodResolver's inferred generic clashes with the coerce()'d number fields (and pnpm's duplicate RHF
@@ -127,6 +129,29 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
   // Report unsaved state for the tab's dot: form edits (RHF isDirty) or a raw JSON change.
   const dirty = form.formState.isDirty || (tab === 'json' && rawJson !== initialJson.current)
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+
+  // Test runner (#203): only stubs a plain HTTP request can exercise. New stubs are HTTP.
+  const testable = (editing?.protocol ?? 'http') === 'http' || editing?.protocol === 'graphql'
+
+  // Seeds the runner from the form's CURRENT values (unsaved edits included): the exact-match
+  // matchers become a request that would hit this stub — equalTo headers/params and the first
+  // equalTo/equalToJson body pattern; looser matchers (contains, regex…) can't be inverted and are
+  // left for the user to fill in.
+  const testSeed = (): TestSeed => {
+    const v = getValues()
+    const headers = v.headers.filter((h) => h.name.trim() && h.operator === 'equalTo').map((h) => ({ name: h.name, value: h.value }))
+    const body = v.bodyPatterns.find((b) => b.operator === 'equalTo' || b.operator === 'equalToJson')?.value ?? ''
+    if (body && !headers.some((h) => h.name.toLowerCase() === 'content-type')) {
+      try { JSON.parse(body); headers.push({ name: 'Content-Type', value: 'application/json' }) } catch { /* not JSON — send as-is */ }
+    }
+    return {
+      method: v.method === 'ANY' ? 'GET' : v.method,
+      url: v.urlValue,
+      params: v.queryParams.filter((q) => q.name.trim() && q.operator === 'equalTo').map((q) => ({ name: q.name, value: q.value })),
+      headers,
+      body,
+    }
+  }
 
   // Keep the JSON preview live while editing the form (form is the source of truth on the Form tab).
   useEffect(() => {
@@ -208,6 +233,13 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
             </TabsList>
             {editing && <ProtocolChip protocol={editing.protocol} />}
             {jsonOnly && <span className="text-xs text-muted-foreground">{t('editor.jsonOnly')}</span>}
+            {/* Test runner (#203) — HTTP-transported stubs only: a plain HTTP probe cannot exercise
+                a gRPC or WebSocket stub, so the button hides rather than sending something misleading. */}
+            {testable && (
+              <Button variant="outline" size="sm" className="ms-auto" onClick={() => setTestOpen(true)}>
+                <FlaskConical />{t('test.button')}
+              </Button>
+            )}
           </div>
 
           <TabsContent value="form" className="scroll-area min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
@@ -349,6 +381,8 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
           {onCancel && <Button variant="ghost" onClick={onCancel}>{t('editor.cancel')}</Button>}
           <Button variant="primary" onClick={handleSubmit(persist, () => setTab('form'))} disabled={saving || !!jsonError}>{t('editor.save')}</Button>
         </div>
+
+        <TestRequestDialog open={testOpen} onOpenChange={setTestOpen} seed={testSeed} tenant={tenant} environments={environments} />
     </div>
   )
 }

@@ -19,6 +19,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/__admin': { target: 'http://localhost:8080', changeOrigin: true },
+      // Test-request runner (#203): in dev the SPA and the mock host are different origins, so mock
+      // traffic tunnels through this prefix. Embedded builds fetch the path directly (same origin).
+      // Regex key with a mandatory trailing slash — a bare '/__mock' prefix would also swallow the
+      // SPA's own /__mockifyr/* routes and blank the app.
+      '^/__mock/': { target: 'http://localhost:8080', changeOrigin: true, rewrite: (p) => p.replace(/^\/__mock/, '') },
     },
   },
 })

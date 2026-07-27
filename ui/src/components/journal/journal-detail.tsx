@@ -2,67 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowUpRight, Clock } from 'lucide-react'
-import { fetchJournalDetail, fetchStubs, type HeaderPair, type JournalWebhook } from '@/lib/api'
+import { fetchJournalDetail, fetchStubs, type JournalWebhook } from '@/lib/api'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MethodChip } from '@/components/ui/badges'
-import { JsonField } from '@/components/ui/json-editor'
-import { cn } from '@/lib/utils'
-
-// Pretty-print a body when it parses as JSON; otherwise show it verbatim.
-function pretty(body: string): string {
-  if (!body) return ''
-  try { return JSON.stringify(JSON.parse(body), null, 2) } catch { return body }
-}
-
-function statusTone(status: number): string {
-  if (status >= 500) return 'text-danger bg-danger-bg border-danger-border'
-  if (status >= 400) return 'text-warning bg-warning-bg border-warning-border'
-  return 'text-success bg-success-bg border-success-border'
-}
-
-function StatusChip({ status }: { status: number }) {
-  return (
-    <span className={cn('inline-flex shrink-0 rounded-md border px-2 py-0.5 font-mono text-[11px] font-bold', statusTone(status))}>{status}</span>
-  )
-}
-
-function Headers({ headers, label }: { headers: HeaderPair[]; label: string }) {
-  return (
-    <div>
-      <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-faint">{label}</h4>
-      {headers.length === 0 ? (
-        <p className="text-xs text-faint">—</p>
-      ) : (
-        <dl className="overflow-hidden rounded-lg border border-border">
-          {headers.map((h, i) => (
-            <div key={i} className={cn('grid grid-cols-[minmax(120px,220px)_1fr] gap-3 px-3 py-1.5 text-[12.5px]', i > 0 && 'border-t border-border')}>
-              <dt className="truncate font-medium text-muted-foreground">{h.name}</dt>
-              <dd className="break-all font-mono text-foreground">{h.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </div>
-  )
-}
-
-// A read-only body pane: the CodeMirror JSON field (syntax highlighting, folding, copy) over the
-// pretty-printed body. Height hugs the content up to a cap so short bodies don't leave a void.
-function Body({ body, label, empty }: { body: string; label: string; empty: string }) {
-  const value = pretty(body)
-  const height = Math.min(340, Math.max(60, (value.split('\n').length + 1) * 20 + 16))
-  return (
-    <div>
-      <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-faint">{label}</h4>
-      {body ? (
-        <JsonField value={value} readOnly lint={false} minimal height={height} />
-      ) : (
-        <p className="text-xs text-faint">{empty}</p>
-      )}
-    </div>
-  )
-}
+// Shared with the stub test runner (#203) so both surfaces render HTTP traffic identically.
+import { BodyView as Body, HeadersView as Headers, StatusChip } from '@/components/ui/http-view'
 
 /**
  * One callback delivery: the outbound request as actually sent (templates rendered) and, when the
