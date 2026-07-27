@@ -19,11 +19,14 @@ public sealed class MockifyrKestrelHost : IAsyncDisposable
 {
     private readonly WebApplication _app;
 
-    public MockifyrKestrelHost()
+    public MockifyrKestrelHost(Action<IServiceCollection>? configure = null)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.Services.AddMockifyr();
+        // Test-specific overrides (e.g. a tiny resource body cap) — registered after AddMockifyr so
+        // they win the resolution, exactly like the host's own flag plumbing.
+        configure?.Invoke(builder.Services);
 
         _app = builder.Build();
         _app.Urls.Add("http://127.0.0.1:0");

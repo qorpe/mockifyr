@@ -542,11 +542,18 @@ Everything is opt-in: no directive, no flag, no import → no behavior change.
 size caps + pagination, SSRF-safe import, version semantics, compliance notes) — they are part of
 each item's definition of done, not follow-ups.
 
-- [ ] **G19a — Core resource model + store + admin API.** `ResourceDocument` (id, collection, JSON
+- [x] **G19a — Core resource model + store + admin API.** `ResourceDocument` (id, collection, JSON
   body Core never parses, timestamps, version), tenant+collection-scoped `IResourceStore`
-  (bounded, ring-buffer eviction) + `IResourceIdGenerator` seam in Core (zero deps); in-memory
-  store; `/__admin/resources` CQRS + REST: collections, list/get/put/delete/reset, seed import
-  (JSON array → collection). Unit tests: tenant isolation, eviction, deterministic ids.
+  (bounded, ring-buffer eviction) + `IResourceIdGenerator` seam + `ResourceOptions` in Core (zero
+  deps); `InMemoryResourceStore` (injected clock, updates never evict, last-write-wins keeps
+  position); `/__admin/resources` CQRS + REST: collections, paginated list, get/put/delete,
+  per-collection + per-tenant reset, transactional seed import (JSON array → collection, ids from
+  the seam when absent); flags `--resource-limit` / `--resource-max-body` (413 beyond the cap).
+  Addendum criteria delivered: exact-boundary validation (collection 64 / id 256 / UTF-8 byte
+  cap), honest 404/413/422 surface, pagination from day one, concurrency-safe store. 25 unit + 8
+  handler + 7 wire tests; **Stryker 100 %** on `ResourceRules` (24/24) and
+  `InMemoryResourceStore` (24/24); differential suites untouched and green. See
+  `docs/parity/g19-sandbox.md`.
 - [ ] **G19b — State directive + templating.** Opt-in `state` directive on stub responses
   (create/read/update/delete/list on a named collection; facade-applied after matching, engine
   untouched); operation result exposed as `{{state.*}}` to the G2 template context; unknown-id
