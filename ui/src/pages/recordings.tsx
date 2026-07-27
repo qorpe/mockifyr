@@ -1,19 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Camera, Circle, Play, Square } from 'lucide-react'
+import { Camera, Circle, Import, Play, Square } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import { previewEnvironment } from '@/lib/environments'
 import {
-  fetchEnvironments, fetchRecordingStatus, snapshotRecording, startRecording, stopRecording, type CapturedStub,
+  fetchEnvironments, fetchRecordingStatus, importMappings, snapshotRecording, startRecording, stopRecording, type CapturedStub,
 } from '@/lib/api'
 import { MethodChip } from '@/components/ui/badges'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { RecordingsArt } from '@/components/ui/illustrations'
 import { Input } from '@/components/ui/field'
+import { JsonField } from '@/components/ui/json-editor'
 import { FacetFilter } from '@/components/ui/facet-filter'
 import { SearchBox } from '@/components/ui/search-box'
 import {
@@ -37,10 +38,21 @@ export function RecordingsPage() {
   })
   const targetResolution = previewEnvironment(target, environmentData?.environments ?? [])
   const [captured, setCaptured] = useState<CapturedStub[]>([])
+  const [expanded, setExpanded] = useState<Set<CapturedStub>>(new Set())
   const [selected, setSelected] = useState<Selections>({})
   const [search, setSearch] = useState('')
   const methodOptions = useMemo(() => facetOptions(captured, (s) => s.method), [captured])
   const filteredCaptured = useMemo(() => applyFilters(captured, FACETS, selected, search, (s) => s.url), [captured, selected, search])
+
+  // Switching tenants clears the captured list (#199 pattern): it belongs to the session the previous
+  // tenant's operator drove, and importing it into the new tenant by accident must not be one click.
+  useEffect(() => { setCaptured([]); setExpanded(new Set()); setSelected({}); setSearch('') }, [tenant])
+
+  const toggleJson = (stub: CapturedStub) => setExpanded((prev) => {
+    const next = new Set(prev)
+    if (!next.delete(stub)) next.add(stub)
+    return next
+  })
 
   const { data } = useQuery({ queryKey: ['recording-status', tenant], queryFn: () => fetchRecordingStatus(tenant), refetchInterval: (q) => (q.state.data?.mock ? false : 4000) })
   const recording = data?.status === 'Recording'
@@ -57,6 +69,24 @@ export function RecordingsPage() {
   const stop = useMutation({
     mutationFn: () => stopRecording(tenant),
     onSuccess: ({ stubs, mock }) => { setCaptured(stubs); toast[mock ? 'message' : 'success'](mock ? t('editor.savedSample') : t('recordings.stopped', { count: stubs.length })); refreshStatus() },
+  })
+
+  // Captured stubs become real stubs through the same bulk-import path as a file import; imported
+  // ones leave the list so what remains is always exactly what has NOT been saved yet.
+  const importStubs = useMutation({
+    mutationFn: async (stubs: CapturedStub[]) => {
+      const json = stubs.length === 1 ? stubs[0].raw : JSON.stringify({ mappings: stubs.map((s) => JSON.parse(s.raw) as unknown) })
+      return { ...(await importMappings(tenant, json)), stubs }
+    },
+    onSuccess: ({ mock, stubs }) => {
+      if (mock) { toast.message(t('editor.savedSample')); return }
+      const gone = new Set(stubs)
+      setCaptured((prev) => prev.filter((s) => !gone.has(s)))
+      setExpanded((prev) => new Set([...prev].filter((s) => !gone.has(s))))
+      void queryClient.invalidateQueries({ queryKey: ['stubs', tenant] })
+      void queryClient.invalidateQueries({ queryKey: ['scenarios', tenant] })
+      toast.success(t('recordings.imported', { count: stubs.length }))
+    },
   })
 
   return (
@@ -110,6 +140,9 @@ export function RecordingsPage() {
               <SearchBox value={search} onCommit={setSearch} placeholder={t('stubs.filter')} />
               <FacetFilter label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
                 onToggle={(v) => setSelected((s) => toggleSelection(s, 'method', v))} onClear={() => setSelected((s) => clearFacet(s, 'method'))} clearLabel={t('common.clear')} />
+              <Button variant="primary" size="sm" onClick={() => importStubs.mutate(captured)} disabled={importStubs.isPending}>
+                <Import />{t('recordings.importAll', { count: captured.length })}
+              </Button>
             </div>
           )}
         </div>
@@ -119,15 +152,29 @@ export function RecordingsPage() {
           <EmptyState art={<RecordingsArt />} title={t('common.noResults')} className="py-14" />
         ) : (
           <ul className="divide-y divide-border">
-            {filteredCaptured.map((s, i) => (
-              <li key={i} className="flex items-center gap-3 px-4 py-3">
-                <MethodChip method={s.method} />
-                <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{s.url}</span>
-                <details className="shrink-0">
-                  <summary className="cursor-pointer list-none text-xs font-semibold text-muted-foreground hover:text-foreground">{t('recordings.viewJson')}</summary>
-                </details>
-              </li>
-            ))}
+            {filteredCaptured.map((s, i) => {
+              const open = expanded.has(s)
+              return (
+                <li key={i} className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <MethodChip method={s.method} />
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{s.url}</span>
+                    <Button variant="ghost" size="sm" onClick={() => toggleJson(s)}>
+                      {open ? t('recordings.hideJson') : t('recordings.viewJson')}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => importStubs.mutate([s])} disabled={importStubs.isPending}>
+                      <Import />{t('recordings.addToStubs')}
+                    </Button>
+                  </div>
+                  {open && (
+                    <div className="mt-3">
+                      <JsonField value={s.raw} readOnly lint={false} minimal
+                        height={Math.min(340, Math.max(60, (s.raw.split('\n').length + 1) * 20 + 16))} />
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

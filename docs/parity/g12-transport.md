@@ -103,13 +103,20 @@ behaviors deferred throughout the roadmap are finally implemented and validated.
   `{"mappings":[…]}` envelope. The recorder *logic* was proven in G9; G12d proves the wire *mode* —
   the fallback intercepts while recording, and the stubs it generates over HTTP load into the **real
   oracle** and replay the captured response (status + body + `X-Upstream`).
+- **Learned (oracle-verified): recording proxies EVERY request — matched ones included.** A stub that
+  existed before `recordings/start` does **not** answer while the session is live: the oracle proxies
+  the request to the target and captures it like any other, and existing stubs resume only when the
+  recording stops. Assumed the opposite ("only unmatched requests are proxied", as a low-priority
+  catch-all would behave) until the diff refuted it — the dashboard hint used to make that wrong
+  claim. Captured upstream 404s are faithful too: a recorded 404 replays as a 404 stub.
 - **Deferred to G12e (explicitly tracked — not a silent gap):** `/__admin/ext/*` admin-extension
   routing (the `IAdminApiExtension` seam is public; dispatching it over HTTP is a small follow-up) and
   standalone/deploy + config (host config, `--port`/`--https-port`, mappings-dir load). Then G11
   (HTTPS/TLS + HTTP/2). Recording refinements from WireMock — filters, body-file extraction, and
   repeat-request → scenario generation — remain deferred (noted on `StubRecorder` since G9).
 - **Regression cases:** `G12dProxyRecordTests.Proxy_OverTheWire_MatchesOracle`,
-  `G12dProxyRecordTests.Record_OverTheWire_GeneratesStubsThatReplayOnOracle`.
+  `G12dProxyRecordTests.Record_OverTheWire_GeneratesStubsThatReplayOnOracle`,
+  `G12dProxyRecordTests.Recording_ProxiesEveryRequest_EvenOnesAnExistingStubWouldMatch`.
 
 ## Admin-extension routing (G12e)
 
