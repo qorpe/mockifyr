@@ -152,7 +152,7 @@ export function JournalPage() {
 
       <header className="mb-5">
         <h1 className="text-[22px] font-bold tracking-tight">{t('nav.journal')}</h1>
-        <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">{t('journal.subtitle')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('journal.subtitle')}</p>
       </header>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-surface">

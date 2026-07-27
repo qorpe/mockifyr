@@ -63,7 +63,7 @@ export function RecordingsPage() {
     <div className="mx-auto max-w-[1360px]">
       <header className="mb-6">
         <h1 className="text-[22px] font-bold tracking-tight">{t('nav.recordings')}</h1>
-        <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">{t('recordings.subtitle')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('recordings.subtitle')}</p>
       </header>
 
       {/* Session control */}

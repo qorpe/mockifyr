@@ -42,14 +42,15 @@ export function ScenariosPage() {
 
   return (
     <div className="mx-auto max-w-[1360px]">
-      <header className="mb-6 flex items-start gap-4">
-        <div>
-          <h1 className="text-[22px] font-bold tracking-tight">{t('nav.scenarios')}</h1>
-          <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">{t('scenarios.subtitle')}</p>
+      {/* Full-width description with the action under its end (#200) — same shape as Environments. */}
+      <header className="mb-6">
+        <h1 className="text-[22px] font-bold tracking-tight">{t('nav.scenarios')}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t('scenarios.subtitle')}</p>
+        <div className="mt-3 flex justify-end">
+          <Button variant="outline" onClick={() => resetAll.mutate()} disabled={resetAll.isPending}>
+            <RotateCcw />{t('scenarios.resetAll')}
+          </Button>
         </div>
-        <Button variant="outline" className="ms-auto" onClick={() => resetAll.mutate()} disabled={resetAll.isPending}>
-          <RotateCcw />{t('scenarios.resetAll')}
-        </Button>
       </header>
 
       {data?.mock && (

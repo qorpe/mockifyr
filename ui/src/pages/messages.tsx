@@ -176,7 +176,7 @@ export function MessagesPage() {
 
       <header className="mb-5">
         <h1 className="text-[22px] font-bold tracking-tight">{t('nav.messages')}</h1>
-        <p className="mt-1 max-w-[72ch] text-sm text-muted-foreground">{t('messages.positioning')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('messages.positioning')}</p>
       </header>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-surface">
@@ -463,7 +463,7 @@ function QuickStart() {
     <div className="mx-auto max-w-[560px] px-6 py-12">
       <Inbox className="size-10 text-faint" />
       <h2 className="mt-3 text-[17px] font-bold">{t('messages.qsTitle')}</h2>
-      <p className="mt-1.5 max-w-[52ch] text-sm text-muted-foreground">{t('messages.qsBody')}</p>
+      <p className="mt-1.5 text-sm text-muted-foreground">{t('messages.qsBody')}</p>
 
       <div className="mt-6 space-y-5">
         <div>

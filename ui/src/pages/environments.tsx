@@ -112,12 +112,14 @@ export function EnvironmentsPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[22px] font-bold tracking-tight">{t('nav.environments')}</h1>
-          <p className="mt-1 max-w-[62ch] text-sm leading-relaxed text-muted-foreground">{t('env.subtitle')}</p>
+      {/* Full-width description with the action tucked under its end (#200) — the side-by-side split
+          left the text cramped in half the row while the button's half sat empty. */}
+      <header className="mb-5">
+        <h1 className="text-[22px] font-bold tracking-tight">{t('nav.environments')}</h1>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{t('env.subtitle')}</p>
+        <div className="mt-3 flex justify-end">
+          <Button variant="primary" onClick={() => startEdit()}><Plus />{t('env.add')}</Button>
         </div>
-        <Button variant="primary" onClick={() => startEdit()}><Plus />{t('env.add')}</Button>
       </header>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-surface">
@@ -226,7 +228,7 @@ export function EnvironmentsPage() {
 
       {/* The {ex} slot is filled here (not via i18next interpolation) because the example itself
           contains double curly braces, which i18next would treat as a variable. */}
-      <p className="mt-4 max-w-[70ch] text-sm leading-relaxed text-muted-foreground">
+      <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
         {t('env.hint').split('{ex}').map((part, i, arr) => (
           <span key={i}>
             {part}

@@ -54,7 +54,7 @@ export function DashboardPage() {
       <header className="mb-6 flex items-start gap-3">
         <div>
           <h1 className="text-[22px] font-bold tracking-tight">{t('dashboard.title')}</h1>
-          <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">{t('dashboard.subtitle')}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t('dashboard.subtitle')}</p>
         </div>
         {mock && (
           <span className="ms-auto shrink-0 rounded-full border border-warning-border bg-warning-bg px-2.5 py-0.5 text-[11.5px] font-medium text-warning">{t('stubs.sample')}</span>
