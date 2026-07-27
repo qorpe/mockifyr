@@ -56,6 +56,10 @@ export function EnvironmentsPage() {
   const [activeValue, setActiveValue] = useState('default')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
+  // Switching tenants closes the edit panel and any pending delete confirmation (#199): both hold a
+  // key from the previous tenant, which would otherwise render as if it belonged to the new one.
+  useEffect(() => { setEditing(null); setConfirmDelete(null) }, [tenant])
+
   const startEdit = (entry?: EnvironmentKey) => {
     setEditing(entry?.key ?? '')
     setKeyName(entry?.key ?? '')
