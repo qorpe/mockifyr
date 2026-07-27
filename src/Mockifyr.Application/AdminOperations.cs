@@ -109,3 +109,20 @@ public sealed record SeedResourcesCommand(string Collection, IReadOnlyList<SeedR
 /// nothing is created (ADR 0011 addendum). Returns how many stubs were imported.
 /// </summary>
 public sealed record ImportOpenApiCommand(string SpecText, bool Stateful, TenantId Tenant) : ICommand<Result<int>>;
+
+// Sandbox access (G19d, ADR 0011): operator-issued API keys that scope traffic to a tenant.
+
+/// <summary>The one-time issue result: the token appears here and never again.</summary>
+public sealed record IssuedApiKey(ApiKey Key, string Token);
+
+/// <summary>A key with its current-window usage, for the admin listing.</summary>
+public sealed record ApiKeyWithUsage(ApiKey Key, int Used);
+
+/// <summary>Issues a key for the tenant (optionally quota-limited per hour).</summary>
+public sealed record IssueApiKeyCommand(string Name, int? QuotaPerHour, TenantId Tenant) : ICommand<Result<IssuedApiKey>>;
+
+/// <summary>Lists the tenant's keys (hashes never leave the handler — prefixes only).</summary>
+public sealed record GetApiKeysQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<ApiKeyWithUsage>>>;
+
+/// <summary>Revokes one of the tenant's keys.</summary>
+public sealed record RevokeApiKeyCommand(string Id, TenantId Tenant) : ICommand<Result>;

@@ -575,13 +575,15 @@ each item's definition of done, not follow-ups.
   transactional import. Golden-file fixtures pin the output byte-for-byte; wire tests prove
   import BY SERVING (incl. the full stateful CRUD loop from YAML); **Stryker 97.3 %** with the
   five survivors analyzed as equivalents in `docs/parity/g19-sandbox.md`.
-- [ ] **G19d — Sandbox access: API keys + quotas.** Opt-in `--sandbox-auth`: hashed per-tenant keys
+- [x] **G19d — Sandbox access: API keys + quotas.** Opt-in `--sandbox-auth`: hashed per-tenant keys
   (`IApiKeyStore` in Core, **persisted via the G16 seam** — keys survive restarts) managed via
   `/__admin/apikeys`; key-based tenant resolution ahead of the ADR 0003 host/header chain
   (gRPC/GraphQL/WS inherit via the HTTP facade; SMTP keeps AUTH-as-tenant); **a sandbox key never
   reaches `/__admin/*`**; optional per-key request quota (race-free, fixed window) with realistic
   `429` + rate headers; usage counters via admin. Self-test: two keys → two tenants → provably
-  isolated stubs/resources; parallel quota-boundary test.
+  isolated stubs/resources; parallel quota-boundary test. Delivered exactly as specified —
+  wire self-tests against a restarted real host, **Stryker 28/29** with the single survivor
+  analyzed as equivalent in `docs/parity/g19-sandbox.md`.
 - [ ] **G19e — Sandbox UI + positioning.** Sidebar gains a **Sandbox** group (between Mocking and
   Platform): **Resources** (browse collections/documents per tenant, edit/delete/reset, seed
   import) and **Access** (issue/revoke keys, quotas, usage); dashboard quick-start "spin up a

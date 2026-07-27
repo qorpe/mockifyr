@@ -348,6 +348,51 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Ok() : EnvironmentFailure(result.Error);
         });
 
+        // Sandbox access (G19d, ADR 0011): operator-issued API keys. The token appears in the
+        // issue response ONCE; every later view carries only the display prefix. These endpoints
+        // never accept a sandbox key as authentication — admin auth stays --admin-user/--admin-pass.
+        admin.MapGet("/apikeys", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetApiKeysQuery(TenantOf(request)));
+            return Results.Json(new { keys = result.Value.Select(entry => ApiKeyJson(entry.Key, entry.Used)) });
+        });
+
+        admin.MapPost("/apikeys", async (HttpRequest request, ISender sender) =>
+        {
+            string? name = null;
+            int? quota = null;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await ReadBody(request));
+                name = doc.RootElement.TryGetProperty("name", out var n) ? n.GetString() : null;
+                quota = doc.RootElement.TryGetProperty("quotaPerHour", out var q) && q.TryGetInt32(out var parsed)
+                    ? parsed
+                    : null;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+            }
+
+            var result = await sender.Send(new IssueApiKeyCommand(name ?? string.Empty, quota, TenantOf(request)));
+            return result.IsSuccess
+                ? Results.Json(new
+                {
+                    id = result.Value.Key.Id,
+                    key = result.Value.Token,
+                    prefix = result.Value.Key.Prefix,
+                    name = result.Value.Key.Name,
+                    quotaPerHour = result.Value.Key.QuotaPerHour,
+                    createdAt = result.Value.Key.CreatedAt,
+                }, statusCode: StatusCodes.Status201Created)
+                : ApiKeyFailure(result.Error);
+        });
+
+        admin.MapDelete("/apikeys/{id}", async (string id, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new RevokeApiKeyCommand(id, TenantOf(request)));
+            return result.IsSuccess ? Results.Ok() : ApiKeyFailure(result.Error);
+        });
+
         // OpenAPI import (G19c, ADR 0011): spec in, working sandbox out. The body is the raw
         // OpenAPI 3.x document (JSON or YAML); ?stateful=true wires resource-shaped path pairs to
         // the G19b state directive. Refusals are typed 422s (413 for the size guard).
@@ -851,6 +896,23 @@ public static class AdminEndpoints
         updatedAt = document.UpdatedAt,
         version = document.Version,
     };
+
+    private static object ApiKeyJson(ApiKey key, int used) => new
+    {
+        id = key.Id,
+        name = key.Name,
+        prefix = key.Prefix,
+        createdAt = key.CreatedAt,
+        quotaPerHour = key.QuotaPerHour,
+        usedThisHour = used,
+    };
+
+    private static IResult ApiKeyFailure(Mediant.Results.Error error) =>
+        Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
+        {
+            "ApiKey.NotFound" => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status422UnprocessableEntity,
+        });
 
     private static IResult ResourceFailure(Mediant.Results.Error error) =>
         Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
