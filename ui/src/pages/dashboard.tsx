@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Activity, ArrowRight, CheckCircle2, Disc, Download, ListTree, Plus, Waypoints, XCircle } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { Activity, ArrowRight, Check, CheckCircle2, Copy, Database, Disc, Download, FileJson, KeyRound, Link2, ListTree, Plus, Waypoints, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import { fetchHealth, fetchJournal, fetchScenarios, fetchStubs, persistenceLabel } from '@/lib/api'
@@ -147,6 +149,8 @@ export function DashboardPage() {
         </div>
       )}
 
+      <SandboxQuickStart />
+
       <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-background p-4 text-sm text-muted-foreground shadow-surface">
         <CheckCircle2 className="size-4 text-success" />
         <span className="font-medium text-success">{t('dashboard.verified')}</span>
@@ -175,6 +179,61 @@ function MatchRatio({ matched, unmatched, t }: { matched: number; unmatched: num
       <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-success" />{t('journal.matched')}</span>
         <span className="flex items-center gap-1.5"><i className="size-2 rounded-full bg-danger" />{t('journal.unmatched')}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * "Spin up a sandbox" (G19e): the four-step path from an API spec to a shareable sandbox —
+ * import the spec, seed data, issue a key, hand out the base URL. The last step copies the
+ * mock-surface origin (the same host the dashboard is served from).
+ */
+function SandboxQuickStart() {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  const baseUrl = window.location.origin
+  const copy = () => {
+    void navigator.clipboard.writeText(baseUrl).then(() => {
+      setCopied(true)
+      toast.success(t('sandboxQs.copied'))
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const steps = [
+    { icon: FileJson, title: t('sandboxQs.import'), hint: t('sandboxQs.importHint'), to: '/stubs?new=1' },
+    { icon: Database, title: t('sandboxQs.seed'), hint: t('sandboxQs.seedHint'), to: '/resources' },
+    { icon: KeyRound, title: t('sandboxQs.key'), hint: t('sandboxQs.keyHint'), to: '/access' },
+  ]
+
+  return (
+    <div className="mt-4 rounded-2xl border border-border bg-background p-4 shadow-surface">
+      <div className="mb-3 flex items-center gap-2">
+        <Database className="size-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">{t('sandboxQs.title')}</h2>
+        <span className="text-xs text-muted-foreground">{t('sandboxQs.subtitle')}</span>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {steps.map((step, i) => (
+          <Link key={step.to} to={step.to} className="group flex items-start gap-2.5 rounded-xl border border-border p-3 transition-colors hover:border-border-strong hover:bg-muted/40">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">{i + 1}</span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-sm font-medium"><step.icon className="size-3.5 text-muted-foreground" />{step.title}</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{step.hint}</span>
+            </span>
+          </Link>
+        ))}
+        <button onClick={copy} className="group flex items-start gap-2.5 rounded-xl border border-border p-3 text-start transition-colors hover:border-border-strong hover:bg-muted/40">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">4</span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              <Link2 className="size-3.5 text-muted-foreground" />{t('sandboxQs.url')}
+              {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5 text-faint opacity-0 transition-opacity group-hover:opacity-100" />}
+            </span>
+            <span className="mt-0.5 block truncate font-mono text-xs leading-relaxed text-muted-foreground">{baseUrl}</span>
+          </span>
+        </button>
       </div>
     </div>
   )

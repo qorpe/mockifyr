@@ -191,3 +191,40 @@ pre-existing G16 edge, tracked separately, out of this vertical's scope.
 
 **Deferred (tracked).** Key expiry (`expiresAt`) and rotation; per-key scopes (read-only keys);
 quota windows other than hourly; usage counters surviving restarts; per-key scenario isolation.
+
+---
+
+## G19e — Sandbox UI + positioning
+
+**What shipped.** The dashboard grew a **Sandbox** sidebar group between Mocking and Platform:
+**Resources** (collections rail + paged document table, JSON document editor with client-side
+validation mirroring the server's guards, seed-from-array dialog, per-collection and global reset
+with confirmations) and **Access** (issue/revoke keys, per-key quota entry, a one-time token
+reveal dialog with a copy affordance and an explicit "shown only once" warning, usage bars
+`used/quota` that warn at 80% and turn danger at 100%). The dashboard gained a "Spin up a sandbox"
+quick-start strip (import spec → seed data → issue key → copy base URL). Both pages are
+tenant-scoped through the same admin header as every other screen, close all edit/confirm state
+on a tenant switch (the #199 lesson), render RTL for Arabic, and shipped in all six locales.
+
+**Decisions worth remembering.**
+
+- **The token is UI-honest about show-once**: the reveal dialog is the only place the token ever
+  exists client-side; the listing renders `prefix…` and nothing else, matching the server, which
+  cannot re-reveal it.
+- **Client-side validation mirrors, never replaces, the server guards**: collection/id pattern
+  (`[A-Za-z0-9_-]{1,64}`), well-formed-JSON body, array-shaped seed — typed server errors still
+  surface as toasts when they disagree.
+- **Tables scroll inside their card** (`overflow-x-auto`) so narrow panes clip nothing — the
+  width-optimization rule from #200 applied from day one.
+
+**Validation story.** UI-only vertical — no engine change, so no oracle question arises. Verified
+in-browser against a real `--sandbox-auth` host end-to-end: seeded `orders` via the admin API and
+browsed/edited it in the UI (a dialog save advanced the server-side document to `version: 2`);
+issued a 50/hour key through the dialog and used the revealed token on the wire — three live
+requests answered 200 with `X-RateLimit-Remaining` counting down, after which the Access table
+showed `3 / 50`; confirmed the Turkish locale renders the full Access screen. `tsc`, `oxlint`
+(no new warnings), and the production build are clean.
+
+**Deferred (tracked).** Copy-as-curl on the token reveal; per-key usage history (needs
+server-side counters that survive restarts, deferred with G19d's); a collection-level document
+search box.

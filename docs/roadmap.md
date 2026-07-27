@@ -584,10 +584,12 @@ each item's definition of done, not follow-ups.
   isolated stubs/resources; parallel quota-boundary test. Delivered exactly as specified —
   wire self-tests against a restarted real host, **Stryker 28/29** with the single survivor
   analyzed as equivalent in `docs/parity/g19-sandbox.md`.
-- [ ] **G19e — Sandbox UI + positioning.** Sidebar gains a **Sandbox** group (between Mocking and
+- [x] **G19e — Sandbox UI + positioning.** Sidebar gains a **Sandbox** group (between Mocking and
   Platform): **Resources** (browse collections/documents per tenant, edit/delete/reset, seed
   import) and **Access** (issue/revoke keys, quotas, usage); dashboard quick-start "spin up a
-  sandbox" (import spec → seed data → issue key → copy base URL). Verified in-browser.
+  sandbox" (import spec → seed data → issue key → copy base URL). Verified in-browser against a
+  live `--sandbox-auth` host end-to-end (a key issued through the dialog authenticated a real
+  request and its usage showed 3/50 in the table); all six locales shipped.
 
 Deferred edges (tracked from day one in `docs/parity/g19-sandbox.md`): durable resource
 persistence via the G16 seam, GraphQL SDL / AsyncAPI import, per-key scenario isolation, OpenAPI

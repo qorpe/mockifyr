@@ -223,7 +223,8 @@ existing for message channels (`docs/parity/g18-messages.md`). **G19 — integra
 3.x import — `/__admin/openapi/import` + the Add-stub OpenAPI channel, optional stateful CRUD
 wiring), and G19d (sandbox access — `--sandbox-auth` with `mfk_` API keys via `/__admin/apikeys`,
 salted-SHA-256 + constant-time verify, key→tenant resolution ahead of the ADR 0003 chain, per-key
-hourly quotas with honest 429 + rate headers, keys persisted via the G16 seam) are complete under
-the ADR's enterprise-readiness addendum
-(`docs/parity/g19-sandbox.md`); G19e (Sandbox UI) is next. Remaining
+hourly quotas with honest 429 + rate headers, keys persisted via the G16 seam) and G19e (the Sandbox UI —
+sidebar **Sandbox** group with Resources + Access screens, one-time token reveal, dashboard
+"spin up a sandbox" quick-start, all six locales) are complete under the ADR's
+enterprise-readiness addendum (`docs/parity/g19-sandbox.md`) — **G19 is done**. Remaining
 work is documented **deferred edges** (per group in `docs/parity/`). Builds clean (0 warnings).
