@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Mockifyr.Core\Mockifyr.Core.csproj" />
     <!-- The import/create commands parse mapping JSON via the adapter. -->
     <ProjectReference Include="..\Mockifyr.Adapters.MappingJson\Mockifyr.Adapters.MappingJson.csproj" />
+    <ProjectReference Include="..\Mockifyr.Adapters.OpenApi\Mockifyr.Adapters.OpenApi.csproj" />
     <!-- CQRS mediator — management path only. See docs/decisions/0005. -->
     <PackageReference Include="Mediant" />
   </ItemGroup>

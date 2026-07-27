@@ -434,6 +434,23 @@ async function captureVia(tenant: string, path: string): Promise<{ stubs: Captur
   }
 }
 
+/**
+ * Imports an OpenAPI 3.x document (JSON or YAML) as stubs via POST /__admin/openapi/import (G19c).
+ * `stateful` wires resource-shaped path pairs to the sandbox state directive. Returns the imported
+ * count, or throws with the host's typed message so the form can surface it.
+ */
+export async function importOpenApi(tenant: string, spec: string, stateful: boolean): Promise<{ imported: number; mock: boolean }> {
+  try {
+    const res = await adminFetch(`/openapi/import${stateful ? '?stateful=true' : ''}`, tenant, { method: 'POST', body: spec })
+    const body = (await res.json()) as { imported?: number; error?: string; message?: string }
+    if (!res.ok) throw new Error(body.message ?? body.error ?? String(res.status))
+    return { imported: body.imported ?? 0, mock: false }
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith('Failed to fetch')) throw e
+    return { imported: 0, mock: true }
+  }
+}
+
 export const snapshotRecording = (tenant: string) => captureVia(tenant, '/recordings/snapshot')
 export const stopRecording = (tenant: string) => captureVia(tenant, '/recordings/stop')
 

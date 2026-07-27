@@ -87,3 +87,51 @@ the parity surface did not move.
 
 **Deferred (tracked).** Query/filter parameters on `list`; `{{state.*}}` in webhook templates;
 per-key scenario isolation (G19d+).
+
+## G19c — OpenAPI import
+
+**What shipped.** `Mockifyr.Adapters.OpenApi` (Microsoft.OpenApi.Readers, MIT, edge-only — never
+referenced by Core): OpenAPI 3.0/3.1 (JSON or YAML) in, ordinary mapping JSON out, imported
+through `POST /__admin/openapi/import` and the Add-stub **OpenAPI** channel in the dashboard.
+Paths become `urlPathTemplate`/`urlPath` matchers, declared examples serve as-is, example-less
+schemas synthesize samples (`SchemaSample`), and with `?stateful=true` resource-shaped path pairs
+(`/things` + `/things/{id}`) emit a G19b state-wired CRUD set — spec in, working sandbox out.
+
+**Decisions worth remembering.**
+
+- **Dialect compliance by construction**: the generator emits mapping JSON strings and the import
+  handler feeds them through the SAME `MappingJsonReader` as any bundle — an imported stub cannot
+  exist outside the dialect, and the differential suites keep proving that dialect.
+- **SSRF is impossible by construction** (addendum): external `$ref`s (URL or file) are refused
+  before parsing with the offending pointer named, and the reader only ever resolves local
+  references — nothing is fetched.
+- **Spec bombs bounce**: a 5 MiB size guard before parsing, a 32-level schema-recursion guard
+  during synthesis (cyclic `$ref`s hit it) — typed 422s, never a hang.
+- **Import is transactional**: every generated mapping parses before anything is stored.
+- **Response selection**: lowest 2xx, then `default` (as 200), then the lowest declared;
+  `application/json` wins among content types; the chosen content type rides into the stub.
+- **Faker-backed synthesis**: string formats map to existing helpers (`uuid`, `email`,
+  `uri`/`url` → `{{randomValue}}`/`{{random}}` expressions; the stub opts into templating), dates
+  stay deterministic ISO stamps, other primitives are fixed samples, enums take their first value.
+- **Golden files are the contract**: the committed `*.golden.jsonl` fixtures pin every literal of
+  the generated output byte-for-byte (petstore + a real-world-shaped orders YAML, stateful
+  included).
+
+**Validation story.** `G19cOpenApiGeneratorTests` (goldens + generation table + all five typed
+refusals), `G19cSchemaSampleTests` (format map, exact depth boundary, allOf, corners),
+`G19cOpenApiImportTests` (wire: import then SERVE — declared examples verbatim, synthesized
+Faker/uuid values live, the stateful CRUD loop end-to-end from YAML, typed 422s, transactionality,
+imported stubs listable as ordinary mappings). **Stryker: 97.3 %** on the generator pair (178/183);
+the five survivors are analyzed equivalents, recorded here per the contract:
+
+- `content.First()` → `FirstOrDefault()`: unreachable difference — guarded by `Count > 0`.
+- `lastSlash <= 0` → `< 0` and the second `||`→`&&` on the pair-detection guard: an empty
+  collection path can never exist in `Paths` (OpenAPI paths start with `/`), so every observable
+  outcome is identical.
+- `StringBuilder(capacity ± 1)`: a capacity hint, no behavior.
+- `name.Length > 64` → `>= 64`: slicing a 64-char string to 64 is the identity.
+
+The pre-existing differential suites pass untouched — the parity surface did not move.
+
+**Deferred (tracked).** GraphQL SDL / AsyncAPI import; OpenAPI *export* of authored stubs;
+`examples` (multi-example) rotation; request-body-aware matchers from `requestBody` schemas.

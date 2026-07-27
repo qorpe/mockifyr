@@ -1,0 +1,3 @@
+{"name":"listPets","request":{"method":"GET","urlPath":"/pets"},"response":{"status":200,"body":"[{\"id\":1,\"name\":\"string\",\"contact\":\"{{random 'Internet.emailAddress'}}\",\"ref\":\"{{randomValue type='UUID'}}\"}]","headers":{"Content-Type":"application/json"},"transformers":["response-template"]}}
+{"name":"createPets","request":{"method":"POST","urlPath":"/pets"},"response":{"status":201}}
+{"name":"showPetById","request":{"method":"GET","urlPathTemplate":"/pets/{petId}"},"response":{"status":200,"body":"{\n  \"id\": 7,\n  \"name\": \"Odie\",\n  \"tag\": \"dog\"\n}","headers":{"Content-Type":"application/json"}}}

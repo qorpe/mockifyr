@@ -102,3 +102,10 @@ public sealed record ResetResourcesCommand(string? Collection, TenantId Tenant) 
 
 /// <summary>Seeds a collection from a JSON array; transactional — on any invalid item nothing lands.</summary>
 public sealed record SeedResourcesCommand(string Collection, IReadOnlyList<SeedResourceItem> Items, TenantId Tenant) : ICommand<Result<int>>;
+
+/// <summary>
+/// Imports an OpenAPI 3.x document (JSON or YAML) as ordinary mappings; with <c>Stateful</c>,
+/// resource-shaped path pairs emit a G19b state-wired CRUD set. Transactional: on any refusal
+/// nothing is created (ADR 0011 addendum). Returns how many stubs were imported.
+/// </summary>
+public sealed record ImportOpenApiCommand(string SpecText, bool Stateful, TenantId Tenant) : ICommand<Result<int>>;

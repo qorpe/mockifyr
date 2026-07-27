@@ -535,3 +535,41 @@ public sealed class SeedResourcesHandler(IResourceStore store, IResourceIdGenera
         return ValueTask.FromResult<Result<int>>(command.Items.Count);
     }
 }
+
+/// <summary>
+/// Imports an OpenAPI document by generating mapping JSON at the edge and feeding it through the
+/// SAME reader as any bundle — dialect compliance by construction. Fully transactional: every
+/// mapping parses before anything is stored.
+/// </summary>
+public sealed class ImportOpenApiHandler(IStubStore store, IMatcherRegistry matchers, IStubPersistence persistence)
+    : ICommandHandler<ImportOpenApiCommand, Result<int>>
+{
+    public ValueTask<Result<int>> Handle(ImportOpenApiCommand command, CancellationToken cancellationToken)
+    {
+        List<(StubMapping Stub, string Source)> stubs = [];
+        try
+        {
+            foreach (var mappingJson in Mockifyr.Adapters.OpenApi.OpenApiStubGenerator.Generate(command.SpecText, command.Stateful))
+            {
+                stubs.AddRange(MappingJsonReader.ReadWithSource(mappingJson, command.Tenant, matchers));
+            }
+        }
+        catch (Mockifyr.Adapters.OpenApi.OpenApiImportException exception)
+        {
+            return ValueTask.FromResult<Result<int>>(Error.Validation("OpenApi." + exception.Error, exception.Message));
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        {
+            return ValueTask.FromResult<Result<int>>(Error.Validation(
+                "OpenApi.Invalid", "A generated mapping did not read back: " + exception.Message));
+        }
+
+        foreach (var (stub, source) in stubs)
+        {
+            store.Put(stub);
+            persistence.Save(stub, source);
+        }
+
+        return ValueTask.FromResult<Result<int>>(stubs.Count);
+    }
+}

@@ -2,25 +2,27 @@ import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Braces, Cable, Globe, Workflow } from 'lucide-react'
-import { fetchGrpcDescriptors, saveMessageMapping, saveStub } from '@/lib/api'
+import { Braces, Cable, FileJson, Globe, Workflow } from 'lucide-react'
+import { fetchGrpcDescriptors, importOpenApi, saveMessageMapping, saveStub } from '@/lib/api'
 import { useUi } from '@/components/providers'
 import { Button } from '@/components/ui/button'
 import { Input, Label, NativeSelect } from '@/components/ui/field'
 import { JsonEditor, JsonField } from '@/components/ui/json-editor'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StubEditorForm } from '@/components/stubs/stub-editor'
 
 // The stub channels the Add flow offers (ADR 0010). HTTP renders the classic editor; the others are
 // thin projections that always emit the exact JSON the host dialect expects — the JSON preview *is*
 // the source of truth, the form only writes it.
-export type StubChannel = 'http' | 'grpc' | 'graphql' | 'websocket'
+export type StubChannel = 'http' | 'grpc' | 'graphql' | 'websocket' | 'openapi'
 
 const CHANNELS: { id: StubChannel; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'http', icon: Globe },
   { id: 'grpc', icon: Workflow },
   { id: 'graphql', icon: Braces },
   { id: 'websocket', icon: Cable },
+  { id: 'openapi', icon: FileJson },
 ]
 
 /**
@@ -65,6 +67,57 @@ export function NewStubWorkspace({ active, prefillUrl, onSaved, onDirtyChange }:
           onSaved={() => onSaved(true)} onCancel={() => onSaved(false)} onDirtyChange={onDirtyChange} />
       )}
       {channel === 'websocket' && <WsMappingForm onSaved={onSaved} />}
+      {channel === 'openapi' && <OpenApiImportForm onSaved={onSaved} />}
+    </div>
+  )
+}
+
+/**
+ * OpenAPI import (G19c): paste a 3.x document (JSON or YAML), optionally wire resource-shaped path
+ * pairs to the sandbox state directive, and import — the generated stubs are ordinary mappings.
+ */
+function OpenApiImportForm({ onSaved }: { onSaved: (saved: boolean) => void }) {
+  const { t } = useTranslation()
+  const { tenant } = useUi()
+  const queryClient = useQueryClient()
+  const [spec, setSpec] = useState('')
+  const [stateful, setStateful] = useState(true)
+  const [busy, setBusy] = useState(false)
+
+  const runImport = async () => {
+    setBusy(true)
+    try {
+      const { imported, mock } = await importOpenApi(tenant, spec, stateful)
+      if (mock) { toast.message(t('editor.savedSample')); return }
+      toast.success(t('openapi.imported', { count: imported }))
+      void queryClient.invalidateQueries({ queryKey: ['stubs', tenant] })
+      void queryClient.invalidateQueries({ queryKey: ['scenarios', tenant] })
+      onSaved(true)
+    } catch (e) {
+      toast.error(t('openapi.failed') + ': ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="scroll-area flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 py-5">
+      <p className="text-sm text-muted-foreground">{t('openapi.hint')}</p>
+      <div className="min-h-[320px] flex-1">
+        <JsonField fill value={spec} onChange={setSpec} lint={false} />
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2.5 text-sm">
+          <Switch checked={stateful} onCheckedChange={setStateful} />
+          {t('openapi.stateful')}
+        </label>
+        <span className="text-xs text-muted-foreground">{t('openapi.statefulHint')}</span>
+        <div className="ms-auto">
+          <Button variant="primary" onClick={() => void runImport()} disabled={busy || !spec.trim()}>
+            {t('openapi.import')}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

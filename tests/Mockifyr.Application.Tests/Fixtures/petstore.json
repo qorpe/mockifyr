@@ -1,0 +1,55 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Swagger Petstore", "version": "1.0.0" },
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "listPets",
+        "responses": {
+          "200": {
+            "description": "A paged array of pets",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Pet" } }
+              }
+            }
+          },
+          "default": { "description": "unexpected error" }
+        }
+      },
+      "post": {
+        "operationId": "createPets",
+        "responses": { "201": { "description": "Null response" } }
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "operationId": "showPetById",
+        "parameters": [ { "name": "petId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": {
+            "description": "Expected response",
+            "content": {
+              "application/json": {
+                "example": { "id": 7, "name": "Odie", "tag": "dog" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "contact": { "type": "string", "format": "email" },
+          "ref": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  }
+}

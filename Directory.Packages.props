@@ -23,6 +23,9 @@
     <!-- Fake-data generation for the Faker/random helper (G15). Bogus is the .NET counterpart of the
          Datafaker library WireMock's faker extension uses. Used only inside Mockifyr.Templating. -->
     <PackageVersion Include="Bogus" Version="35.6.5" />
+    <!-- OpenAPI import (G19c, ADR 0011). Microsoft.OpenApi.Readers parses 3.0/3.1 (JSON + YAML);
+         MIT-licensed, used only inside Mockifyr.Adapters.OpenApi — never referenced by Core. -->
+    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.23" />
     <!-- gRPC facade (G13). Google.Protobuf drives generic protobuf <-> JSON via the descriptor;
          Grpc.AspNetCore hosts the gRPC endpoint. Used only inside Mockifyr.Facade.Grpc. -->
     <PackageVersion Include="Google.Protobuf" Version="3.35.1" />

@@ -44,6 +44,8 @@
   <ItemGroup>
     <Protobuf Include="Protos\greeter.proto" GrpcServices="Client" />
     <None Include="Protos\greeter.dsc" CopyToOutputDirectory="PreserveNewest" />
+    <!-- OpenAPI import fixtures (G19c). -->
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
