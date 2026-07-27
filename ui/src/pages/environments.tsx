@@ -224,7 +224,7 @@ export function EnvironmentsPage() {
 
       {/* The {ex} slot is filled here (not via i18next interpolation) because the example itself
           contains double curly braces, which i18next would treat as a variable. */}
-      <p className="mt-4 max-w-[70ch] text-sm leading-relaxed text-muted-foreground">
+      <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
         {t('env.hint').split('{ex}').map((part, i, arr) => (
           <span key={i}>
             {part}

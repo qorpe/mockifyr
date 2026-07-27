@@ -44,7 +44,7 @@ export function ExtensionsPage() {
     <div className="mx-auto max-w-[1360px]">
       <header className="mb-6">
         <h1 className="text-[22px] font-bold tracking-tight">{t('nav.extensions')}</h1>
-        <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">{t('extensions.subtitle')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('extensions.subtitle')}</p>
       </header>
 
       <div className="mb-4 flex max-w-md">
