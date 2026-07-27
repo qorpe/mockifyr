@@ -490,3 +490,46 @@ behavior change.
 - [x] **G18f — Verify + OTP extraction** (#190). Count/matcher verify on `/__admin/messages` (sibling of
   `/__admin/requests`), `GET /__admin/messages/{id}/otp?pattern=…` (default `\b\d{4,8}\b`); e2e:
   an app sends an OTP mail + SMS, the test retrieves the code in one admin call.
+
+## G19 — Integration sandbox: stateful resources, OpenAPI import, access (ADR 0011)
+
+Mockifyr becomes usable as a **self-hosted integration sandbox platform**: dynamic CRUD state
+(`POST /orders` creates what `GET /orders/{id}` returns), OpenAPI-driven bootstrap ("spec in,
+working sandbox out"), and operator-issued API keys that scope traffic to a tenant. Everything
+rides the existing multi-tenancy, scenarios, delay/fault, messages and persistence — state and
+quotas are facade-applied *directives* (like delay/fault), the engine stays pure, and the
+mapping-JSON parity surface does not move (the differential suites must stay green throughout).
+No WireMock oracle exists for any of this; each vertical is validated by real-client self-tests
+plus unit/integration/mutation coverage, stated per vertical in `docs/parity/g19-sandbox.md`.
+Everything is opt-in: no directive, no flag, no import → no behavior change.
+
+- [ ] **G19a — Core resource model + store + admin API.** `ResourceDocument` (id, collection, JSON
+  body Core never parses, timestamps, version), tenant+collection-scoped `IResourceStore`
+  (bounded, ring-buffer eviction) + `IResourceIdGenerator` seam in Core (zero deps); in-memory
+  store; `/__admin/resources` CQRS + REST: collections, list/get/put/delete/reset, seed import
+  (JSON array → collection). Unit tests: tenant isolation, eviction, deterministic ids.
+- [ ] **G19b — State directive + templating.** Opt-in `state` directive on stub responses
+  (create/read/update/delete/list on a named collection; facade-applied after matching, engine
+  untouched); operation result exposed as `{{state.*}}` to the G2 template context; unknown-id
+  misses short-circuit to a configurable status (default 404). Self-test: a real `HttpClient`
+  drives POST→GET→PUT→LIST→DELETE end-to-end; Stryker mutation testing on the directive logic.
+- [ ] **G19c — OpenAPI import.** `Mockifyr.Adapters.OpenApi` (Microsoft.OpenApi, MIT, edge-only):
+  OpenAPI 3.0/3.1 → ordinary mappings (paths→`urlPathTemplate`, examples→responses, example-less
+  schemas→Faker-backed synthesis), optional stateful CRUD emission wiring G19b for
+  resource-shaped path pairs; `/__admin/openapi/import`; UI: **Import OpenAPI** in the Add-stub
+  channel chooser (ADR 0010). Golden-file round-trips against curated public specs, then *serve*
+  the imported stubs and assert responses — import proven by serving, not inspection.
+- [ ] **G19d — Sandbox access: API keys + quotas.** Opt-in `--sandbox-auth`: hashed per-tenant keys
+  (`IApiKeyStore` in Core) managed via `/__admin/apikeys`; key-based tenant resolution ahead of
+  the ADR 0003 host/header chain (gRPC/GraphQL/WS inherit via the HTTP facade; SMTP keeps
+  AUTH-as-tenant); optional per-key request quota with realistic `429` + rate headers; usage
+  counters via admin. Self-test: two keys → two tenants → provably isolated stubs/resources.
+- [ ] **G19e — Sandbox UI + positioning.** Sidebar gains a **Sandbox** group (between Mocking and
+  Platform): **Resources** (browse collections/documents per tenant, edit/delete/reset, seed
+  import) and **Access** (issue/revoke keys, quotas, usage); dashboard quick-start "spin up a
+  sandbox" (import spec → seed data → issue key → copy base URL). Verified in-browser.
+
+Deferred edges (tracked from day one in `docs/parity/g19-sandbox.md`): durable resource
+persistence via the G16 seam, GraphQL SDL / AsyncAPI import, per-key scenario isolation, OpenAPI
+*export* of authored stubs. Out of scope by decision (ADR 0011): developer portal,
+self-registration, billing, OAuth issuance, hosted SaaS.

@@ -16,5 +16,6 @@ consequences.
 | [0008](0008-serve-time-environment-resolution.md) | Environments resolve at serve time, tenant-scoped | Accepted |
 | [0009](0009-message-mocking-email-sms.md) | Message mocking: email + SMS capture channels | Accepted |
 | [0010](0010-protocol-aware-stub-ux.md) | Protocol-aware stub UX: computed field + channel editors | Accepted |
+| [0011](0011-integration-sandbox-vertical.md) | Integration sandbox: stateful resources, OpenAPI import, access | Proposed |
 
 When adding a decision, use the next number and add a row to this table.
