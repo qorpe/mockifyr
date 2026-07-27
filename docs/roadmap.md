@@ -537,6 +537,10 @@ mapping-JSON parity surface does not move (the differential suites must stay gre
 No WireMock oracle exists for any of this; each vertical is validated by real-client self-tests
 plus unit/integration/mutation coverage, stated per vertical in `docs/parity/g19-sandbox.md`.
 Everything is opt-in: no directive, no flag, no import → no behavior change.
+**Enterprise-readiness acceptance criteria and the binding per-vertical test matrix live in ADR
+0011's addendum** (admin/key separation, key material + restart persistence, race-free quotas,
+size caps + pagination, SSRF-safe import, version semantics, compliance notes) — they are part of
+each item's definition of done, not follow-ups.
 
 - [ ] **G19a — Core resource model + store + admin API.** `ResourceDocument` (id, collection, JSON
   body Core never parses, timestamps, version), tenant+collection-scoped `IResourceStore`
@@ -555,10 +559,12 @@ Everything is opt-in: no directive, no flag, no import → no behavior change.
   channel chooser (ADR 0010). Golden-file round-trips against curated public specs, then *serve*
   the imported stubs and assert responses — import proven by serving, not inspection.
 - [ ] **G19d — Sandbox access: API keys + quotas.** Opt-in `--sandbox-auth`: hashed per-tenant keys
-  (`IApiKeyStore` in Core) managed via `/__admin/apikeys`; key-based tenant resolution ahead of
-  the ADR 0003 host/header chain (gRPC/GraphQL/WS inherit via the HTTP facade; SMTP keeps
-  AUTH-as-tenant); optional per-key request quota with realistic `429` + rate headers; usage
-  counters via admin. Self-test: two keys → two tenants → provably isolated stubs/resources.
+  (`IApiKeyStore` in Core, **persisted via the G16 seam** — keys survive restarts) managed via
+  `/__admin/apikeys`; key-based tenant resolution ahead of the ADR 0003 host/header chain
+  (gRPC/GraphQL/WS inherit via the HTTP facade; SMTP keeps AUTH-as-tenant); **a sandbox key never
+  reaches `/__admin/*`**; optional per-key request quota (race-free, fixed window) with realistic
+  `429` + rate headers; usage counters via admin. Self-test: two keys → two tenants → provably
+  isolated stubs/resources; parallel quota-boundary test.
 - [ ] **G19e — Sandbox UI + positioning.** Sidebar gains a **Sandbox** group (between Mocking and
   Platform): **Resources** (browse collections/documents per tenant, edit/delete/reset, seed
   import) and **Access** (issue/revoke keys, quotas, usage); dashboard quick-start "spin up a

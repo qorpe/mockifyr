@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed. Design for the G19 roadmap group; to be implemented incrementally by the G19a–G19e
-verticals. Accepted when the planning PR merges.
+Accepted (planning PR merged). Design for the G19 roadmap group; to be implemented incrementally
+by the G19a–G19e verticals. **Amended 2026-07-27** with the enterprise-readiness addendum below —
+a pre-implementation audit turned implicit expectations into binding acceptance criteria.
 
 ## Context
 
@@ -154,3 +155,69 @@ Per vertical, recorded in `docs/parity/g19-sandbox.md`:
   sandbox positioning never sells. Portal-style features stay out until real demand exists.
 - Deferred edges tracked from day one: durable resource persistence, GraphQL SDL / AsyncAPI
   import, per-key scenario isolation, OpenAPI *export* of authored stubs.
+
+## Enterprise-readiness addendum (binding acceptance criteria)
+
+Audited before implementation started. These criteria are part of each vertical's definition of
+done — in addition to, never instead of, the binding test contract in `docs/testing.md`. A
+vertical that ships without its row here is not done.
+
+### Security (binds G19a, G19d)
+
+- **A sandbox key never grants admin access.** `/__admin/*` ignores `X-Api-Key` and
+  `Authorization: Bearer` entirely; admin auth remains `--admin-user`/`--admin-pass`. Proven by a
+  wire self-test that presents a valid sandbox key to the admin API and is refused.
+- **Key material spec**: ≥256-bit CSPRNG value with a recognizable prefix (`mfk_`); shown exactly
+  once at issue time; stored only as a salted hash; compared in constant time; never written to
+  logs, the journal, or error messages. After issuance only the key id/prefix appears anywhere.
+- **Keys survive restarts.** `IApiKeyStore` rides the G16 persistence seam from day one (G19d) —
+  an operator-issued credential that vanishes on redeploy is not a credential. (Resources stay
+  in-memory-first as decided; *that* deferral is about test data, not credentials.)
+- **Quota enforcement is race-free**: N parallel requests across the limit boundary never admit
+  more than the budget (parallel wire test). Window semantics: fixed window first, stated in
+  `X-RateLimit-Limit`/`X-RateLimit-Remaining`/`X-RateLimit-Reset` and `Retry-After` on 429.
+
+### Data-plane robustness (binds G19a, G19b)
+
+- **Per-document size cap** (default 1 MiB, flag-tunable) answered with an honest 413; collection
+  capacity via ring-buffer eviction as designed. Both stated in docs and surfaced in the UI.
+- **`Version` semantics decided**: last-write-wins by default; conditional update (`If-Match`
+  style) is a tracked deferred edge, not a silent absence.
+- **`/__admin/resources` lists are paginated from day one** (the journal's pagination pattern) —
+  a 10k-document collection must not melt the admin API or the dashboard.
+- **Resource bodies are opaque text**: Core never parses them, they re-serve verbatim, and the
+  dashboard renders them only in the sandboxed viewers (XSS posture identical to the journal).
+- **Concurrent CRUD on one document is safe** (no torn state, no store corruption) — covered by a
+  parallel unit test against the store contract.
+
+### Import safety (binds G19c)
+
+- **No SSRF surface**: the OpenAPI importer never fetches remote `$ref`s. An external reference
+  fails the import with a typed error naming the offending pointer; local (in-document) refs
+  resolve normally.
+- **Spec-bomb guards**: document size and schema-recursion depth limits produce a 422 — an import
+  can be rejected, it can never hang the host or exhaust memory.
+- **Imports are transactional**: on any error, nothing is partially created.
+
+### Compliance & operability (binds all verticals)
+
+- **Test-data-only contract stated where it matters**: like environments, resources are plaintext
+  by design; the docs and the seed-import UI both say "no production personal data". (Sector
+  compliance — banking/health — is satisfied by *not putting regulated data in*, and saying so.)
+- **Config convention holds**: every new flag is also readable as an environment variable.
+- **Export/import round-trip**: bundles containing `state`-directive stubs export and re-import
+  losslessly (the #198 bundle machinery), and the differential suites prove the dialect surface
+  did not move.
+- **UI DoD**: all six locales, both themes, keyboard-reachable controls, confirm-dialogs on
+  destructive actions (reset collection, revoke key), in-browser verification.
+
+### Binding test matrix (per vertical)
+
+| Vertical | Unit | Wire/integration | End-to-end | Mutation (Stryker) | Edge sweep |
+|---|---|---|---|---|---|
+| G19a | store: tenant isolation, eviction, caps, deterministic ids, concurrent CRUD | `/__admin/resources` CRUD + pagination + seed import + 413 | — | store logic, 100 % | hostile ids/unicode, empty/missing, volume |
+| G19b | directive parsing, miss statuses | directive applied only when present (zero-change proof) | real `HttpClient` drives POST→GET→PUT→LIST→DELETE | directive logic, 100 % | unknown id, empty body, size cap, concurrency |
+| G19c | generator golden files (petstore + real-world spec) | import endpoint: typed 422s | **serve** the imported stubs and assert responses | generator logic, 100 % | spec bombs, external `$ref`, empty/huge specs |
+| G19d | key hash/compare, quota window math | resolution chain order, admin-API refusal, persistence across restart | two keys → two tenants provably isolated; parallel quota boundary | key + quota logic, 100 % | missing/garbled/revoked key, header casing, clock edges |
+| G19e | — | — | in-browser: the full quick-start driven end-to-end | — | UI checklist (`docs/testing.md`) |
+| all | — | — | — | — | **differential suites stay green, untouched** |
