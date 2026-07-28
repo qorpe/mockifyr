@@ -116,6 +116,8 @@ The common flags, with the [full reference](https://mockifyr.omercelik.dev/cli/)
 | `--smtp-port <n>` | capture real SMTP mail into the tenant-scoped message inbox (`/__admin/messages`); the AUTH username names the tenant |
 | `--sms-profile twilio` | emulate Twilio's send-message API: realistic responses the official SDK accepts, every SMS captured into the message inbox |
 | `--message-limit <n>` | per-tenant message inbox bound (default 1000, oldest evicted first) |
+| `--journal-limit <n>` | per-tenant request-journal bound (default 1000, oldest evicted first; `<=0` = unbounded). `--max-request-journal-entries` is a kept alias |
+| `--journal-disabled` | record nothing in the request journal (load tests); `--no-request-journal` is a kept alias |
 | `--resource-limit <n>` | per-collection sandbox document bound (default 1000, oldest evicted first) |
 | `--resource-max-body <bytes>` | per-document body cap for `/__admin/resources` (default 1 MiB; 413 beyond it) |
 | `--sandbox-auth` | sandbox API keys (`/__admin/apikeys`): `mfk_…` tokens select the tenant via `X-Api-Key`/Bearer, with optional per-key hourly quotas (`429` + rate headers) |
