@@ -8,9 +8,8 @@ anything. Keep it up to date — when a rule changes, change it here.
 
 ## 0. What Mockifyr is
 
-An independent, .NET-based API mock **engine + platform** — a functional alternative to
-WireMock with an entirely independent codebase (WireMock / WireMock.Net are **not**
-dependencies). The core engine is transport-agnostic; thin facades (Library / HTTP server /
+An independent, .NET-based API mock **engine + platform** with an integration sandbox —
+an entirely independent codebase (no third-party mock engine is a dependency). The core engine is transport-agnostic; thin facades (Library / HTTP server /
 Admin REST) sit on top. Correctness is proven by **differential testing against real
 WireMock**, never by self-assessment.
 

@@ -9,8 +9,8 @@
 
 ## 1. Vision and scope discipline
 
-- A **.NET-based, independent-codebase** API mock **engine + platform**. A functional
-  alternative to WireMock; WireMock / WireMock.Net are **not** taken as dependencies. Own IP.
+- A **.NET-based, independent-codebase** API mock **engine + platform** with an integration
+  sandbox. No third-party mock engine is taken as a dependency. Own IP.
 - **The goal is not "all of WireMock at once."** First a narrow vertical validated against a
   reference; feature parity comes later, controlled, every step validated.
 - **Finish line:** full WireMock feature parity — but in ~40 validated steps, each diffed
@@ -65,7 +65,7 @@ Testcontainers) are collected at the edges.
      ┌───────────┬───────────┬───────┼────────┬──────────────┬───────────┐
  ┌───▼────┐ ┌────▼─────┐ ┌───▼────┐ ┌▼─────────┐ ┌──────────▼─┐ ┌────────▼──────┐
  │Matching│ │Templating│ │ Stores │ │ Adapters │ │ ServeEvents│ │ (Scenario/    │
- │        │ │(Hbars.Net│ │.InMemory│ │.WireMock │ │ .Webhook   │ │  Journal…)    │
+ │        │ │(Hbars.Net│ │.InMemory│ │.MappingJson││ .Webhook   │ │  Journal…)    │
  └───┬────┘ └────┬─────┘ └───┬────┘ └────┬─────┘ └──────┬─────┘ └────┬──────────┘
      └───────────┴───────────┼───────────┴──────────────┴────────────┘
                     ┌─────────▼─────────┐
