@@ -10,11 +10,14 @@
 [![Image](https://img.shields.io/badge/ghcr.io-mockifyr-2496ED?logo=docker&logoColor=white)](https://github.com/qorpe/mockifyr/pkgs/container/mockifyr)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**An independent, .NET-based API mock engine + platform.** A transport-agnostic request-matching and
-response engine with first-class multi-tenancy, pluggable persistence, and thin facades — in-process
-library · HTTP server · admin REST · gRPC · GraphQL · WebSocket — plus **message mocking**: an SMTP
-capture server and Twilio-compatible SMS emulation with a tenant-scoped inbox and one-call OTP
-verification. Clean-room codebase with its own IP and no third-party mock-engine dependencies.
+**Enterprise API mocking and integration sandbox platform — self-hosted, multi-protocol, one container.**
+
+Mock any API your systems depend on (HTTP · gRPC · GraphQL · WebSocket · email/SMS) and hand your
+partners a sandbox: per-tenant test data, API keys with quotas, and stateful CRUD generated straight
+from an OpenAPI spec. Under the hood: a transport-agnostic request-matching and response engine with
+first-class multi-tenancy, pluggable persistence, and thin facades — in-process library · HTTP
+server · admin REST — plus message mocking with a tenant-scoped inbox and one-call OTP verification.
+Clean-room codebase with its own IP and no third-party mock-engine dependencies.
 
 📖 **[Documentation → mockifyr.qorpe.com](https://mockifyr.qorpe.com)** — guides, the full CLI
 and admin API reference, and [known limitations](https://mockifyr.qorpe.com/limitations/).
