@@ -215,7 +215,7 @@ function PreferencesMenu({ collapsed }: { collapsed: boolean }) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <a href="https://github.com/omercelikdev/mockifyr/issues" target="_blank" rel="noreferrer">
+          <a href="https://github.com/qorpe/mockifyr/issues" target="_blank" rel="noreferrer">
             <Bug className="size-4 text-muted-foreground" />{t('common.reportIssue')}
           </a>
         </DropdownMenuItem>

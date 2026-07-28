@@ -9,7 +9,7 @@
 
 services:
   mockifyr:
-    image: ghcr.io/omercelikdev/mockifyr:latest
+    image: ghcr.io/qorpe/mockifyr:latest
     # build: .            # uncomment to build from source instead of pulling the published image
     ports:
       - "8080:8080"

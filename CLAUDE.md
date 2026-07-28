@@ -124,7 +124,7 @@ branch/PR**:
 - `README.md` — flags table and feature claims still true.
 - `CLAUDE.md` — repo map (§4) and status (§7) still true.
 - **The docs website** ([mockifyr.omercelik.dev](https://mockifyr.omercelik.dev), repo
-  `omercelikdev/mockifyr.omercelik.dev`) — every user-facing change (new flag, endpoint, screen,
+  `qorpe/mockifyr.omercelik.dev`) — every user-facing change (new flag, endpoint, screen,
   behavior) gets its guide/reference pages updated via a PR to that repo. Shipping a feature the
   website does not document is an unfinished change.
 
