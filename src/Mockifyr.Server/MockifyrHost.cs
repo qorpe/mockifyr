@@ -132,6 +132,24 @@ public static class MockifyrHost
             builder.Services.AddHostedService<SmtpCaptureHostedService>();
         }
 
+        // Bounded request journal (#220): --journal-limit overrides the default per-tenant cap
+        // (1000, oldest evicted first); --max-request-journal-entries is the reference engine's
+        // name for the same thing and is honored as an alias. A value <= 0 means unbounded.
+        // --journal-disabled (alias --no-request-journal) records nothing at all — for load tests
+        // where the journal is pure overhead.
+        if (builder.Configuration.GetValue<bool>("journal-disabled") ||
+            builder.Configuration.GetValue<bool>("no-request-journal"))
+        {
+            builder.Services.AddSingleton<IRequestJournal, NullRequestJournal>();
+        }
+        else if (int.TryParse(
+            builder.Configuration["journal-limit"] ?? builder.Configuration["max-request-journal-entries"],
+            out var journalLimit))
+        {
+            builder.Services.AddSingleton<IRequestJournal>(
+                new InMemoryRequestJournal(journalLimit > 0 ? journalLimit : null));
+        }
+
         // Message behaviors (G18e): a bounded inbox override (--message-limit) and the capture
         // webhook decorating the sink. Registered after AddMockifyr so they win the resolution.
         if (int.TryParse(builder.Configuration["message-limit"], out var messageLimit))

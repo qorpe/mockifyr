@@ -38,6 +38,10 @@ public sealed record FindUnmatchedRequestsQuery(TenantId Tenant) : IQuery<Result
 public sealed record GetServeEventsQuery(TenantId Tenant, bool UnmatchedOnly = false, int? Limit = null)
     : IQuery<Result<IReadOnlyList<ServeEvent>>>;
 
+/// <summary>Resolves one journaled serve event by id (indexed — no scan), tenant-gated.</summary>
+public sealed record GetServeEventQuery(Guid Id, TenantId Tenant)
+    : IQuery<Result<ServeEvent?>>;
+
 /// <summary>A scenario's current state and the states it can be in (G12c admin).</summary>
 public sealed record ScenarioView(string Name, string State, IReadOnlyList<string> PossibleStates);
 

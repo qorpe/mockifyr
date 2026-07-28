@@ -195,6 +195,15 @@ public sealed class GetServeEventsHandler(StubEngine engine)
             engine.GetServeEvents(query.Tenant, new ServeEventQuery { UnmatchedOnly = query.UnmatchedOnly, Limit = query.Limit })));
 }
 
+/// <summary>Resolves one journaled serve event by id via the journal's index.</summary>
+public sealed class GetServeEventHandler(StubEngine engine)
+    : IQueryHandler<GetServeEventQuery, Result<ServeEvent?>>
+{
+    public ValueTask<Result<ServeEvent?>> Handle(GetServeEventQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(
+            engine.GetServeEvents(query.Tenant, new ServeEventQuery { Id = query.Id }).FirstOrDefault()));
+}
+
 /// <summary>Projects the tenant's scenarios (from the bound stubs) with their current state.</summary>
 public sealed class GetScenariosHandler(IStubStore store, IScenarioStateStore states)
     : IQueryHandler<GetScenariosQuery, Result<IReadOnlyList<ScenarioView>>>

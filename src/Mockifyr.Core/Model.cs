@@ -417,6 +417,9 @@ public sealed record ServeEventQuery
 
     /// <summary>Optional maximum number of events to return.</summary>
     public int? Limit { get; init; }
+
+    /// <summary>When set, resolve exactly this event by id (index lookup, no scan).</summary>
+    public Guid? Id { get; init; }
 }
 
 /// <summary>

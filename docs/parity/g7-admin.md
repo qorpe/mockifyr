@@ -71,3 +71,18 @@ returning `200 { id, uuid }` on success and `422` for malformed/empty JSON — t
   `toWireMock` now coerces `status`/`priority` to JSON numbers.)
 - **Regression case:** `AdminCqrsTests.Update_ReplacesInPlace_AndIsServed` (the update reaches the
   serving path — a follow-up request returns the new status) and `Update_MalformedJson_ReturnsValidationError`.
+
+
+## Bounded journal (#220, post-G hardening)
+
+The journal is bounded per tenant (default 1000; `--journal-limit`, reference alias
+`--max-request-journal-entries`; `<=0` = unbounded; `--journal-disabled` / `--no-request-journal`
+records nothing). **Eviction semantics proven differentially**: both engines started with
+`--max-request-journal-entries 3`, five requests driven through each — both retain exactly the
+NEWEST three, oldest evicted first (`JournalLimitTests`). Consequences carried on purpose:
+`/__admin/requests/count` and verify only see retained events — identical to the reference engine.
+The detail route (`/__admin/requests/{id}`) now resolves through an id index instead of
+materializing the whole journal (O(1) instead of O(n)); the index is tenant-gated, covered by a
+unit test the oracle cannot express. Stryker on the journal store: **100 %** (9/9 killed + 1 timeout).
+Default change note: before #220 the journal was unbounded — a long-running host accumulated every
+request (and its Authorization headers) forever; 1000 mirrors `--message-limit`.

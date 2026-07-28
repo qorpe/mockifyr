@@ -248,8 +248,15 @@ public static class AdminEndpoints
         // template, flagged `delivered: false`.
         admin.MapGet("/requests/{id}", async (string id, HttpRequest request, ISender sender) =>
         {
-            var result = await sender.Send(new GetServeEventsQuery(TenantOf(request), UnmatchedOnly: false));
-            var e = result.Value.FirstOrDefault(x => x.Id.ToString() == id);
+            if (!Guid.TryParse(id, out var eventId))
+            {
+                return Results.NotFound();
+            }
+
+            // Indexed lookup (#220): the journal resolves the id directly instead of materializing
+            // the whole log and scanning — the detail route stays O(1) as traffic grows.
+            var result = await sender.Send(new GetServeEventQuery(eventId, TenantOf(request)));
+            var e = result.Value;
             if (e is null)
             {
                 return Results.NotFound();
