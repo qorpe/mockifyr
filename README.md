@@ -16,8 +16,8 @@ library · HTTP server · admin REST · gRPC · GraphQL · WebSocket — plus **
 capture server and Twilio-compatible SMS emulation with a tenant-scoped inbox and one-call OTP
 verification. Clean-room codebase with its own IP and no third-party mock-engine dependencies.
 
-📖 **[Documentation → mockifyr.omercelik.dev](https://mockifyr.omercelik.dev)** — guides, the full CLI
-and admin API reference, and [known limitations](https://mockifyr.omercelik.dev/limitations/).
+📖 **[Documentation → mockifyr.qorpe.com](https://mockifyr.qorpe.com)** — guides, the full CLI
+and admin API reference, and [known limitations](https://mockifyr.qorpe.com/limitations/).
 
 ## Quick start
 
@@ -106,7 +106,7 @@ Everything is a CLI flag — there is no config file. Because the host builds it
 standard .NET builder, **every flag is also readable as an environment variable of the same name**,
 which is why `-e admin-user=alice` works on `docker run`; arguments win when both are present.
 
-The common flags, with the [full reference](https://mockifyr.omercelik.dev/cli/) on the docs site:
+The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on the docs site:
 
 | Flag | Effect |
 |------|--------|
@@ -162,20 +162,20 @@ which takes effect on the next call with no restart and survives one. Passing a 
 pins the configuration instead and the dashboard shows it read-only — the same two-mode design as
 Git sync. `--trust-all-proxy-targets` stays flag-only: the dashboard can trust individual hosts but
 cannot turn verification off. Full detail:
-[HTTPS, HTTP/2 and mTLS](https://mockifyr.omercelik.dev/https-and-mtls/).
+[HTTPS, HTTP/2 and mTLS](https://mockifyr.qorpe.com/https-and-mtls/).
 
 ## Documentation
 
-**Using Mockifyr — [mockifyr.omercelik.dev](https://mockifyr.omercelik.dev)**
+**Using Mockifyr — [mockifyr.qorpe.com](https://mockifyr.qorpe.com)**
 
-- [Getting started](https://mockifyr.omercelik.dev/getting-started/) · [the dashboard](https://mockifyr.omercelik.dev/the-dashboard/)
-- Stubs — [request matching](https://mockifyr.omercelik.dev/request-matching/) · [responses](https://mockifyr.omercelik.dev/responses/) · [templating](https://mockifyr.omercelik.dev/templating/)
-- Behaviour — [scenarios](https://mockifyr.omercelik.dev/scenarios/) · [delays and faults](https://mockifyr.omercelik.dev/delays-and-faults/) · [proxying](https://mockifyr.omercelik.dev/proxying/) · [record and playback](https://mockifyr.omercelik.dev/record-and-playback/) · [webhooks](https://mockifyr.omercelik.dev/webhooks/)
-- Platform — [multi-tenancy](https://mockifyr.omercelik.dev/multi-tenancy/) · [environments](https://mockifyr.omercelik.dev/environments/) · [persistence](https://mockifyr.omercelik.dev/persistence/) · [HTTPS and mTLS](https://mockifyr.omercelik.dev/https-and-mtls/)
-- Messages — [email & SMS mocking](https://mockifyr.omercelik.dev/messages/) (SMTP capture, Twilio profile, OTP verify)
-- Reference — [CLI](https://mockifyr.omercelik.dev/cli/) · [admin API](https://mockifyr.omercelik.dev/admin-api/) · [extending](https://mockifyr.omercelik.dev/extending/)
-- [Migration guide](https://mockifyr.omercelik.dev/migration/), and the
-  [known limitations](https://mockifyr.omercelik.dev/limitations/) worth reading first
+- [Getting started](https://mockifyr.qorpe.com/getting-started/) · [the dashboard](https://mockifyr.qorpe.com/the-dashboard/)
+- Stubs — [request matching](https://mockifyr.qorpe.com/request-matching/) · [responses](https://mockifyr.qorpe.com/responses/) · [templating](https://mockifyr.qorpe.com/templating/)
+- Behaviour — [scenarios](https://mockifyr.qorpe.com/scenarios/) · [delays and faults](https://mockifyr.qorpe.com/delays-and-faults/) · [proxying](https://mockifyr.qorpe.com/proxying/) · [record and playback](https://mockifyr.qorpe.com/record-and-playback/) · [webhooks](https://mockifyr.qorpe.com/webhooks/)
+- Platform — [multi-tenancy](https://mockifyr.qorpe.com/multi-tenancy/) · [environments](https://mockifyr.qorpe.com/environments/) · [persistence](https://mockifyr.qorpe.com/persistence/) · [HTTPS and mTLS](https://mockifyr.qorpe.com/https-and-mtls/)
+- Messages — [email & SMS mocking](https://mockifyr.qorpe.com/messages/) (SMTP capture, Twilio profile, OTP verify)
+- Reference — [CLI](https://mockifyr.qorpe.com/cli/) · [admin API](https://mockifyr.qorpe.com/admin-api/) · [extending](https://mockifyr.qorpe.com/extending/)
+- [Migration guide](https://mockifyr.qorpe.com/migration/), and the
+  [known limitations](https://mockifyr.qorpe.com/limitations/) worth reading first
 
 **Working on Mockifyr — in this repository**
 
