@@ -33,7 +33,7 @@ docker run -p 8080:8080 ghcr.io/omercelikdev/mockifyr
 - Admin API — `http://localhost:8080/__admin`
 - Dashboard — `http://localhost:8080/__mockifyr`
 
-Create stubs in the dashboard, or import a WireMock bundle. Runs on `linux/amd64` and `linux/arm64`
+Create stubs in the dashboard, or import a mapping JSON bundle. Runs on `linux/amd64` and `linux/arm64`
 (Apple Silicon included).
 
 **Keep your data across restarts** — `docker compose up`, or a named volume (both identical on every OS):
@@ -47,7 +47,7 @@ Mount **`/work`**, not just `/work/mappings` — the file store also keeps envir
 (`/work/environments`), response body files (`/work/__files`) and gRPC descriptors (`/work/grpc`)
 there, and a mappings-only mount silently loses those when the container is recreated.
 
-**Preload / edit stub files on your host** (advanced) — bind-mount a folder of WireMock `*.json`. Only
+**Preload / edit stub files on your host** (advanced) — bind-mount a folder of mapping `*.json`. Only
 the path syntax differs per shell; nothing else changes:
 
 ```bash
@@ -145,7 +145,7 @@ On Linux, `host.docker.internal` only exists if the container is started with
 An endpoint served by your organisation's internal CA is trusted by your machine's keychain but not
 by the container, so an outbound call to it fails where Postman succeeds. The journal names the
 reason (`RemoteCertificateChainErrors`, a name mismatch, an expiry). To allow it, trust that endpoint
-by name — the same flags WireMock uses, applied to callbacks and proxying alike:
+by name — the same flag surface as the reference engine, applied to callbacks and proxying alike:
 
 ```bash
 docker run … mockifyr --trust-proxy-target api.dev.mycorp.intra
@@ -172,14 +172,14 @@ cannot turn verification off. Full detail:
 - Platform — [multi-tenancy](https://mockifyr.omercelik.dev/multi-tenancy/) · [environments](https://mockifyr.omercelik.dev/environments/) · [persistence](https://mockifyr.omercelik.dev/persistence/) · [HTTPS and mTLS](https://mockifyr.omercelik.dev/https-and-mtls/)
 - Messages — [email & SMS mocking](https://mockifyr.omercelik.dev/messages/) (SMTP capture, Twilio profile, OTP verify)
 - Reference — [CLI](https://mockifyr.omercelik.dev/cli/) · [admin API](https://mockifyr.omercelik.dev/admin-api/) · [extending](https://mockifyr.omercelik.dev/extending/)
-- [Migrating from WireMock](https://mockifyr.omercelik.dev/migrating-from-wiremock/), and the
+- [Migration guide](https://mockifyr.omercelik.dev/migration/), and the
   [known limitations](https://mockifyr.omercelik.dev/limitations/) worth reading first
 
 **Working on Mockifyr — in this repository**
 
 - Architecture & design — [ARCHITECTURE.md](ARCHITECTURE.md)
 - Roadmap — [docs/roadmap.md](docs/roadmap.md) · decisions — [docs/decisions/](docs/decisions/)
-- Learned WireMock behaviour, per feature group — [docs/parity/](docs/parity/)
+- Learned reference-engine behaviour, per feature group — [docs/parity/](docs/parity/)
 - Testing strategy (the binding test contract) — [docs/testing.md](docs/testing.md)
 - Brand assets and their usage rules — [brand/](brand/)
 - This is an AI-driven repository; how work is done here — [CLAUDE.md](CLAUDE.md)
