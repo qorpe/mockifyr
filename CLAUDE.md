@@ -123,8 +123,8 @@ branch/PR**:
 - `docs/decisions/` — new/updated ADR whenever a design decision was made or changed (+ index row).
 - `README.md` — flags table and feature claims still true.
 - `CLAUDE.md` — repo map (§4) and status (§7) still true.
-- **The docs website** ([mockifyr.omercelik.dev](https://mockifyr.omercelik.dev), repo
-  `qorpe/mockifyr.omercelik.dev`) — every user-facing change (new flag, endpoint, screen,
+- **The docs website** ([mockifyr.qorpe.com](https://mockifyr.qorpe.com), repo
+  `qorpe/mockifyr.qorpe.com`) — every user-facing change (new flag, endpoint, screen,
   behavior) gets its guide/reference pages updated via a PR to that repo. Shipping a feature the
   website does not document is an unfinished change.
 
