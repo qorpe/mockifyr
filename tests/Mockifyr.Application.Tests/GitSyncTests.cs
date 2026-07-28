@@ -21,7 +21,18 @@ public sealed class GitSyncTests : IDisposable
 
     private readonly DirectoryInfo _base = Directory.CreateTempSubdirectory("mockifyr-git-");
 
-    public void Dispose() => _base.Delete(recursive: true);
+    public void Dispose()
+    {
+        // Git marks loose objects under .git/objects read-only, and Directory.Delete throws
+        // UnauthorizedAccessException on read-only files on Windows (#219) — clear the attribute
+        // first so a Windows contributor doesn't see eight teardown-only failures.
+        foreach (var file in _base.GetFiles("*", SearchOption.AllDirectories))
+        {
+            file.Attributes = FileAttributes.Normal;
+        }
+
+        _base.Delete(recursive: true);
+    }
 
     private sealed record Host(GitSyncService Git, IStubStore Store, IMatcherRegistry Matchers, FileSystemStubPersistence Persistence);
 

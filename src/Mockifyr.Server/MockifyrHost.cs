@@ -365,7 +365,12 @@ public static class MockifyrHost
             var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"));
             app.Use(async (context, next) =>
             {
-                if (context.Request.Path.StartsWithSegments("/__admin"))
+                // /__admin/health stays open (#218): Kubernetes/OpenShift probes cannot easily carry
+                // credentials, and a 401 health check sends the pod into a restart loop — enabling auth
+                // must never break the documented deployment target. The endpoint is read-only and
+                // exposes only name/version/persistence/tenant-count.
+                if (context.Request.Path.StartsWithSegments("/__admin") &&
+                    !context.Request.Path.Equals("/__admin/health", StringComparison.OrdinalIgnoreCase))
                 {
                     var provided = context.Request.Headers.Authorization.ToString();
                     if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(expected)))
