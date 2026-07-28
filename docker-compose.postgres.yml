@@ -9,7 +9,7 @@
 
 services:
   mockifyr:
-    image: ghcr.io/omercelikdev/mockifyr:latest
+    image: ghcr.io/qorpe/mockifyr:latest
     ports:
       - "8080:8080"
     # Appended to the image entrypoint (--port 8080 --dashboard /app/dashboard):

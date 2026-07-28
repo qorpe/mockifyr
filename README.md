@@ -5,9 +5,9 @@
 
 # Mockifyr
 
-[![CI](https://github.com/omercelikdev/mockifyr/actions/workflows/ci.yml/badge.svg)](https://github.com/omercelikdev/mockifyr/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/omercelikdev/mockifyr?sort=semver)](https://github.com/omercelikdev/mockifyr/releases)
-[![Image](https://img.shields.io/badge/ghcr.io-mockifyr-2496ED?logo=docker&logoColor=white)](https://github.com/omercelikdev/mockifyr/pkgs/container/mockifyr)
+[![CI](https://github.com/qorpe/mockifyr/actions/workflows/ci.yml/badge.svg)](https://github.com/qorpe/mockifyr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/qorpe/mockifyr?sort=semver)](https://github.com/qorpe/mockifyr/releases)
+[![Image](https://img.shields.io/badge/ghcr.io-mockifyr-2496ED?logo=docker&logoColor=white)](https://github.com/qorpe/mockifyr/pkgs/container/mockifyr)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 **An independent, .NET-based API mock engine + platform.** A transport-agnostic request-matching and
@@ -26,7 +26,7 @@ and admin API reference, and [known limitations](https://mockifyr.omercelik.dev/
 Just run it — in-memory, zero config, **the same one line on macOS, Linux and Windows**:
 
 ```bash
-docker run -p 8080:8080 ghcr.io/omercelikdev/mockifyr
+docker run -p 8080:8080 ghcr.io/qorpe/mockifyr
 ```
 
 - Mock surface — `http://localhost:8080`
@@ -40,7 +40,7 @@ Create stubs in the dashboard, or import a mapping JSON bundle. Runs on `linux/a
 
 ```bash
 docker compose up                                # stubs live in ./mappings, next to you
-docker run -p 8080:8080 -v mockifyr-data:/work ghcr.io/omercelikdev/mockifyr   # named volume
+docker run -p 8080:8080 -v mockifyr-data:/work ghcr.io/qorpe/mockifyr   # named volume
 ```
 
 Mount **`/work`**, not just `/work/mappings` — the file store also keeps environment configuration
@@ -51,7 +51,7 @@ there, and a mappings-only mount silently loses those when the container is recr
 the path syntax differs per shell; nothing else changes:
 
 ```bash
-docker run -p 8080:8080 -v "$PWD/mappings:/work/mappings" ghcr.io/omercelikdev/mockifyr   # macOS / Linux
+docker run -p 8080:8080 -v "$PWD/mappings:/work/mappings" ghcr.io/qorpe/mockifyr   # macOS / Linux
 #   PowerShell:  -v "${PWD}/mappings:/work/mappings"       CMD:  -v "%cd%/mappings:/work/mappings"
 ```
 
@@ -70,7 +70,7 @@ environment configuration — resets each time. Mount a named volume at `/work` 
 the container alive between runs):
 
 ```csharp
-var mockifyr = builder.AddContainer("mockifyr", "ghcr.io/omercelikdev/mockifyr")
+var mockifyr = builder.AddContainer("mockifyr", "ghcr.io/qorpe/mockifyr")
     .WithHttpEndpoint(port: 8080, targetPort: 8080)
     .WithVolume("mockifyr-data", "/work")            // survives restarts and recreation
     .WithLifetime(ContainerLifetime.Persistent);     // optional: reuse the container across runs
@@ -94,7 +94,7 @@ dotnet run --project src/Mockifyr.Server -- --port 8080 --root-dir .   # stubs l
 
 # From the image (override the entrypoint to drop the built-in --dashboard)
 docker run -p 8080:8080 -v "$PWD/mappings:/work/mappings" --entrypoint dotnet \
-  ghcr.io/omercelikdev/mockifyr:latest Mockifyr.Server.dll --port 8080 --root-dir /work
+  ghcr.io/qorpe/mockifyr:latest Mockifyr.Server.dll --port 8080 --root-dir /work
 ```
 
 Or embed the engine directly in-process with `Mockifyr.Facade.Library` — no HTTP at all. It is not
