@@ -29,6 +29,14 @@ WireMock**, never by self-assessment.
   reference "WireMock" **nominatively** — to name the JSON stub format we import (interoperability) or
   the reference oracle we differential-test against. Never imply endorsement/affiliation, never use it
   in a product/package name or a logo. The oracle code stays in `harness/`+`tests/`, never shipped.
+- **Positioning rule (decided 2026-07-28):** on **marketing surfaces** — the docs website, README,
+  release notes, decks — the name does **not** appear at all, with exactly one exception: the
+  website's migration guide (`/migration/`), which names it nominatively and carries a trademark
+  disclaimer. Everywhere else public-facing, write "the reference engine" / "mapping JSON format".
+  Engineering artifacts (`docs/parity/`, ADRs, `harness/`, `tests/`, code comments, commit history)
+  keep naming it — they are the QA record, and the NOTICE disclaimer stays for that reason.
+  Mockifyr is positioned as an independent **enterprise API mock + integration sandbox platform**,
+  not as an alternative to any named product.
 
 ---
 
