@@ -110,3 +110,22 @@ passes unchanged — the parity surface did not move. **Stryker: 93.3 %** (28/30
 are analyzed equivalents, both fast-path guards: removing the `IsEmpty` early return in `Mask`, and
 flipping `fields.Count == 0 || body.Length == 0` to `&&`, both fall through to code that computes
 the same result with empty inputs — a performance difference with no observable behavior change.
+
+
+## Unauthenticated admin surface (#225, post-G hardening)
+
+The admin API is open by default (the documented quick start depends on it), but it is no longer
+silent about it: an unauthenticated host now prints a startup line naming what is reachable —
+journal, captured messages, and the routes that act on the network — mirroring how the
+outbound-trust flags already announce themselves.
+
+`--block-outbound-routes` refuses those acting routes (`POST/PUT/DELETE` under
+`/__admin/recordings`, `/__admin/outbound-trust`, `/__admin/git`) with a typed
+**403 `Admin.OutboundRoutesBlocked`** while the admin surface is unauthenticated, so an open host
+on a cluster cannot be turned into a forward proxy toward internal addresses. Deliberately narrow:
+GET on the same prefixes still answers (the block is about acting, not looking), serving and every
+other admin route are untouched, and the flag goes **inert once `--admin-user`/`--admin-pass` are
+set** — the auth middleware already gates the same routes then, and the ordinary 401 answers.
+
+Default behavior is unchanged: without the flag the routes respond exactly as before, which the
+wire test asserts explicitly (a refusal must come from the flag, never from the upgrade).

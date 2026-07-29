@@ -119,6 +119,7 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--smtp-port <n>` | capture real SMTP mail into the tenant-scoped message inbox (`/__admin/messages`); the AUTH username names the tenant |
 | `--sms-profile twilio` | emulate Twilio's send-message API: realistic responses the official SDK accepts, every SMS captured into the message inbox |
 | `--message-limit <n>` | per-tenant message inbox bound (default 1000, oldest evicted first) |
+| `--block-outbound-routes` | while the admin API is unauthenticated, refuse the routes that act on the network (start recording, outbound trust, Git) with **403** — an open host cannot be turned into a forward proxy |
 | `--mask-headers <names>` | keep named header values out of the journal entirely (comma-separated, case-insensitive) — e.g. `Authorization,Cookie,X-Api-Key` |
 | `--mask-body-fields <names>` | keep named JSON body fields out of the journal (any depth, arrays included) — e.g. `pan,cvv,password` |
 | `--journal-limit <n>` | per-tenant request-journal bound (default 1000, oldest evicted first; `<=0` = unbounded). `--max-request-journal-entries` is a kept alias |
