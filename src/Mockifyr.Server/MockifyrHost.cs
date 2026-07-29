@@ -26,6 +26,9 @@ namespace Mockifyr.Server;
 /// </summary>
 public static class MockifyrHost
 {
+    /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
+    private const string TenantCredentialHeader = "X-Mockifyr-Tenant";
+
     /// <summary>The default mock-serving port (<c>8080</c>).</summary>
     public const int DefaultPort = 8080;
 
@@ -437,7 +440,49 @@ public static class MockifyrHost
                 await next();
             });
         }
-        if (adminAuthenticated)
+        // Per-tenant admin credentials (#224): --tenant-credential <tenant>:<user>:<pass> (repeatable)
+        // turns the tenant header from a claim into an authorization decision — a principal
+        // authenticated for one tenant cannot address another by renaming the header. The global
+        // --admin-user stays the privileged "system" scope ARCHITECTURE §6 anticipates, and a host
+        // with no --tenant-credential behaves exactly as before.
+        var tenantCredentials = TenantCredentials.Parse(args);
+        if (!tenantCredentials.IsEmpty)
+        {
+            Console.WriteLine($"mockifyr: {tenantCredentials.Count} per-tenant admin credential(s) configured — "
+                + "each may only address its own tenant; --admin-user remains the system scope.");
+            app.Use(async (context, next) =>
+            {
+                if (context.Request.Path.StartsWithSegments("/__admin") &&
+                    !context.Request.Path.Equals("/__admin/health", StringComparison.OrdinalIgnoreCase))
+                {
+                    var presented = context.Request.Headers.Authorization.ToString();
+                    // A principal we know: it must own the tenant it is addressing. Anything else
+                    // (the system credential, or no credential on an open host) falls through to the
+                    // existing behavior — this middleware only ever narrows a known tenant principal.
+                    if (tenantCredentials.TenantFor(presented) is { } owned)
+                    {
+                        var requested = context.Request.Headers.TryGetValue(TenantCredentialHeader, out var header)
+                            && !string.IsNullOrEmpty(header)
+                                ? header.ToString()
+                                : TenantId.Default.Value;
+                        if (!string.Equals(owned, requested, StringComparison.Ordinal))
+                        {
+                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            await context.Response.WriteAsJsonAsync(new
+                            {
+                                error = "Admin.TenantForbidden",
+                                message = $"These credentials are scoped to tenant '{owned}' and cannot address '{requested}'.",
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                await next();
+            });
+        }
+
+        if (adminAuthenticated || !tenantCredentials.IsEmpty)
         {
             var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"));
             app.Use(async (context, next) =>
@@ -450,7 +495,10 @@ public static class MockifyrHost
                     !context.Request.Path.Equals("/__admin/health", StringComparison.OrdinalIgnoreCase))
                 {
                     var provided = context.Request.Headers.Authorization.ToString();
-                    if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(expected)))
+                    // A per-tenant credential authenticates too; the middleware above has already
+                    // confirmed it is addressing its own tenant.
+                    if (tenantCredentials.TenantFor(provided) is null &&
+                        !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(expected)))
                     {
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         // Deliberately NO WWW-Authenticate: Basic header. That header makes the browser pop
