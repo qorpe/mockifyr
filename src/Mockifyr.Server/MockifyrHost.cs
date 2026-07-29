@@ -391,7 +391,53 @@ public static class MockifyrHost
         // dashboard loads and shows its own login screen, then sends the credentials on each admin call.
         var adminUser = builder.Configuration["admin-user"];
         var adminPass = builder.Configuration["admin-pass"];
-        if (!string.IsNullOrEmpty(adminUser) && !string.IsNullOrEmpty(adminPass))
+        var adminAuthenticated = !string.IsNullOrEmpty(adminUser) && !string.IsNullOrEmpty(adminPass);
+
+        // An unauthenticated admin surface is a deliberate default (the documented quick start relies
+        // on it), but it should never be a silent one (#225): say what is reachable, the same way the
+        // outbound-trust flags already announce themselves.
+        if (!adminAuthenticated)
+        {
+            Console.WriteLine(
+                "mockifyr: the admin API (/__admin/*) is UNAUTHENTICATED — anyone who can reach this "
+                + "host can read the request journal and captured messages, and can start a recording, "
+                + "trust a certificate or configure Git sync. Set --admin-user/--admin-pass for a shared "
+                + "host, or --block-outbound-routes to refuse the outbound-affecting routes outright.");
+        }
+
+        // Outbound-route blocking (#225): the routes that make this host act on the network — starting
+        // a recording (a forward proxy to any target), trusting a certificate, configuring Git — are
+        // refused while the admin surface is unauthenticated, so an open host cannot be turned into an
+        // SSRF primitive against a cluster. Opt-in and inert once credentials exist, since the auth
+        // middleware below already gates the same routes then.
+        var blockOutbound = builder.Configuration.GetValue<bool>("block-outbound-routes");
+        if (blockOutbound && !adminAuthenticated)
+        {
+            Console.WriteLine("mockifyr: --block-outbound-routes is on — recording, outbound trust and "
+                + "Git routes are refused while the admin API is unauthenticated.");
+            app.Use(async (context, next) =>
+            {
+                var path = context.Request.Path;
+                var blocked = path.StartsWithSegments("/__admin/recordings")
+                    || path.StartsWithSegments("/__admin/outbound-trust")
+                    || path.StartsWithSegments("/__admin/git");
+                if (blocked && !HttpMethods.IsGet(context.Request.Method))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        error = "Admin.OutboundRoutesBlocked",
+                        message = "This route makes outbound calls or changes outbound trust, and the "
+                            + "admin API is unauthenticated. Set --admin-user/--admin-pass, or drop "
+                            + "--block-outbound-routes to allow it.",
+                    });
+                    return;
+                }
+
+                await next();
+            });
+        }
+        if (adminAuthenticated)
         {
             var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"));
             app.Use(async (context, next) =>
