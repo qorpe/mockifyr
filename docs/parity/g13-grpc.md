@@ -132,3 +132,17 @@ ARCHITECTURE.md called for. Validated against the **official WireMock gRPC exten
 - **Deferred (extension limitation):** multi-message streams and **bidirectional** streaming — the
   WireMock extension itself does not support them (no oracle), pending WireMock 4.
 - **Regression case:** `G13fGrpcStreamingTests.SingleMessageStreaming_MatchesTheOracle`.
+
+
+## Oracle warm-up (test infrastructure, 2026-07-29)
+
+`G13dGrpcStatusTests` flaked in CI roughly one run in ten. The cause was not a divergence: the
+oracle container is declared ready by an HTTP probe against `/__admin/mappings`, which says nothing
+about the gRPC extension having loaded its descriptor and mappings. A call landing in that window
+comes back `UNIMPLEMENTED` (or a transport error), and comparing that to Mockifyr'''s correct answer
+fails a test that has found nothing.
+
+The fix is in the test, not the assertion: the oracle call retries **only** while the status is one
+of the startup shapes (`Unimplemented`/`Unavailable`/`Internal`), with a 30-second deadline. A
+genuine mismatch still fails immediately — the retry cannot mask one, because a real divergence
+produces a settled status, not a startup status.
