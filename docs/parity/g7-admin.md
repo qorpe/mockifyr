@@ -129,3 +129,32 @@ set** — the auth middleware already gates the same routes then, and the ordina
 
 Default behavior is unchanged: without the flag the routes respond exactly as before, which the
 wire test asserts explicitly (a refusal must come from the flag, never from the upgrade).
+
+
+## Per-tenant admin credentials (#224, post-G hardening)
+
+Tenant scoping was already structural — there is no tenant-less store overload — but the `TenantId`
+itself arrived in a client header, so any admin caller could address any tenant by renaming it.
+`--tenant-credential <tenant>:<user>:<pass>` (repeatable) turns that header from a claim into an
+**authorization** decision: a principal authenticated for `acme` gets a typed
+**403 `Admin.TenantForbidden`** on `X-Mockifyr-Tenant: globex`, on reads and writes alike —
+including the sharpest routes, `/__admin/messages/otp` (one-time codes) and `/__admin/mappings/reset`
+(destructive). Omitting the header is not an escape hatch: it addresses the default tenant, which a
+tenant principal does not own either.
+
+Design notes worth remembering:
+
+- **The global `--admin-user` stays the privileged system scope** ARCHITECTURE §6 anticipates — it
+  still reaches every tenant, so existing operator tooling and the dashboard are unaffected.
+- **A wrong password is 401, not 403.** Authentication failure must not reveal that a tenant exists.
+- **Credentials are read from argv, not configuration**, because .NET configuration keeps only the
+  last value of a repeated key — reading it the usual way would silently drop every tenant but one.
+  Comparison is constant-time, matching the global credential.
+- **`/__admin/health` stays exempt** (#218), so probes keep working on a tenant-scoped host.
+- **No flag, no change:** with no `--tenant-credential` the middleware never engages, which the unit
+  tests assert directly.
+
+**Stryker: 100 %** (23/23). One survivor was worth the test it produced: dropping the `continue`
+that skips non-flag arguments let an unrelated option's value (a Redis URL, a connection string
+containing colons) parse into a bogus admin principal — now pinned by
+`Only_the_flags_own_values_are_read`.
