@@ -233,5 +233,21 @@ salted-SHA-256 + constant-time verify, key→tenant resolution ahead of the ADR 
 hourly quotas with honest 429 + rate headers, keys persisted via the G16 seam) and G19e (the Sandbox UI —
 sidebar **Sandbox** group with Resources + Access screens, one-time token reveal, dashboard
 "spin up a sandbox" quick-start, all six locales) are complete under the ADR's
-enterprise-readiness addendum (`docs/parity/g19-sandbox.md`) — **G19 is done**. Remaining
-work is documented **deferred edges** (per group in `docs/parity/`). Builds clean (0 warnings).
+enterprise-readiness addendum (`docs/parity/g19-sandbox.md`) — **G19 is done**.
+
+**Post-G hardening (v0.18.0–v0.19.0)**, each opt-in and backward compatible, recorded in
+`docs/parity/g7-admin.md`: a bounded request journal with an indexed detail lookup
+(`--journal-limit`/`--journal-disabled`, eviction semantics proven differentially, #220);
+`/__admin/health` exempt from admin auth so probes never restart-loop a pod (#218); journal masking
+that keeps named headers and JSON fields out of storage entirely (`--mask-headers`/
+`--mask-body-fields`, #227 — opt-in because the journal also backs verify); per-tenant admin
+credentials that turn the tenant header from a claim into an authorization decision
+(`--tenant-credential`, #224); a startup warning plus `--block-outbound-routes` for an
+unauthenticated admin surface (#225); and `SECURITY.md` with private disclosure (#217).
+
+**Next planned group: G20 — payload cryptography** (ADR 0012, issue #226): field-level and
+whole-body encryption plus request/response signing, behind two pure Core seams with key material at
+the host edge. Planned only — nothing implemented.
+
+Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
+(0 warnings); 603 tests green across the four suites.
