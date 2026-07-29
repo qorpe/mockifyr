@@ -150,6 +150,19 @@ public static class MockifyrHost
                 new InMemoryRequestJournal(journalLimit > 0 ? journalLimit : null));
         }
 
+        // Journal masking (#227): --mask-headers / --mask-body-fields keep named values out of the
+        // journal entirely (they are replaced before the event is stored, so they cannot be read
+        // back through the admin API or the dashboard). Opt-in on purpose: a masked value is also
+        // invisible to verify/near-miss, which read the same stored request. Decorates whatever
+        // journal was registered above, so the bound and the disabled switch still apply.
+        var masking = JournalMaskingOptions.Parse(
+            builder.Configuration["mask-headers"], builder.Configuration["mask-body-fields"]);
+        if (!masking.IsEmpty)
+        {
+            builder.Services.AddSingleton<IRequestJournal>(sp => new MaskingRequestJournal(
+                ActivatorUtilities.CreateInstance<InMemoryRequestJournal>(sp), masking));
+        }
+
         // Message behaviors (G18e): a bounded inbox override (--message-limit) and the capture
         // webhook decorating the sink. Registered after AddMockifyr so they win the resolution.
         if (int.TryParse(builder.Configuration["message-limit"], out var messageLimit))
