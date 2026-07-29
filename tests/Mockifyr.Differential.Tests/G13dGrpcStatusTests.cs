@@ -59,7 +59,7 @@ public sealed class G13dGrpcStatusTests : IAsyncLifetime
                 .First(a => a.StartsWith("https://", StringComparison.Ordinal))
                 .Replace("[::]", "127.0.0.1").Replace("0.0.0.0", "127.0.0.1"));
 
-            var oracle = await CallAsync(_oracle.GrpcAddress);
+            var oracle = await CallOracleWhenReadyAsync();
             var mockifyrStatus = await CallAsync(mockifyrAddress);
 
             // Both sides fail the call with the same status code and detail.
@@ -71,6 +71,30 @@ public sealed class G13dGrpcStatusTests : IAsyncLifetime
         finally
         {
             root.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Calls the oracle, waiting out its gRPC warm-up. The container's readiness probe is an HTTP
+    /// request against /__admin/mappings, which says nothing about the gRPC extension having loaded
+    /// its descriptor and mappings — a call made in that window comes back UNIMPLEMENTED (or a
+    /// transport error), and comparing THAT to Mockifyr's answer fails a test that has found no
+    /// real divergence. Retries only while the status is one of those startup shapes, so a genuine
+    /// mismatch still fails immediately rather than being waited away.
+    /// </summary>
+    private async Task<(StatusCode Code, string Detail)> CallOracleWhenReadyAsync()
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var result = await CallAsync(_oracle.GrpcAddress);
+            var warmingUp = result.Code is StatusCode.Unimplemented or StatusCode.Unavailable or StatusCode.Internal;
+            if (!warmingUp || DateTime.UtcNow > deadline)
+            {
+                return result;
+            }
+
+            await Task.Delay(250);
         }
     }
 
