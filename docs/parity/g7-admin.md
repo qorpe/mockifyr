@@ -86,3 +86,27 @@ materializing the whole journal (O(1) instead of O(n)); the index is tenant-gate
 unit test the oracle cannot express. Stryker on the journal store: **100 %** (9/9 killed + 1 timeout).
 Default change note: before #220 the journal was unbounded — a long-running host accumulated every
 request (and its Authorization headers) forever; 1000 mirrors `--message-limit`.
+
+
+## Journal masking (#227, post-G hardening)
+
+`--mask-headers` / `--mask-body-fields` replace named values with `***` **before the serve event is
+stored** — the choke point is `IRequestJournal.Record`, reached through a `MaskingRequestJournal`
+decorator, so the value never exists in memory and cannot be read back through
+`/__admin/requests/{id}` or the dashboard. Header names match case-insensitively and multi-valued
+headers keep their arity; body fields are masked structurally (JSON walked at any depth, arrays
+included), and a body that is not JSON is returned byte-for-byte — masking must never corrupt a
+recorded payload.
+
+**Opt-in on purpose — the design decision worth remembering.** Masking is off by default because the
+journal is also the data source for `verify` and near-miss diagnostics: a masked `Authorization`
+header is invisible to a verification that asserts on it. Making it default-on would have silently
+broken a legitimate test pattern ("assert the client sent the right token"). Documented here and in
+the CLI reference; the trade is the operator's to make.
+
+Engine untouched: `StubEngine` knows nothing about masking (the decorator sits at the store seam),
+Core keeps zero external dependencies (System.Text.Json is BCL), and the whole differential suite
+passes unchanged — the parity surface did not move. **Stryker: 93.3 %** (28/30). The two survivors
+are analyzed equivalents, both fast-path guards: removing the `IsEmpty` early return in `Mask`, and
+flipping `fields.Count == 0 || body.Length == 0` to `&&`, both fall through to code that computes
+the same result with empty inputs — a performance difference with no observable behavior change.
