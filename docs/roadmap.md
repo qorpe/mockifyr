@@ -591,6 +591,26 @@ each item's definition of done, not follow-ups.
   live `--sandbox-auth` host end-to-end (a key issued through the dialog authenticated a real
   request and its usage showed 3/50 in the table); all six locales shipped.
 
+## G20 — Payload cryptography (ADR 0012)
+
+Planned, not started. Enterprise upstreams protect the payload on top of TLS; today every body
+matcher sees ciphertext, templating cannot correlate, and nothing can encrypt or sign a response.
+Phased behind explicit per-stub opt-in, with key material at the host edge and Core seeing only an
+abstract scheme (`IPayloadDecryptor` / `IPayloadProtector`).
+
+- [ ] **G20a — field-level decryption for matching + templating.** `request.decrypt: { scheme, fields }`;
+  the envelope keeps matching as today, the named fields become matchable and templatable. Decryption
+  is a *view* matching looks through — the recorded request stays what the client sent.
+- [ ] **G20b — response protection.** `response.protect: { scheme, fields }` plus whole-body JWE, so a
+  client that decrypts what it receives is satisfied.
+- [ ] **G20c — signing.** `signatureValid` request matcher and response signing (`Digest` + detached
+  JWS, HMAC), with PSD2/Berlin-Group presets packaged the way the Twilio SMS profile is (ADR 0009).
+- [ ] **G20d — whole-body inbound decryption**, once key handling has settled.
+
+No oracle exists (the reference engine has no payload cryptography), so validation follows the
+G18/G19 precedent: real-client self-tests against a standard JOSE library, unit tests + Stryker on
+the pure logic, and the differential suite staying green to prove the parity surface did not move.
+
 Deferred edges (tracked from day one in `docs/parity/g19-sandbox.md`): durable resource
 persistence via the G16 seam, GraphQL SDL / AsyncAPI import, per-key scenario isolation, OpenAPI
 *export* of authored stubs. Out of scope by decision (ADR 0011): developer portal,
