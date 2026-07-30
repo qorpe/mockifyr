@@ -7,6 +7,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Mockifyr.Crypto\Mockifyr.Crypto.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Http\Mockifyr.Facade.Http.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Admin\Mockifyr.Facade.Admin.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Grpc\Mockifyr.Facade.Grpc.csproj" />

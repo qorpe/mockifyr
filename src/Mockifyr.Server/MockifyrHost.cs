@@ -153,6 +153,21 @@ public static class MockifyrHost
                 new InMemoryRequestJournal(journalLimit > 0 ? journalLimit : null));
         }
 
+        // Payload decryption (G20a, ADR 0012): --decrypt-key <base64 256-bit key> registers the
+        // JWE(dir+A256GCM) field decryptor. Key material stops here — Core only ever sees that a
+        // scheme was applied. No flag, no decryptor, and stubs declaring `decrypt` simply do not
+        // match, which is the honest outcome for a host that was never given the key.
+        var decryptKey = Crypto.JweFieldDecryptor.ReadKey(builder.Configuration["decrypt-key"]);
+        if (builder.Configuration["decrypt-key"] is { Length: > 0 } && decryptKey is null)
+        {
+            Console.WriteLine("mockifyr: --decrypt-key is not a 256-bit base64 key — payload decryption is OFF.");
+        }
+        else if (decryptKey is not null)
+        {
+            builder.Services.AddSingleton<IPayloadDecryptor>(new Crypto.JweFieldDecryptor(decryptKey));
+            Console.WriteLine($"mockifyr: payload decryption enabled (scheme {Crypto.JweFieldDecryptor.SchemeName}).");
+        }
+
         // Journal masking (#227): --mask-headers / --mask-body-fields keep named values out of the
         // journal entirely (they are replaced before the event is stored, so they cannot be read
         // back through the admin API or the dashboard). Opt-in on purpose: a masked value is also

@@ -32,6 +32,7 @@ public sealed class StubEngine
     private readonly IRequestJournal _journal;
     private readonly IReadOnlyList<IServeEventListener> _serveEventListeners;
     private readonly IReadOnlyList<IResponseTransformer> _responseTransformers;
+    private readonly PayloadDecryptionView _decryption;
 
     /// <summary>Creates the engine with its collaborators.</summary>
     public StubEngine(
@@ -40,7 +41,8 @@ public sealed class StubEngine
         IScenarioStateStore scenarioStore,
         IRequestJournal journal,
         IEnumerable<IServeEventListener> serveEventListeners,
-        IEnumerable<IResponseTransformer>? responseTransformers = null)
+        IEnumerable<IResponseTransformer>? responseTransformers = null,
+        IEnumerable<IPayloadDecryptor>? payloadDecryptors = null)
     {
         _stubStore = stubStore;
         _renderer = renderer;
@@ -48,6 +50,7 @@ public sealed class StubEngine
         _journal = journal;
         _serveEventListeners = [.. serveEventListeners];
         _responseTransformers = responseTransformers is null ? [] : [.. responseTransformers];
+        _decryption = new PayloadDecryptionView(payloadDecryptors ?? []);
     }
 
     /// <summary>
@@ -68,7 +71,12 @@ public sealed class StubEngine
                 continue;
             }
 
-            scored.Add((stub, Evaluate(stub.Request, input), i));
+            // Encrypted-payload stubs (G20a) match against a decrypted view; every other stub keeps
+            // the very same MatchInput instance, so the default path is untouched.
+            var stubInput = stub.Request.Decrypt is null || _decryption.IsEmpty
+                ? input
+                : new MatchInput { Request = _decryption.For(request, stub.Request.Decrypt) };
+            scored.Add((stub, Evaluate(stub.Request, stubInput), i));
         }
 
         var exact = scored.Where(x => x.Result.IsExactMatch).ToList();
@@ -76,11 +84,14 @@ public sealed class StubEngine
         {
             // Lower priority wins; ties broken by recency (last added wins).
             var winner = exact.OrderBy(x => x.Stub.Priority).ThenByDescending(x => x.Index).First().Stub;
+            // Templating sees the same decrypted view the winner matched against (G20a), so
+            // {{jsonPath request.body …}} can correlate with what the client actually sent.
+            var renderRequest = _decryption.For(request, winner.Request.Decrypt);
             var response = _renderer.Render(
                 winner.Response,
                 new RenderContext
                 {
-                    Request = request,
+                    Request = renderRequest,
                     Tenant = tenant,
                     UrlPathTemplate = winner.Request.UrlPathTemplate,
                 });
