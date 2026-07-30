@@ -598,9 +598,13 @@ matcher sees ciphertext, templating cannot correlate, and nothing can encrypt or
 Phased behind explicit per-stub opt-in, with key material at the host edge and Core seeing only an
 abstract scheme (`IPayloadDecryptor` / `IPayloadProtector`).
 
-- [ ] **G20a — field-level decryption for matching + templating.** `request.decrypt: { scheme, fields }`;
-  the envelope keeps matching as today, the named fields become matchable and templatable. Decryption
-  is a *view* matching looks through — the recorded request stays what the client sent.
+- [x] **G20a — field-level decryption for matching + templating.** `request.decrypt: { scheme, fields }`
+  with JWE compact (dir + A256GCM, RFC 7516 §5.1) via `--decrypt-key`; the envelope keeps matching as
+  today, the named fields become matchable and templatable. Decryption is a *view* matching looks
+  through — the recorded request stays what the client sent (asserted on the journal). Key material
+  lives in the new `Mockifyr.Crypto` project; Core keeps zero dependencies. 11 unit + 4 wire tests
+  against an independent RFC implementation, **Stryker 26/29** with the survivors analyzed as
+  deliberate defense-in-depth redundancy in `docs/parity/g20-cryptography.md`.
 - [ ] **G20b — response protection.** `response.protect: { scheme, fields }` plus whole-body JWE, so a
   client that decrypts what it receives is satisfied.
 - [ ] **G20c — signing.** `signatureValid` request matcher and response signing (`Digest` + detached

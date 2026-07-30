@@ -141,6 +141,7 @@ src/
   Mockifyr.Stores.InMemory/      tenant-scoped in-memory stores
   Mockifyr.Adapters.MappingJson/ mapping JSON <-> domain model import adapter
   Mockifyr.Adapters.OpenApi/     OpenAPI 3.x -> mapping JSON generator (G19c; Microsoft.OpenApi)
+  Mockifyr.Crypto/               payload decryption at the edge (G20a; JWE dir+A256GCM, BCL only)
   Mockifyr.ServeEvents.Webhook/  IServeEventListener impl (outbound I/O)
   Mockifyr.Application/          CQRS handlers (Mediant) — MANAGEMENT PATH ONLY
   Mockifyr.Facade.Library/       in-process API

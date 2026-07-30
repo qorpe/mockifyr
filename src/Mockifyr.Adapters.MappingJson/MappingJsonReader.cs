@@ -323,6 +323,7 @@ public static class MappingJsonReader
             FormParameters = ReadNamedMatchers(request, "formParameters", static (name, vm) => new FormParameterMatcher(name, vm)),
             Cookies = ReadNamedMatchers(request, "cookies", static (name, vm) => new CookieMatcher(name, vm)),
             Body = ReadBodyMatchers(request),
+            Decrypt = ReadDecryptDirective(request),
             Custom = ReadCustomMatchers(request, matchers),
         };
     }
@@ -362,6 +363,35 @@ public static class MappingJsonReader
         }
 
         return matchers?.Resolve(matcherName) is { } matcher ? [matcher] : [];
+    }
+
+    /// <summary>
+    /// Reads the opt-in payload-decryption declaration (G20a, ADR 0012):
+    /// <c>"decrypt": { "scheme": "jwe-dir-a256gcm", "fields": ["encData"] }</c>. Absent, malformed
+    /// or empty-field declarations read as null — a stub never becomes half-configured.
+    /// </summary>
+    private static PayloadDecryptDirective? ReadDecryptDirective(JsonElement request)
+    {
+        if (!request.TryGetProperty("decrypt", out var decrypt) || decrypt.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var scheme = decrypt.TryGetProperty("scheme", out var s) && s.ValueKind == JsonValueKind.String
+            ? s.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(scheme) ||
+            !decrypt.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var names = fields.EnumerateArray()
+            .Where(f => f.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(f.GetString()))
+            .Select(f => f.GetString()!)
+            .ToArray();
+
+        return names.Length == 0 ? null : new PayloadDecryptDirective(scheme, names);
     }
 
     private static IReadOnlyList<IMatcher> ReadBodyMatchers(JsonElement request)

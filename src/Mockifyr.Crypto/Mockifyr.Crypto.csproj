@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mockifyr.Core\Mockifyr.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -178,6 +178,13 @@ public sealed record RequestPattern
     public IMatcher? Url { get; init; }
 
     /// <summary>
+    /// Opt-in declaration that named body fields arrive encrypted (G20a, ADR 0012). When set, body
+    /// matchers and response templating see a decrypted VIEW of the request; the recorded request
+    /// stays verbatim. Null on every stub that does not declare it — the default path.
+    /// </summary>
+    public PayloadDecryptDirective? Decrypt { get; init; }
+
+    /// <summary>
     /// The raw <c>urlPathTemplate</c> string (e.g. <c>/users/{id}</c>) when the stub matched by URI
     /// template, else null. Carried so response templating can expose named path variables as
     /// <c>{{request.path.&lt;name&gt;}}</c> (verified by the differential suite). The engine records it; extraction happens
