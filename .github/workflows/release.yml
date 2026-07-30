@@ -9,8 +9,9 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write   # attach the SBOM to the GitHub release
   packages: write
+  id-token: write   # keyless signing: cosign exchanges the workflow's OIDC token, so no key is stored
 
 jobs:
   image:
@@ -41,6 +42,7 @@ jobs:
       # Multi-arch via cross-compilation (the Dockerfile builds on $BUILDPLATFORM and targets
       # $TARGETARCH), so arm64 is produced without slow QEMU emulation of the SDK build.
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -48,3 +50,49 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Provenance and an in-image SBOM attestation: what was built, from which commit, by which
+          # workflow. A reviewer verifies these without trusting our word for it.
+          provenance: mode=max
+          sbom: true
+
+      # A standalone SBOM file as well as the attestation: procurement usually wants an artifact it
+      # can archive, not only something attached to a registry manifest.
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
+          format: cyclonedx-json
+          output-file: mockifyr-sbom.cdx.json
+          upload-artifact: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Keyless signing (Sigstore): the signature is bound to this repository and workflow rather
+      # than to a private key we would have to store and rotate.
+      - name: Sign the image
+        run: |
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}" || cosign sign --yes "$tag"
+          done
+
+      - name: Attest the SBOM
+        run: cosign attest --yes --predicate mockifyr-sbom.cdx.json --type cyclonedx \
+             ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+
+      # Scan what was actually published, not a local build: a HIGH/CRITICAL finding must be visible
+      # in the release run rather than discovered by the customer's scanner.
+      # Report, never block: a tagged release is already built and pushed by this point, and leaving
+      # it half-published because of a scan result would be worse than reporting the result.
+      - name: Scan the published image
+        run: |
+          docker run --rm -v "${HOME}/.cache/trivy:/root/.cache/trivy" \
+            aquasec/trivy:0.58.1 image \
+              --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 \
+              --format table ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+
+      - name: Attach the SBOM to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mockifyr-sbom.cdx.json
+          fail_on_unmatched_files: false

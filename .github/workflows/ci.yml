@@ -26,6 +26,64 @@ jobs:
       - name: Test (unit)
         run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Differential"
 
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # publish CodeQL and Trivy findings to the Security tab
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Known-vulnerable NuGet packages, including transitive ones. Fails the build so a dependency
+      # bump that introduces a CVE is caught here rather than by a customer's scanner.
+      - name: Audit NuGet dependencies
+        run: |
+          dotnet restore
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee nuget-audit.txt
+          if grep -qE "Critical|High" nuget-audit.txt; then
+            echo "::error::A dependency with a High/Critical advisory is referenced — see the table above."
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Audit dashboard dependencies
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level high
+
+      # The image as it will ship: OS packages and the runtime layer, not just our code.
+      - name: Build the image for scanning
+        run: docker build -t mockifyr:scan .
+
+      # Trivy from its own pinned image rather than an install script: no PATH or permission
+      # surprises on the runner, and the scanner version is explicit. The docker socket lets it read
+      # the image we just built locally; the cache mount keeps the vulnerability DB between runs.
+      # ignore-unfixed: a base-image CVE with no available fix cannot be actioned in a pull request,
+      # and failing on it would only teach everyone to ignore this job.
+      - name: Scan the image
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${HOME}/.cache/trivy:/root/.cache/trivy" \
+            aquasec/trivy:0.58.1 image \
+              --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+              --format table mockifyr:scan
+
   chart:
     name: Helm chart (lint & posture)
     runs-on: ubuntu-latest

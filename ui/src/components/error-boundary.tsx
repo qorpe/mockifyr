@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from 'react'
-import { useRouteError } from 'react-router-dom'
+import { useRouteError } from 'react-router'
 import { AlertTriangle } from 'lucide-react'
 
 function Fallback({ onReload }: { onReload: () => void }) {
