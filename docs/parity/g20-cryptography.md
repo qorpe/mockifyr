@@ -147,3 +147,28 @@ never collide.
 **Deferred (tracked in ADR 0012).** G20d whole-body inbound decryption; asymmetric signatures
 (RSA/EC detached JWS with a certificate), the full Berlin Group signing string over selected headers
 (`(request-target)`, `Date`, `X-Request-ID`), and key rotation.
+
+
+## G20d — whole-body inbound decryption
+
+**What shipped.** `"decrypt": { "scheme": "jwe-dir-a256gcm" }` with no `fields` array decrypts the
+**entire** request body as one JWE token — the fixed-partner shape, and the exact mirror of what
+`protect` with no fields emits on the way out. This is the case the issue called out as impossible
+before: a correct sender uses a fresh IV per request, so the bytes differ every time and
+`binaryEqualTo` cannot match at all.
+
+Leading and trailing whitespace is tolerated (a client that pretty-prints its body still matches);
+a body that is not a token is left untouched, so the stub simply does not match. Both halves of the
+`decrypt`/`protect` pair now accept the same two shapes — named fields or the whole payload — which
+is what makes a bidirectional encrypted integration expressible in one stub.
+
+**Validation story.** Two unit tests (whole-body round trip including surrounding whitespace, and
+non-token bodies left alone) plus a wire test proving a whole-body request matches on decrypted
+content **and** that a payload whose decrypted content fails the matcher still 404s — decryption
+feeds matching, it never bypasses it. **Stryker 26/29**, the same three defense-in-depth equivalents
+documented under G20a.
+
+**G20 is complete.** Remaining deferred work, all recorded in ADR 0012: asymmetric signatures
+(RSA/EC detached JWS with certificates), the full Berlin Group signing string over selected headers,
+multiple keys / rotation / per-tenant keys, wrapped-key JWE (`alg != dir`, refused today rather than
+half-supported), and content negotiation (`application/jose` on protected responses).

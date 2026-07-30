@@ -458,18 +458,21 @@ public static class MappingJsonReader
         var scheme = decrypt.TryGetProperty("scheme", out var s) && s.ValueKind == JsonValueKind.String
             ? s.GetString()
             : null;
-        if (string.IsNullOrWhiteSpace(scheme) ||
-            !decrypt.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Array)
+        if (string.IsNullOrWhiteSpace(scheme))
         {
             return null;
         }
 
-        var names = fields.EnumerateArray()
-            .Where(f => f.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(f.GetString()))
-            .Select(f => f.GetString()!)
-            .ToArray();
+        // An absent or empty `fields` array means WHOLE-BODY decryption (G20d) — a valid shape, and
+        // the mirror of `protect` on the response side.
+        var names = decrypt.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array
+            ? fields.EnumerateArray()
+                .Where(f => f.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(f.GetString()))
+                .Select(f => f.GetString()!)
+                .ToArray()
+            : [];
 
-        return names.Length == 0 ? null : new PayloadDecryptDirective(scheme, names);
+        return new PayloadDecryptDirective(scheme, names);
     }
 
     private static IReadOnlyList<IMatcher> ReadBodyMatchers(JsonElement request)

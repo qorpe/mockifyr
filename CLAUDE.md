@@ -246,9 +246,14 @@ credentials that turn the tenant header from a claim into an authorization decis
 (`--tenant-credential`, #224); a startup warning plus `--block-outbound-routes` for an
 unauthenticated admin surface (#225); and `SECURITY.md` with private disclosure (#217).
 
-**Next planned group: G20 — payload cryptography** (ADR 0012, issue #226): field-level and
-whole-body encryption plus request/response signing, behind two pure Core seams with key material at
-the host edge. Planned only — nothing implemented.
+**G20 — payload cryptography (ADR 0012, issue #226) is complete:** field-level and whole-body
+request decryption (`request.decrypt`), response protection (`response.protect`), and signing
+(`request.signature` / `response.sign`, PSD2 / Berlin Group shape) — four pure Core seams
+(`IPayloadDecryptor`/`IPayloadProtector`/`ISignatureVerifier`/`IResponseSigner`) with every key at
+the host edge in `Mockifyr.Crypto`; Core still has zero external dependencies. No oracle exists, so
+validation is round-trips against independent implementations of the same RFCs
+(`docs/parity/g20-cryptography.md`). Deferred: asymmetric signatures, the full Berlin Group signing
+string, key rotation, wrapped-key JWE.
 
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
 (0 warnings); 603 tests green across the four suites.

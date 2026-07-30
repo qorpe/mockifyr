@@ -593,7 +593,7 @@ each item's definition of done, not follow-ups.
 
 ## G20 — Payload cryptography (ADR 0012)
 
-Planned, not started. Enterprise upstreams protect the payload on top of TLS; today every body
+**Complete** (v0.21.0). Enterprise upstreams protect the payload on top of TLS; today every body
 matcher sees ciphertext, templating cannot correlate, and nothing can encrypt or sign a response.
 Phased behind explicit per-stub opt-in, with key material at the host edge and Core seeing only an
 abstract scheme (`IPayloadDecryptor` / `IPayloadProtector`).
@@ -617,7 +617,10 @@ abstract scheme (`IPayloadDecryptor` / `IPayloadProtector`).
   protection so it covers what the client receives. PSD2 / Berlin Group header names by default,
   HMAC-SHA256 over the `Digest` value, `--sign-key`. 8 unit + 4 wire tests with independently
   computed signatures; **Stryker 11/14** with three analyzed equivalents.
-- [ ] **G20d — whole-body inbound decryption**, once key handling has settled.
+- [x] **G20d — whole-body inbound decryption.** `decrypt` with no `fields` decrypts the entire body
+  as one JWE token — the mirror of `protect` with no fields, and the case `binaryEqualTo` cannot
+  express because a fresh IV changes the bytes every request. Whitespace tolerated; a non-token body
+  is left untouched (non-match). 2 unit + 1 wire test; **G20 complete**.
 
 No oracle exists (the reference engine has no payload cryptography), so validation follows the
 G18/G19 precedent: real-client self-tests against a standard JOSE library, unit tests + Stryker on

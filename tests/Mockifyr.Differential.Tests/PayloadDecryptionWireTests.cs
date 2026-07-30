@@ -149,6 +149,31 @@ public sealed class PayloadDecryptionWireTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_whole_body_encrypted_request_matches_and_templates()
+    {
+        // G20d: the entire body is one token. Matching it byte-wise is impossible (fresh IV per
+        // request), so this is the case that only structural decryption can serve.
+        await SeedAsync("""
+        {"request":{"method":"POST","urlPath":"/whole",
+          "decrypt":{"scheme":"jwe-dir-a256gcm"},
+          "bodyPatterns":[{"matchesJsonPath":{"expression":"$.currency","equalTo":"SAR"}}]},
+         "response":{"status":200,"transformers":["response-template"],
+          "body":"pan={{jsonPath request.body '$.pan'}}"}}
+        """);
+
+        var token = Encrypt("""{"pan":"4111111111111111","currency":"SAR"}""");
+        using var response = await PostAsync("/whole", token);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("pan=4111111111111111", await response.Content.ReadAsStringAsync());
+
+        // A different currency in the same shape must not match — decryption feeds real matching,
+        // it does not bypass it.
+        using var other = await PostAsync("/whole", Encrypt("""{"pan":"4111","currency":"USD"}"""));
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+    }
+
+    [Fact]
     public async Task Stubs_that_declare_nothing_are_untouched()
     {
         await SeedAsync("""

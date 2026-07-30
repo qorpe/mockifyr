@@ -158,6 +158,34 @@ public sealed class JweFieldDecryptorTests
     }
 
     [Fact]
+    public void A_whole_body_token_is_decrypted_when_no_field_is_named()
+    {
+        // G20d: the fixed-partner shape, and the mirror of what response protection emits.
+        var decryptor = new JweFieldDecryptor(Key);
+        var wholeBody = new PayloadDecryptDirective(JweFieldDecryptor.SchemeName, []);
+        var payload = """{"pan":"4111111111111111","amount":10}""";
+
+        var view = decryptor.Decrypt(Request(Encrypt(payload)), wholeBody);
+        Assert.Equal(payload, BodyOf(view));
+
+        // Surrounding whitespace (a client that pretty-prints its body) is tolerated.
+        Assert.Equal(payload, BodyOf(decryptor.Decrypt(Request("  " + Encrypt(payload) + "\n"), wholeBody)));
+    }
+
+    [Fact]
+    public void A_whole_body_that_is_not_a_token_is_left_alone()
+    {
+        var decryptor = new JweFieldDecryptor(Key);
+        var wholeBody = new PayloadDecryptDirective(JweFieldDecryptor.SchemeName, []);
+
+        foreach (var body in new[] { """{"plain":"json"}""", "garbage", "a.b.c.d.e" })
+        {
+            var original = Request(body);
+            Assert.Same(original.Body, decryptor.Decrypt(original, wholeBody).Body);
+        }
+    }
+
+    [Fact]
     public void Only_its_own_scheme_is_handled()
     {
         var decryptor = new JweFieldDecryptor(Key);
