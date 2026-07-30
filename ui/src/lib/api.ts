@@ -1019,3 +1019,31 @@ export async function fetchAuditEntries(tenant: string, limit = 200): Promise<{ 
     return { entries: [], mock: true }
   }
 }
+
+/**
+ * Downloads a full backup archive of the tenant (#252): stubs, environments, sandbox documents,
+ * API keys and scenario states. The archive carries key verifiers, so it is a secret — the caller
+ * hands it straight to the browser's download, never to storage or a log.
+ */
+export async function fetchBackup(tenant: string): Promise<string> {
+  const res = await adminFetch('/backup', tenant)
+  if (!res.ok) throw new Error(`Backup failed (${res.status})`)
+  return await res.text()
+}
+
+/** One restore's effect, as the server reports it. */
+export interface RestoreSummary {
+  mappings: number
+  environments: number
+  resources: number
+  apiKeys: number
+  scenarios: number
+}
+
+/** Restores an archive into the tenant, replacing what the archive covers. */
+export async function restoreBackup(tenant: string, archiveJson: string): Promise<RestoreSummary> {
+  const res = await adminFetch('/restore', tenant, { method: 'POST', body: archiveJson })
+  const body = (await res.json().catch(() => ({}))) as { restored?: RestoreSummary; message?: string }
+  if (!res.ok) throw new Error(body.message ?? `Restore failed (${res.status})`)
+  return body.restored ?? { mappings: 0, environments: 0, resources: 0, apiKeys: 0, scenarios: 0 }
+}

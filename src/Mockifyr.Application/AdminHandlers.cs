@@ -662,3 +662,160 @@ public sealed class GetAuditEntriesHandler(IAuditLog log)
         ValueTask.FromResult(Result.Success(
             log.Read(query.Tenant, Math.Clamp(query.Limit ?? 200, 1, 1000))));
 }
+
+/// <summary>
+/// Gathers everything a tenant's operator authored into one archive (#252).
+/// </summary>
+/// <remarks>
+/// Stubs travel as their authored source, so a restore reproduces what was written rather than a
+/// re-serialization of it. Scenario states are read for the scenarios the stubs actually declare —
+/// there is no scenario registry to enumerate, and a state without a stub to drive it is meaningless.
+/// </remarks>
+public sealed class CreateBackupHandler(
+    IStubStore stubs,
+    IEnvironmentStore environments,
+    IResourceStore resources,
+    IApiKeyStore apiKeys,
+    IScenarioStateStore scenarios)
+    : IQueryHandler<CreateBackupQuery, Result<BackupArchive>>
+{
+    public ValueTask<Result<BackupArchive>> Handle(CreateBackupQuery query, CancellationToken cancellationToken)
+    {
+        var tenantStubs = stubs.GetStubs(query.Tenant);
+        var mappings = tenantStubs
+            .Select(stub => stub.Source)
+            .OfType<string>()
+            .ToList();
+
+        var documents = new List<ResourceDocument>();
+        foreach (var collection in resources.GetCollections(query.Tenant))
+        {
+            documents.AddRange(resources.List(query.Tenant, collection.Name));
+        }
+
+        var states = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in tenantStubs
+            .Select(stub => stub.Scenario?.ScenarioName)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal))
+        {
+            states[name] = scenarios.GetState(query.Tenant, name);
+        }
+
+        return ValueTask.FromResult(Result.Success(new BackupArchive(
+            query.Tenant,
+            DateTimeOffset.UtcNow,
+            mappings,
+            environments.GetKeys(query.Tenant),
+            documents,
+            apiKeys.GetKeys(query.Tenant),
+            states)));
+    }
+}
+
+/// <summary>
+/// Restores an archive into a tenant (#252).
+/// </summary>
+/// <remarks>
+/// <para>
+/// Replace, not merge: each section the archive carries is cleared first, so a restored host is the
+/// host that was backed up rather than a union with whatever was there. Merging would leave stubs the
+/// backup does not know about still serving — the opposite of what a restore is for. A section the
+/// archive omits is left alone, which is what makes a partial archive usable.
+/// </para>
+/// <para>
+/// The archive's own tenant name is ignored in favour of the caller's: restoring production's archive
+/// into a staging tenant is a normal drill, and an archive that could re-target itself would be a
+/// cross-tenant write from a file.
+/// </para>
+/// </remarks>
+public sealed class RestoreBackupHandler(
+    IStubStore stubs,
+    IStubPersistence stubPersistence,
+    IMatcherRegistry matchers,
+    IEnvironmentStore environments,
+    IEnvironmentPersistence environmentPersistence,
+    IResourceStore resources,
+    IApiKeyStore apiKeys,
+    IApiKeyPersistence apiKeyPersistence,
+    IScenarioStateStore scenarios)
+    : ICommandHandler<RestoreBackupCommand, Result<RestoreSummary>>
+{
+    public ValueTask<Result<RestoreSummary>> Handle(RestoreBackupCommand command, CancellationToken cancellationToken)
+    {
+        if (BackupJson.Read(command.ArchiveJson) is not { } archive)
+        {
+            return ValueTask.FromResult<Result<RestoreSummary>>(Error.Validation(
+                "Backup.Invalid",
+                "This is not a Mockifyr backup archive, or it was written by a newer version."));
+        }
+
+        // Parse every mapping before writing anything: a restore that fails halfway leaves a tenant in
+        // a state neither the archive nor the operator can describe.
+        List<(StubMapping Stub, string Source)> parsed = [];
+        foreach (var mapping in archive.Mappings)
+        {
+            try
+            {
+                parsed.AddRange(MappingJsonReader.ReadWithSource(mapping, command.Tenant, matchers));
+            }
+            catch (JsonException)
+            {
+                return ValueTask.FromResult<Result<RestoreSummary>>(Error.Validation(
+                    "Backup.InvalidMapping", "The archive contains a mapping that is not valid JSON."));
+            }
+        }
+
+        foreach (var existing in stubs.GetStubs(command.Tenant).ToList())
+        {
+            stubs.Remove(command.Tenant, existing.Id);
+        }
+
+        stubPersistence.Clear(command.Tenant);
+        foreach (var (stub, source) in parsed)
+        {
+            stubs.Put(stub);
+            stubPersistence.Save(stub, source);
+        }
+
+        environments.Clear(command.Tenant);
+        environmentPersistence.Clear(command.Tenant);
+        foreach (var key in archive.Environments)
+        {
+            environments.Put(command.Tenant, key);
+            environmentPersistence.Save(command.Tenant, key);
+        }
+
+        resources.ResetAll(command.Tenant);
+        foreach (var document in archive.Resources)
+        {
+            resources.Put(command.Tenant, document.Collection, document.Id, document.Body);
+        }
+
+        foreach (var existing in apiKeys.GetKeys(command.Tenant))
+        {
+            apiKeys.Remove(existing.Id);
+            apiKeyPersistence.Remove(existing.Id);
+        }
+
+        foreach (var key in archive.ApiKeys)
+        {
+            // Re-tenanted to the restore target, so the key selects the tenant it was restored into.
+            var restored = key with { Tenant = command.Tenant };
+            apiKeys.Put(restored);
+            apiKeyPersistence.Save(restored);
+        }
+
+        foreach (var (scenario, state) in archive.Scenarios)
+        {
+            scenarios.SetState(command.Tenant, scenario, state);
+        }
+
+        return ValueTask.FromResult(Result.Success(new RestoreSummary(
+            parsed.Count,
+            archive.Environments.Count,
+            archive.Resources.Count,
+            archive.ApiKeys.Count,
+            archive.Scenarios.Count)));
+    }
+}

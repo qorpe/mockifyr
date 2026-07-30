@@ -213,3 +213,46 @@ Deferred edges, stated rather than hidden:
 - Entries are not signed or chained, so an operator with process access could in principle drop the
   in-memory copy. The SIEM line is the tamper-evident copy; hash-chaining the entries is only worth
   doing if the trail itself ever becomes the system of record.
+
+## Backup and restore (#252, enterprise readiness)
+
+Stubs could be exported and imported; nothing captured a whole tenant. `GET /__admin/backup` produces
+one archive — stubs (as their authored source), environment keys, sandbox documents, API keys and
+scenario states — and `POST /__admin/restore` puts it back. The dashboard's Settings screen wraps
+both.
+
+The decisions, and what each one rules out:
+
+- **Replace, not merge.** Each section the archive carries is cleared before it is written. Merging
+  would leave stubs the backup knows nothing about still serving, which is the opposite of what a
+  restore is for. A section the archive omits is left alone, so a partial archive is still usable.
+- **Everything is parsed before anything is written.** A restore that fails halfway would leave a
+  tenant in a state neither the archive nor the operator can describe.
+- **The caller's tenant header decides the destination, not the tenant name inside the file.**
+  Restoring production's archive into a staging tenant is a normal drill; an archive that could
+  re-target itself would be a cross-tenant write driven by a file's contents.
+- **API keys travel with their salted verifier.** Otherwise every consumer's key stops working the
+  moment you restore — the one thing a restore exists to prevent. The token itself was never stored
+  and cannot appear. This is what makes the archive a secret, and it is stated in the README, the
+  dashboard card and the website.
+- **Journal, message inbox and quota counters are excluded.** They are observations of what happened,
+  not configuration; restoring them would fabricate a history the target host never served. They are
+  bounded and disposable by design (#220, ADR 0009).
+- **Host configuration is excluded** — outbound trust, TLS, CLI flags. That belongs with the Helm
+  values, and a tenant-scoped archive that carried host trust would be a hole in the tenant boundary.
+- **A non-archive is refused outright.** A mapping bundle is the file an operator is most likely to
+  reach for by mistake; treating it as an archive with every section missing would silently wipe the
+  tenant. The reader also refuses a `mockifyrBackup` version it does not know rather than dropping the
+  sections it could not parse.
+
+Validation: 5 wire tests (fresh-host restore reproducing all five sections including a consumer key
+that still authenticates, replace-not-merge, cross-tenant restore, refusal leaving state intact,
+downloadable archive carrying no observations) plus 13 unit tests on the format. **Stryker: 100 %**
+(34/34). Two survivors were worth the tests they produced: dropping the `"O"` timestamp format
+survived until the fixtures carried sub-second precision (a rounded `createdAt` makes a backup's age
+untrustworthy), and dropping the API key's `prefix` survived until it was asserted (every restored key
+would show up anonymous in the Access screen).
+
+Deferred edges: no host-wide "every tenant" archive (each tenant is backed up on its own, which keeps
+the tenant boundary intact); no incremental or scheduled backups; the archive is not encrypted at rest
+— it is a file the operator stores wherever their secrets already live.

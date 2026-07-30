@@ -264,7 +264,9 @@ metrics, a credential-free Prometheus scrape at `/__admin/metrics`, JSON logs, d
 label cardinality — #246); and the admin audit trail (`--audit`: every admin change recorded with
 principal/tenant/action/target/outcome at `/__admin/audit`, on the dashboard, and as an `admin.audit`
 log line for a SIEM — #247). Remaining: documentation and support policy (#248), benchmarks (#249),
-backup/restore (#252), and — scoped on demand — key sources and rotation (#250) plus OIDC (#251).
+and — scoped on demand — key sources and rotation (#250) plus OIDC (#251). Backup and restore
+(#252) and the policy documents (#248 — `CHANGELOG.md`, `VERSIONING.md`, `SUPPORT.md`,
+`CONTRIBUTING.md`) are done.
 
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 687 tests green across the four suites.
+(0 warnings); 705 tests green across the four suites.
