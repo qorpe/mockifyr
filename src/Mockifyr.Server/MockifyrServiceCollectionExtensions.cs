@@ -124,7 +124,9 @@ public static class MockifyrServiceCollectionExtensions
             sp.GetServices<IServeEventListener>(),
             sp.GetServices<IResponseTransformer>(),
             sp.GetServices<IPayloadDecryptor>(),
-            sp.GetServices<IPayloadProtector>()));
+            sp.GetServices<IPayloadProtector>(),
+            sp.GetServices<ISignatureVerifier>(),
+            sp.GetServices<IResponseSigner>()));
 
         // Outbound edge (G12d): the proxy responder + recorder for proxy directives and record mode,
         // and the shared live-recording state the admin control endpoints and the fallback both see.

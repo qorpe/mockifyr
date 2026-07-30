@@ -124,3 +124,95 @@ public sealed class PayloadProtectionApplier(IEnumerable<IPayloadProtector> prot
         return response;
     }
 }
+
+/// <summary>
+/// A stub's requirement that the request carry a valid signature (G20c, ADR 0012). PSD2 / Berlin
+/// Group shape: a <c>Digest</c> header covers the body, and <see cref="Header"/> carries a signature
+/// over that digest. Declared per stub — a request that fails the check does not match, which is how
+/// a mock proves the client signed correctly instead of pretending it checked.
+/// </summary>
+public sealed record SignatureRequirement(string Scheme, string Header, string DigestHeader);
+
+/// <summary>Verifies a request signature (G20c). Edge-implemented: the key never enters Core.</summary>
+public interface ISignatureVerifier
+{
+    /// <summary>True when this verifier handles the named scheme.</summary>
+    bool Handles(string scheme);
+
+    /// <summary>
+    /// True when the request carries a valid signature. Must never throw: a missing header, a
+    /// malformed value or a wrong digest all read as false, because every one of them is what an
+    /// unsigned or tampered request looks like.
+    /// </summary>
+    bool Verify(CanonicalRequest request, SignatureRequirement requirement);
+}
+
+/// <summary>
+/// Decides whether a stub's signature requirement is satisfied (G20c). With no verifier registered
+/// for the declared scheme the requirement **fails closed** — a stub that asks for a signature must
+/// never match on a host that cannot check one, or the mock would silently accept anything.
+/// </summary>
+public sealed class SignatureGate(IEnumerable<ISignatureVerifier> verifiers)
+{
+    private readonly IReadOnlyList<ISignatureVerifier> _verifiers = [.. verifiers];
+
+    /// <summary>True when the stub may proceed to ordinary matching.</summary>
+    public bool Satisfied(CanonicalRequest request, SignatureRequirement? requirement)
+    {
+        if (requirement is null)
+        {
+            return true;
+        }
+
+        foreach (var verifier in _verifiers)
+        {
+            if (verifier.Handles(requirement.Scheme))
+            {
+                return verifier.Verify(request, requirement);
+            }
+        }
+
+        return false;
+    }
+}
+
+/// <summary>
+/// A stub's declaration that its response must be signed (G20c). The signer adds a digest of the
+/// served body plus the signature header, so a client that verifies what it receives is satisfied.
+/// </summary>
+public sealed record ResponseSignature(string Scheme, string Header, string DigestHeader);
+
+/// <summary>Signs a rendered response (G20c). Edge-implemented; returns the response unchanged when it cannot sign.</summary>
+public interface IResponseSigner
+{
+    /// <summary>True when this signer handles the named scheme.</summary>
+    bool Handles(string scheme);
+
+    /// <summary>Returns the response with its digest and signature headers added.</summary>
+    CanonicalResponse Sign(CanonicalResponse response, ResponseSignature signature);
+}
+
+/// <summary>Applies whichever registered signer handles the declared scheme (G20c).</summary>
+public sealed class ResponseSigningApplier(IEnumerable<IResponseSigner> signers)
+{
+    private readonly IReadOnlyList<IResponseSigner> _signers = [.. signers];
+
+    /// <summary>The response to serve: signed when declared and handled, else as rendered.</summary>
+    public CanonicalResponse For(CanonicalResponse response, ResponseSignature? signature)
+    {
+        if (signature is null || _signers.Count == 0)
+        {
+            return response;
+        }
+
+        foreach (var signer in _signers)
+        {
+            if (signer.Handles(signature.Scheme))
+            {
+                return signer.Sign(response, signature);
+            }
+        }
+
+        return response;
+    }
+}

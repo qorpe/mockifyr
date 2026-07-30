@@ -172,6 +172,21 @@ public static class MockifyrHost
             Console.WriteLine($"mockifyr: payload cryptography enabled (scheme {Crypto.JweFieldDecryptor.SchemeName}).");
         }
 
+        // Request/response signing (G20c, ADR 0012): --sign-key <base64 secret> registers the
+        // HMAC-SHA256 verifier and signer. A separate key from --decrypt-key on purpose: signing
+        // secrets and encryption keys are managed separately in every scheme that uses both.
+        var signKey = Crypto.JweFieldDecryptor.ReadKey(builder.Configuration["sign-key"]);
+        if (builder.Configuration["sign-key"] is { Length: > 0 } && signKey is null)
+        {
+            Console.WriteLine("mockifyr: --sign-key is not a 256-bit base64 key — signing is OFF.");
+        }
+        else if (signKey is not null)
+        {
+            builder.Services.AddSingleton<ISignatureVerifier>(new Crypto.HmacSignatureVerifier(signKey));
+            builder.Services.AddSingleton<IResponseSigner>(new Crypto.HmacResponseSigner(signKey));
+            Console.WriteLine($"mockifyr: request/response signing enabled (scheme {Crypto.HmacSignatureVerifier.SchemeName}).");
+        }
+
         // Journal masking (#227): --mask-headers / --mask-body-fields keep named values out of the
         // journal entirely (they are replaced before the event is stored, so they cannot be read
         // back through the admin API or the dashboard). Opt-in on purpose: a masked value is also

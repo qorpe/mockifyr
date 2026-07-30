@@ -95,3 +95,55 @@ serving plaintext). **Stryker: 100 %.**
 
 **Deferred (tracked in ADR 0012).** G20c signing, G20d whole-body inbound decryption; plus content
 negotiation (an `application/jose` content type on protected responses) and per-field schemes.
+
+
+## G20c — request signature verification + response signing
+
+**What shipped.** A stub may require a signed request —
+`"signature": { "scheme": "hmac-sha256" }` inside `request` — and may sign its own answer —
+`"sign": { "scheme": "hmac-sha256" }` inside `response`. Both default their header names to the
+PSD2 / Berlin Group ones (`X-JWS-Signature` over a `Digest` header), overridable per stub. The
+secret comes from `--sign-key <base64>`, deliberately separate from `--decrypt-key`: every scheme
+that uses both manages signing secrets and encryption keys separately.
+
+The convention is the Berlin Group shape without its full signing-string ceremony: `Digest` carries
+`SHA-256=<base64>` of the body, and the signature header carries the base64 HMAC-SHA256 of that
+digest value. Signing the digest rather than the body is what makes it composable — the digest is a
+stable, header-sized commitment to bytes that may be encrypted (G20b), chunked or streamed.
+
+**Decisions worth remembering.**
+
+- **Both halves are checked, and that is the point.** Verification requires the digest to describe
+  the body actually received *and* the signature to be the HMAC of that digest. Checking only the
+  signature would accept a valid signature over someone else's digest (the classic replay);
+  checking only the digest would accept an unsigned request. Both failure modes are pinned by tests.
+- **An unsigned request is a NON-MATCH, not a 4xx.** The requirement lives in the request pattern, so
+  a stub that demands a signature simply is not selected — the host answers 404 like any other miss.
+  A mock that matched anyway and warned would be worse than useless in a security test.
+- **The gate FAILS CLOSED.** With no verifier registered for the declared scheme (no `--sign-key`, or
+  a scheme nobody handles) the requirement can never be satisfied. A host that cannot check a
+  signature must not accept one, or the stub's guarantee is fiction.
+- **Signing runs after protection (G20b)**, so the digest covers the bytes the client will actually
+  receive and verify. Signing the plaintext would produce a signature over something that never went
+  on the wire.
+- **A hardcoded digest/signature header on the stub is replaced, not duplicated.** A stale digest is
+  worse than none: a verifying client rejects the response outright.
+- **Constant-time comparison** on both header checks, matching the rest of the codebase's credential
+  handling.
+
+**Validation story.** `HmacSigningTests` (8 unit tests with independently computed signatures: happy
+path, tampered body with a valid signature, honest digest without a signature, wrong key, missing
+headers, unknown scheme, the fail-closed gate, digest/signature emission, stale-header replacement,
+and applier selection) plus `SigningWireTests` (4 end-to-end tests against a real host: only a
+correctly signed request matches — unsigned, wrongly signed and tampered all 404 — a signed response
+verifying with an independent client-side HMAC, custom header names honored in both directions, and
+undeclared stubs carrying no signature headers at all).
+
+**Stryker: 11/14.** The three survivors are analyzed equivalents: `First()` → `FirstOrDefault()`
+behind an `Any()` guard (unreachable difference), and two `Append` → `Prepend` mutations on the
+response header pairs — header order inside a lookup is not observable, and the two names appended
+never collide.
+
+**Deferred (tracked in ADR 0012).** G20d whole-body inbound decryption; asymmetric signatures
+(RSA/EC detached JWS with a certificate), the full Berlin Group signing string over selected headers
+(`(request-target)`, `Date`, `X-Request-ID`), and key rotation.
