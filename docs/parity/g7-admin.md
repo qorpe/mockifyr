@@ -158,3 +158,58 @@ Design notes worth remembering:
 that skips non-flag arguments let an unrelated option's value (a Redis URL, a connection string
 containing colons) parse into a bogus admin principal — now pinned by
 `Only_the_flags_own_values_are_read`.
+
+## Admin audit trail (#247, enterprise readiness)
+
+The request journal answers "what did this host serve"; nothing answered "who changed it". `--audit`
+adds that record: every mutating call under `/__admin` is appended to a tenant-scoped, append-only
+trail — principal, tenant, action (`METHOD /path`), the addressed target if the route carried one,
+and the HTTP outcome — readable at `GET /__admin/audit` and on the dashboard's **Audit** screen.
+
+Decisions worth remembering, because each one was a fork in the road:
+
+- **One middleware, not 33 instrumented routes.** There are 33 mutating admin routes today. Recording
+  at each of them would mean 33 places to forget, and 33 definitions of "a change" free to drift.
+  Auditing at the pipeline means a route added tomorrow is covered by construction. The cost is that
+  an entry describes the *operation* rather than a domain event — which is what a reviewer asks for
+  anyway, and it never claims success for a change the handler refused.
+- **Reads are not audited.** `GET` traffic is already in the journal, and mixing it in would evict the
+  changes an operator came looking for. `/__admin/audit` itself is excluded for the same reason:
+  reading history is not making it.
+- **Unauthenticated attempts (401) are not audited.** They are not administrative changes, they have
+  no principal to name, and recording them would hand any anonymous caller a lever to evict the whole
+  bounded trail by repetition. They surface as metrics (#246) and access logs instead. A **403**
+  cross-tenant refusal (#224) *is* recorded — there the principal is known, and the attempt is exactly
+  what a reviewer wants to see.
+- **The principal is a label, never a credential.** `system`, `tenant:acme`, `anonymous`. A near-miss
+  password resolves to `anonymous`, not `system`: the label is an attribution claim someone will rely
+  on, so it must not be able to name the wrong actor. A wire test serializes the whole trail and
+  asserts no part of any configured secret appears in it.
+- **The trail is read-only through the API.** Entries are written by the host as a side effect of the
+  change they describe; there is no route that appends, edits or clears one, so the surface being
+  audited cannot rewrite its own history. It is deliberately **not** persisted through the G16 seam
+  either — that would make the audit log a tenant-writable store.
+- **Bounded like everything else** (`--audit-limit`, default 1000, oldest first — #220's model, so an
+  operator learns one retention rule). The in-memory trail dies with the pod on purpose: each entry is
+  also emitted as a structured `admin.audit` log line, so with `--log-json` (#246) the durable copy
+  lives wherever the SIEM's retention policy says, not in a mock host's heap.
+- **`/__admin/health` reports `audit: true|false`.** An empty trail is ambiguous on its own — "nothing
+  changed" and "nobody is recording" look identical — so the dashboard is told which it is instead of
+  leaving an operator to guess.
+
+Validation: no oracle exists for this (it is ours, not a dialect behavior), so it is pinned by 7 wire
+tests on a real Kestrel host — one entry per change and none for reads, the refused-change outcome,
+principal labelling with a whole-trail secret sweep, 403-recorded vs 401-skipped, cross-tenant read
+isolation, nothing recorded without the flag, and the bound evicting oldest-first — plus 21 unit tests
+on the pure logic. **Stryker: 100 %** on both new pure-logic files (`InMemoryAuditLog` 11/11 killed +
+1 timeout; `AuditPrincipal` 24/24). The one survivor worth recording: dropping the `?? []` fallback on
+a null `PathString.Value` survived until a test covered the empty-path case — no real request produces
+one, but auditing must never be able to throw inside the operation it is describing.
+
+Deferred edges, stated rather than hidden:
+
+- The trail records the operation, not a before/after diff of the changed stub. A diff would mean
+  materializing every prior state — the export bundle already covers "what does it look like now".
+- Entries are not signed or chained, so an operator with process access could in principle drop the
+  in-memory copy. The SIEM line is the tamper-evident copy; hash-chaining the entries is only worth
+  doing if the trail itself ever becomes the system of record.

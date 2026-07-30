@@ -125,6 +125,8 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--metrics` | expose Prometheus metrics at `/__admin/metrics` (no credentials needed — a scraper cannot carry them) |
 | `--otel-endpoint <url>` | export traces and metrics via OTLP to a collector |
 | `--log-json` | structured JSON logs for a log pipeline or SIEM |
+| `--audit` | record every administrative change at `/__admin/audit` — principal, tenant, action, target, outcome — and emit each as an `admin.audit` log line |
+| `--audit-limit <n>` | per-tenant audit-trail bound (default 1000, oldest evicted first; `<=0` = unbounded) |
 | `--sign-key <base64>` | 256-bit secret enabling signing: a stub's `"signature"` block requires a validly signed request (unsigned → non-match), and its `"sign"` block adds `Digest` + HMAC headers to the response |
 | `--mask-headers <names>` | keep named header values out of the journal entirely (comma-separated, case-insensitive) — e.g. `Authorization,Cookie,X-Api-Key` |
 | `--mask-body-fields <names>` | keep named JSON body fields out of the journal (any depth, arrays included) — e.g. `pan,cvv,password` |

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Activity, Bug, ChevronsRight, Database, Disc, Globe, Inbox, KeyRound, LayoutDashboard, LayoutGrid,
   ListTree, LogOut, Moon, Search, Settings, SlidersHorizontal, Waypoints,
+  ScrollText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
@@ -35,6 +36,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
     { to: '/access', key: 'nav.access', icon: KeyRound },
   ] },
   { label: 'nav.platform', items: [
+    { to: '/audit', key: 'nav.audit', icon: ScrollText },
     { to: '/extensions', key: 'nav.extensions', icon: LayoutGrid },
     { to: '/settings', key: 'nav.settings', icon: Settings },
   ] },

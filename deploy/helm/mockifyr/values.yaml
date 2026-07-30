@@ -73,6 +73,13 @@ otelEndpoint: ""
 # Structured JSON logs for a log pipeline (SIEM, Loki, Elastic).
 logJson: false
 
+# Admin audit trail (#247): who changed what, at /__admin/audit and as an admin.audit log line.
+# The in-memory trail dies with the pod on purpose — enable logJson so the SIEM keeps the durable
+# copy, and let its retention policy, not this bound, decide how long history lives.
+audit:
+  enabled: false
+  limit: 1000
+
 # Anything else, verbatim: e.g. ["--block-outbound-routes", "true"]
 extraArgs: []
 
