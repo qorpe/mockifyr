@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowDownToLine, ArrowUpFromLine, Boxes, Check, Database, GitBranch, KeyRound, Lock, Moon, Palette, Plus, ShieldCheck, Sun, Trash2, Workflow, X } from 'lucide-react'
+import { Archive, ArrowDownToLine, ArrowUpFromLine, Boxes, Check, Database, GitBranch, KeyRound, Lock, Moon, Palette, Plus, ShieldCheck, Sun, Trash2, Workflow, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import {
-  deleteGrpcDescriptor, distrustHost, fetchGitStatus, fetchGrpcDescriptors, fetchHealth, fetchOutboundTrust,
-  gitConfigure, gitPull, gitPush, gitSetCredentials, persistenceLabel, trustHost, uploadGrpcDescriptor,
+  deleteGrpcDescriptor, distrustHost, fetchBackup, fetchGitStatus, fetchGrpcDescriptors, fetchHealth,
+  fetchOutboundTrust, gitConfigure, gitPull, gitPush, gitSetCredentials, persistenceLabel, restoreBackup,
+  trustHost, uploadGrpcDescriptor,
 } from '@/lib/api'
 import { LOCALES } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
@@ -71,6 +72,8 @@ export function SettingsPage() {
             declare decrypt/protect/sign regardless; this card is what tells the operator whether
             this host can honor it, instead of leaving them to debug a stub that never matches. */}
         <CryptographyCard />
+
+        <BackupCard />
 
         {/* Transport (host-config, read-only) */}
         <Card icon={ShieldCheck} title={t('settings.transport')}>
@@ -457,6 +460,84 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function SampleHint({ t }: { t: (k: string) => string }) {
   return <div className="mb-3 inline-flex rounded-full border border-warning-border bg-warning-bg px-2.5 py-0.5 text-[11.5px] font-medium text-warning">{t('stubs.sample')}</div>
+}
+
+function BackupCard() {
+  const { t } = useTranslation()
+  const { tenant } = useUi()
+  const queryClient = useQueryClient()
+  const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<string | null>(null)
+
+  const download = async () => {
+    setBusy(true)
+    try {
+      const archive = await fetchBackup(tenant)
+      const url = URL.createObjectURL(new Blob([archive], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mockifyr-backup-${tenant}-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      toast.error((error as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // The file is read here but applied only after the confirmation below: a restore replaces the
+  // tenant's state, and picking the wrong file should cost a click, not a tenant.
+  const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    void file.text().then(setPending)
+  }
+
+  const confirm = async () => {
+    if (!pending) return
+    setBusy(true)
+    try {
+      const summary = await restoreBackup(tenant, pending)
+      toast.success(t('backup.restored', {
+        mappings: summary.mappings, environments: summary.environments,
+        resources: summary.resources, apiKeys: summary.apiKeys,
+      }))
+      void queryClient.invalidateQueries()
+    } catch (error) {
+      toast.error((error as Error).message)
+    } finally {
+      setBusy(false)
+      setPending(null)
+    }
+  }
+
+  return (
+    <Card icon={Archive} title={t('backup.title')}>
+      <p className="mb-3 text-sm text-muted-foreground">{t('backup.hint')}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" disabled={busy} onClick={() => void download()}>
+          <ArrowDownToLine />{t('backup.download')}
+        </Button>
+        <label>
+          <input type="file" accept="application/json,.json" className="hidden" onChange={pick} disabled={busy} />
+          <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm font-medium hover:border-border-strong">
+            <ArrowUpFromLine className="size-4" />{t('backup.restore')}
+          </span>
+        </label>
+      </div>
+      <p className="mt-3 text-[12.5px] leading-relaxed text-warning">{t('backup.secretWarn')}</p>
+
+      <ConfirmDialog
+        open={pending !== null} onOpenChange={(open) => { if (!open) setPending(null) }}
+        destructive
+        title={t('backup.confirmTitle')} body={t('backup.confirmBody', { tenant })}
+        confirmLabel={t('backup.restore')} cancelLabel={t('editor.cancel')}
+        onConfirm={() => void confirm()}
+      />
+    </Card>
+  )
 }
 
 function CryptographyCard() {

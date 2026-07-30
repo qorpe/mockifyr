@@ -137,3 +137,19 @@ public sealed record RevokeApiKeyCommand(string Id, TenantId Tenant) : ICommand<
 /// <summary>Lists the tenant's audit entries, newest first (limit clamped to 1..1000, default 200).</summary>
 public sealed record GetAuditEntriesQuery(TenantId Tenant, int? Limit = null)
     : IQuery<Result<IReadOnlyList<AuditEntry>>>;
+
+// Backup and restore (#252): one archive of everything a tenant's operator authored, and a restore
+// path a runbook can follow. Tenant-scoped like every other operation here — a host-wide archive
+// would have to cross the tenant boundary the rest of this API is built to hold.
+
+/// <summary>What a restore actually changed, so the caller is told rather than left to assume.</summary>
+public sealed record RestoreSummary(int Mappings, int Environments, int Resources, int ApiKeys, int Scenarios);
+
+/// <summary>Gathers the tenant's stubs, environments, sandbox documents, API keys and scenario states.</summary>
+public sealed record CreateBackupQuery(TenantId Tenant) : IQuery<Result<BackupArchive>>;
+
+/// <summary>
+/// Restores an archive into <paramref name="Tenant"/>, replacing that tenant's stubs, environments,
+/// sandbox documents and API keys. A section absent from the archive is left untouched.
+/// </summary>
+public sealed record RestoreBackupCommand(string ArchiveJson, TenantId Tenant) : ICommand<Result<RestoreSummary>>;

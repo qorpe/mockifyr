@@ -159,6 +159,22 @@ PVC, Ingress and OpenShift Route, with credentials and crypto keys injected from
 helm install mockifyr deploy/helm/mockifyr --set persistence.enabled=true
 ```
 
+### Backup and restore
+
+`GET /__admin/backup` produces one archive of everything a tenant's operator authored — stubs,
+environment keys, sandbox documents, API keys and scenario states — and `POST /__admin/restore`
+puts it back, replacing what the archive covers. Settings → **Backup and restore** does the same
+from the dashboard.
+
+```bash
+curl -s http://localhost:8080/__admin/backup > backup.json
+curl -s -X POST http://localhost:8080/__admin/restore --data-binary @backup.json
+```
+
+The request journal and message inbox are deliberately absent — they record what happened, not what
+was configured. The archive carries API key verifiers so consumers' keys keep working after a
+restore, which makes it a secret: store it like a key file.
+
 ### Callbacks and proxies to your own machine
 
 Running in Docker, `localhost` inside the container means *the container* — so a callback or proxy
@@ -199,7 +215,7 @@ cannot turn verification off. Full detail:
 - [Getting started](https://mockifyr.qorpe.com/getting-started/) · [the dashboard](https://mockifyr.qorpe.com/the-dashboard/)
 - Stubs — [request matching](https://mockifyr.qorpe.com/request-matching/) · [responses](https://mockifyr.qorpe.com/responses/) · [templating](https://mockifyr.qorpe.com/templating/)
 - Behaviour — [scenarios](https://mockifyr.qorpe.com/scenarios/) · [delays and faults](https://mockifyr.qorpe.com/delays-and-faults/) · [proxying](https://mockifyr.qorpe.com/proxying/) · [record and playback](https://mockifyr.qorpe.com/record-and-playback/) · [webhooks](https://mockifyr.qorpe.com/webhooks/)
-- Platform — [multi-tenancy](https://mockifyr.qorpe.com/multi-tenancy/) · [environments](https://mockifyr.qorpe.com/environments/) · [persistence](https://mockifyr.qorpe.com/persistence/) · [HTTPS and mTLS](https://mockifyr.qorpe.com/https-and-mtls/)
+- Platform — [multi-tenancy](https://mockifyr.qorpe.com/multi-tenancy/) · [environments](https://mockifyr.qorpe.com/environments/) · [persistence](https://mockifyr.qorpe.com/persistence/) · [HTTPS and mTLS](https://mockifyr.qorpe.com/https-and-mtls/) · [deploying in production](https://mockifyr.qorpe.com/deploying-in-production/)
 - Messages — [email & SMS mocking](https://mockifyr.qorpe.com/messages/) (SMTP capture, Twilio profile, OTP verify)
 - Reference — [CLI](https://mockifyr.qorpe.com/cli/) · [admin API](https://mockifyr.qorpe.com/admin-api/) · [extending](https://mockifyr.qorpe.com/extending/)
 - [Migration guide](https://mockifyr.qorpe.com/migration/), and the
@@ -208,6 +224,8 @@ cannot turn verification off. Full detail:
 **Working on Mockifyr — in this repository**
 
 - Architecture & design — [ARCHITECTURE.md](ARCHITECTURE.md)
+- What an upgrade can change — [VERSIONING.md](VERSIONING.md) · release history — [CHANGELOG.md](CHANGELOG.md)
+- How to contribute, and the bar a change must clear — [CONTRIBUTING.md](CONTRIBUTING.md) · where to ask — [SUPPORT.md](SUPPORT.md)
 - Roadmap — [docs/roadmap.md](docs/roadmap.md) · decisions — [docs/decisions/](docs/decisions/)
 - Learned reference-engine behaviour, per feature group — [docs/parity/](docs/parity/)
 - Testing strategy (the binding test contract) — [docs/testing.md](docs/testing.md)

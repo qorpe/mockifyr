@@ -380,6 +380,38 @@ public static class AdminEndpoints
         // Sandbox access (G19d, ADR 0011): operator-issued API keys. The token appears in the
         // issue response ONCE; every later view carries only the display prefix. These endpoints
         // never accept a sandbox key as authentication — admin auth stays --admin-user/--admin-pass.
+        // Backup and restore (#252). One archive of everything the tenant's operator authored, and a
+        // restore that replaces rather than merges — a restored host is the host that was backed up,
+        // not a union with whatever happened to be there.
+        admin.MapGet("/backup", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new CreateBackupQuery(TenantOf(request)));
+            // Sent as a downloadable file: an archive is something an operator keeps, and the tenant
+            // plus timestamp in the name are what makes a directory of them navigable a year later.
+            var name = $"mockifyr-backup-{TenantOf(request).Value}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json";
+            request.HttpContext.Response.Headers.ContentDisposition = $"attachment; filename=\"{name}\"";
+            return Results.Text(BackupJson.Write(result.Value), "application/json");
+        });
+
+        admin.MapPost("/restore", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new RestoreBackupCommand(await ReadBody(request), TenantOf(request)));
+            return result.IsSuccess
+                ? Results.Json(new
+                {
+                    restored = new
+                    {
+                        mappings = result.Value.Mappings,
+                        environments = result.Value.Environments,
+                        resources = result.Value.Resources,
+                        apiKeys = result.Value.ApiKeys,
+                        scenarios = result.Value.Scenarios,
+                    },
+                })
+                : Results.Json(new { error = result.Error.Code, message = result.Error.Description },
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
+        });
+
         // The audit trail (#247) is read-only here by design: entries are appended by the host as a
         // side effect of the change they describe, so nothing on the admin API can rewrite history.
         admin.MapGet("/audit", async (HttpRequest request, ISender sender) =>
