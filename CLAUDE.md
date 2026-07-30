@@ -264,7 +264,10 @@ metrics, a credential-free Prometheus scrape at `/__admin/metrics`, JSON logs, d
 label cardinality — #246); and the admin audit trail (`--audit`: every admin change recorded with
 principal/tenant/action/target/outcome at `/__admin/audit`, on the dashboard, and as an `admin.audit`
 log line for a SIEM — #247). Remaining: documentation and support policy (#248), benchmarks (#249),
-and — scoped on demand — key sources and rotation (#250) plus OIDC (#251). Backup and restore
+and — scoped on demand — key sources and rotation (#250) plus OIDC (#251). The measured performance
+envelope and sizing guidance are in `docs/parity/performance.md`, with the harnesses in `bench/`
+(BenchmarkDotNet for the engine, k6 for the transport); measuring surfaced two optimizations now
+tracked as #265 (stub indexing) and #266 (templates recompiled per request). Backup and restore
 (#252) and the policy documents (#248 — `CHANGELOG.md`, `VERSIONING.md`, `SUPPORT.md`,
 `CONTRIBUTING.md`) are done.
 

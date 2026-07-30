@@ -26,6 +26,31 @@ jobs:
       - name: Test (unit)
         run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Differential"
 
+  benchmarks:
+    name: Engine benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # A short run, on a shared runner. The numbers here are NOT the published envelope — that comes
+      # from a stated machine (docs/parity/performance.md). This job exists so that a change which
+      # makes the engine's hot path throw, allocate unboundedly, or stop compiling is visible on the
+      # pull request that caused it, rather than at the next release measurement.
+      - name: Run (quick)
+        run: dotnet run --project bench/Mockifyr.Benchmarks -c Release -- --quick --filter '*'
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: BenchmarkDotNet.Artifacts/results/
+          if-no-files-found: ignore
+
   security:
     name: Security scans
     runs-on: ubuntu-latest

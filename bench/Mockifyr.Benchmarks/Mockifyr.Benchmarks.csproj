@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Benchmarks are measured in Release; a Debug number is noise, not a number. -->
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mockifyr.Core\Mockifyr.Core.csproj" />
+    <ProjectReference Include="..\..\src\Mockifyr.Matching\Mockifyr.Matching.csproj" />
+    <ProjectReference Include="..\..\src\Mockifyr.Templating\Mockifyr.Templating.csproj" />
+    <ProjectReference Include="..\..\src\Mockifyr.Stores.InMemory\Mockifyr.Stores.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Mockifyr.Adapters.MappingJson\Mockifyr.Adapters.MappingJson.csproj" />
+  </ItemGroup>
+
+</Project>

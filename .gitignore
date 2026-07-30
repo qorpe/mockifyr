@@ -62,3 +62,4 @@ dist/
 
 # Git-sync working copies created by a locally run host (dashboard connect)
 mockifyr-data/
+BenchmarkDotNet.Artifacts/
