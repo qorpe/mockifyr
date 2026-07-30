@@ -13,6 +13,10 @@ using Mockifyr.Facade.Admin;
 using Mockifyr.Facade.Http;
 using Mockifyr.Facade.WebSocket;
 using Mockifyr.Stores.InMemory;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 namespace Mockifyr.Server;
 
@@ -34,7 +38,10 @@ public static class MockifyrHost
     private static bool IsProbePath(PathString path) =>
         path.Equals("/__admin/health", StringComparison.OrdinalIgnoreCase)
         || path.Equals("/__admin/live", StringComparison.OrdinalIgnoreCase)
-        || path.Equals("/__admin/ready", StringComparison.OrdinalIgnoreCase);
+        || path.Equals("/__admin/ready", StringComparison.OrdinalIgnoreCase)
+        // The scrape endpoint too (#246): a Prometheus scraper cannot carry credentials, and the
+        // series it exposes are counts and latencies — never payloads.
+        || path.Equals("/__admin/metrics", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
     private const string TenantCredentialHeader = "X-Mockifyr-Tenant";
@@ -161,6 +168,61 @@ public static class MockifyrHost
         {
             builder.Services.AddSingleton<IRequestJournal>(
                 new InMemoryRequestJournal(journalLimit > 0 ? journalLimit : null));
+        }
+
+        // Observability (#246): opt-in, because a mock on a laptop should not open a metrics port or
+        // ship spans anywhere. --otel-endpoint enables the OTLP exporter (traces + metrics);
+        // --metrics-port… no: the scrape endpoint rides on the existing port at /__admin/metrics so
+        // no extra listener, no extra Service port, and it stays outside admin auth because a
+        // scraper cannot authenticate — the same reasoning as the probes (#242).
+        var otelEndpoint = builder.Configuration["otel-endpoint"];
+        var metricsEnabled = builder.Configuration.GetValue<bool>("metrics");
+        if (!string.IsNullOrWhiteSpace(otelEndpoint) || metricsEnabled)
+        {
+            builder.Services.AddSingleton<IServeEventListener, MetricsServeEventListener>();
+
+            var telemetry = builder.Services.AddOpenTelemetry()
+                .ConfigureResource(resource => resource.AddService(
+                    serviceName: MockifyrTelemetry.Name,
+                    serviceVersion: typeof(MockifyrHost).Assembly.GetName().Version?.ToString() ?? "0.0.0"))
+                .WithMetrics(metrics =>
+                {
+                    metrics.AddMeter(MockifyrTelemetry.Name)
+                        .AddAspNetCoreInstrumentation()
+                        .AddHttpClientInstrumentation();
+                    if (metricsEnabled)
+                    {
+                        metrics.AddPrometheusExporter();
+                    }
+                })
+                .WithTracing(tracing => tracing
+                    .AddSource(MockifyrTelemetry.Name)
+                    .AddAspNetCoreInstrumentation(options =>
+                        // Probes and the scrape endpoint would otherwise dominate the trace volume
+                        // with spans nobody reads.
+                        options.Filter = context => !IsProbePath(context.Request.Path)
+                            && !context.Request.Path.Equals("/__admin/metrics", StringComparison.OrdinalIgnoreCase))
+                    .AddHttpClientInstrumentation());
+
+            if (!string.IsNullOrWhiteSpace(otelEndpoint))
+            {
+                telemetry.UseOtlpExporter(OpenTelemetry.Exporter.OtlpExportProtocol.Grpc, new Uri(otelEndpoint));
+                Console.WriteLine($"mockifyr: OpenTelemetry enabled, exporting to {otelEndpoint}.");
+            }
+
+            if (metricsEnabled)
+            {
+                Console.WriteLine("mockifyr: Prometheus metrics enabled at /__admin/metrics.");
+            }
+        }
+
+        // Structured logging (#246): --log-json swaps the console formatter for the JSON one, so a
+        // log pipeline gets fields instead of prose. Off by default — a developer reading a terminal
+        // wants the readable form.
+        if (builder.Configuration.GetValue<bool>("log-json"))
+        {
+            builder.Logging.ClearProviders();
+            builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
         }
 
         // Payload decryption (G20a, ADR 0012): --decrypt-key <base64 256-bit key> registers the
@@ -567,6 +629,13 @@ public static class MockifyrHost
         // Drain before the server stops accepting: readiness flips off first, so a rolling update
         // takes this pod out of rotation while it finishes what it is already serving.
         app.Lifetime.ApplicationStopping.Register(readiness.BeginDraining);
+
+        // The Prometheus scrape endpoint, when enabled: on the existing port, outside admin auth (a
+        // scraper cannot authenticate), and excluded from tracing above.
+        if (metricsEnabled)
+        {
+            app.MapPrometheusScrapingEndpoint("/__admin/metrics");
+        }
 
         app.MapAdminEndpoints();
 

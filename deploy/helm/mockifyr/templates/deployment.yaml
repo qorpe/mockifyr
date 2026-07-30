@@ -53,6 +53,18 @@ spec:
             - --sign-key
             - $(MOCKIFYR_SIGN_KEY)
             {{- end }}
+            {{- if .Values.metrics.enabled }}
+            - --metrics
+            - "true"
+            {{- end }}
+            {{- with .Values.otelEndpoint }}
+            - --otel-endpoint
+            - {{ . | quote }}
+            {{- end }}
+            {{- if .Values.logJson }}
+            - --log-json
+            - "true"
+            {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

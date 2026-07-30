@@ -63,6 +63,18 @@ def main() -> int:
     check("crypto flags appear only when keys are set", "--decrypt-key" in with_keys and "--decrypt-key" not in manifest)
     check("crypto keys are injected from a Secret", "MOCKIFYR_DECRYPT_KEY" in with_keys)
 
+    # Observability is opt-in, and a ServiceMonitor with nothing to scrape is refused (#246).
+    plain = manifest
+    check("metrics flag absent by default", "--metrics" not in plain)
+    with_metrics = render("metrics.enabled=true", "metrics.serviceMonitor.enabled=true").stdout
+    check("metrics flag appears when enabled", "--metrics" in with_metrics)
+    check("ServiceMonitor scrapes the unauthenticated path", "/__admin/metrics" in with_metrics)
+    orphan_monitor = render("metrics.serviceMonitor.enabled=true")
+    check(
+        "ServiceMonitor without metrics is refused",
+        orphan_monitor.returncode != 0 and "metrics.enabled" in orphan_monitor.stderr,
+    )
+
     # Every optional resource renders when asked for.
     everything = render(
         "persistence.enabled=true", "ingress.enabled=true", "route.enabled=true",

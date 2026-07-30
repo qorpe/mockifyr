@@ -58,6 +58,21 @@ limits:
   messages: 1000
   resources: 1000
 
+# Observability (#246). The scrape endpoint rides on the existing service port at
+# /__admin/metrics and needs no credentials, so a Prometheus scraper works out of the box.
+metrics:
+  enabled: false
+  serviceMonitor:
+    enabled: false          # requires metrics.enabled and the Prometheus operator
+    interval: 30s
+    labels: {}              # e.g. release: kube-prometheus-stack
+
+# OTLP endpoint for traces and metrics, e.g. http://otel-collector:4317
+otelEndpoint: ""
+
+# Structured JSON logs for a log pipeline (SIEM, Loki, Elastic).
+logJson: false
+
 # Anything else, verbatim: e.g. ["--block-outbound-routes", "true"]
 extraArgs: []
 
