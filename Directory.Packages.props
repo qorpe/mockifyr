@@ -44,7 +44,7 @@
     <PackageVersion Include="LiteDB" Version="5.0.21" />
     <!-- SQL persistence provider (G16c). Npgsql is the .NET PostgreSQL driver; used only inside
          Mockifyr.Server behind the IStubPersistence seam. -->
-    <PackageVersion Include="Npgsql" Version="9.0.5" />
+    <PackageVersion Include="Npgsql" Version="10.0.3" />
     <!-- Key-value persistence provider (G16d). StackExchange.Redis is the .NET Redis client; used only
          inside Mockifyr.Server behind the IStubPersistence seam. -->
     <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
