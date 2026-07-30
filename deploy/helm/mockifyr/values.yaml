@@ -1,0 +1,95 @@
+# Mockifyr — deployment values. Every flag the host understands is reachable from here; the ones an
+# operator sets most often have their own key, and `extraArgs` covers the rest without a chart change.
+
+image:
+  repository: ghcr.io/qorpe/mockifyr
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# The dashboard is served under /__mockifyr by the image's entrypoint.
+ingress:
+  enabled: false
+  className: ""
+  host: mockifyr.example.com
+  tls: false
+  annotations: {}
+
+# OpenShift Route (ignored on plain Kubernetes).
+route:
+  enabled: false
+  host: ""
+
+# Durable state at /work — stubs, environments, response files, gRPC descriptors, API keys.
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+  # A datastore flag takes precedence over the file store when set.
+  postgres: ""       # --postgres <connection string>
+  redis: ""          # --redis <connection string>
+
+# Admin API credentials. Leave empty to run without auth (development only) — the host prints a
+# startup warning in that case, and the chart refuses to expose an Ingress without credentials.
+adminAuth:
+  enabled: true
+  username: admin
+  password: ""             # generated when empty and `existingSecret` is not set
+  existingSecret: ""       # a Secret with keys: admin-user, admin-pass
+
+# Sandbox API keys (mfk_…): per-consumer credentials with hourly quotas.
+sandboxAuth:
+  enabled: false
+
+# Payload cryptography and signing (256-bit base64 keys). Prefer existingSecret in real deployments.
+cryptography:
+  decryptKey: ""
+  signKey: ""
+  existingSecret: ""       # a Secret with keys: decrypt-key, sign-key
+
+# Retention bounds — the defaults match the host's own.
+limits:
+  journal: 1000
+  messages: 1000
+  resources: 1000
+
+# Anything else, verbatim: e.g. ["--block-outbound-routes", "true"]
+extraArgs: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 192Mi
+  limits:
+    memory: 512Mi
+
+# Probes use the unauthenticated endpoints (#242): liveness never fails on a slow dependency,
+# readiness turns off while the pod drains.
+probes:
+  liveness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    initialDelaySeconds: 2
+    periodSeconds: 5
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false   # /work is written by the file store
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

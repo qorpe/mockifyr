@@ -1,0 +1,22 @@
+Mockifyr {{ .Chart.AppVersion }} is installed as {{ include "mockifyr.fullname" . }}.
+
+  Mock surface   http://{{ include "mockifyr.fullname" . }}:{{ .Values.service.port }}
+  Admin API      the same host, under /__admin
+  Dashboard      the same host, under /__mockifyr
+
+To try it from your machine, forward the service port to localhost:8080 and open
+http://localhost:8080/__mockifyr in a browser.
+{{- if .Values.adminAuth.enabled }}
+
+The admin credentials live in the secret {{ include "mockifyr.adminSecretName" . }}
+(keys: admin-user, admin-pass). Read them with your usual secret-reading command — do not commit them.
+{{- else }}
+
+WARNING: adminAuth is disabled. Anyone who can reach this service can administer it, start a
+recording, or read captured messages. Set adminAuth.enabled=true for anything beyond a local trial.
+{{- end }}
+{{- if not .Values.persistence.enabled }}
+
+State lives in an emptyDir: stubs, sandbox resources and issued API keys are lost when the pod is
+replaced. Set persistence.enabled=true, or point the chart at PostgreSQL/Redis, to keep them.
+{{- end }}

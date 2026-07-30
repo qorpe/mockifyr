@@ -35,7 +35,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /app
 COPY --from=build /app ./
 COPY --from=ui /ui/dist ./dashboard
+
+# Unprivileged by default (#241). The engine never needs to write outside its work directory, so it
+# runs as a dedicated non-root user. /work is owned by that user AND group-writable with the group
+# set to root (GID 0): OpenShift's restricted SCC assigns an arbitrary UID with GID 0, so this is
+# what lets the file store work under both `docker run` and OpenShift without a chown at startup.
+RUN groupadd --system --gid 1001 mockifyr \
+    && useradd --system --uid 1001 --gid 0 --home-dir /app --shell /usr/sbin/nologin mockifyr \
+    && mkdir -p /work \
+    && chown -R 1001:0 /app /work \
+    && chmod -R g=u /app /work
+USER 1001:0
+
 EXPOSE 8080
+
+# Container-level health (#241): the probe path stays reachable without credentials even when admin
+# auth is on (#218), so this works on a secured host too.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["dotnet", "Mockifyr.Server.dll", "--healthcheck"]
 # The dashboard is served under /__mockifyr. --root-dir /work is baked in so no run command needs it:
 # stubs persist to /work/mappings, environment configuration to /work/environments, response body
 # files to /work/__files and gRPC descriptors to /work/grpc. Mount a volume at /work (bind or named)

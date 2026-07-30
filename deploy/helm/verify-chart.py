@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Renders the chart and asserts the security posture it promises (#241, #243).
+
+A chart is configuration, so it cannot be unit-tested the way the engine is — but the claims it
+makes ("runs unprivileged", "credentials never appear in args", "an Ingress requires admin auth")
+are exactly the kind of thing that silently regresses in a template edit. This runs in CI next to
+`helm lint`, so a values or template change that weakens a default fails the build.
+"""
+import subprocess
+import sys
+
+CHART = "deploy/helm/mockifyr"
+
+
+def render(*overrides: str) -> subprocess.CompletedProcess:
+    args = ["helm", "template", "verify", CHART]
+    for override in overrides:
+        args += ["--set", override]
+    return subprocess.run(args, capture_output=True, text=True, check=False)
+
+
+def main() -> int:
+    failures: list[str] = []
+
+    def check(name: str, condition: bool) -> None:
+        print(f"{'PASS' if condition else 'FAIL'}  {name}")
+        if not condition:
+            failures.append(name)
+
+    default = render()
+    if default.returncode != 0:
+        print(default.stderr)
+        return 1
+
+    manifest = default.stdout
+
+    # Probes must use the endpoints that stay reachable without credentials (#242) — a probe cannot
+    # authenticate, and a 401 liveness check restart-loops the pod.
+    check("liveness probe uses /__admin/live", "/__admin/live" in manifest)
+    check("readiness probe uses /__admin/ready", "/__admin/ready" in manifest)
+
+    # Container hardening (#241): these are the lines an enterprise scanner looks for.
+    check("pod refuses to run as root", "runAsNonRoot: true" in manifest)
+    check("privilege escalation disabled", "allowPrivilegeEscalation: false" in manifest)
+    check("all capabilities dropped", "drop:" in manifest and "ALL" in manifest)
+    check("seccomp profile is RuntimeDefault", "RuntimeDefault" in manifest)
+
+    # Safe defaults.
+    check("admin auth is on by default", "MOCKIFYR_ADMIN_PASS" in manifest)
+    check("admin credentials are injected from a Secret", "secretKeyRef" in manifest)
+    check("request journal is bounded by default", "--journal-limit" in manifest)
+    check("durable state is mounted at /work", "mountPath: /work" in manifest)
+
+    # An Ingress without admin auth is refused outright rather than rendered.
+    exposed = render("ingress.enabled=true", "adminAuth.enabled=false")
+    check(
+        "Ingress without admin auth is refused",
+        exposed.returncode != 0 and "adminAuth.enabled" in exposed.stderr,
+    )
+
+    # Cryptography appears only when keys are configured, and only through a Secret.
+    with_keys = render("cryptography.decryptKey=k1", "cryptography.signKey=k2").stdout
+    check("crypto flags appear only when keys are set", "--decrypt-key" in with_keys and "--decrypt-key" not in manifest)
+    check("crypto keys are injected from a Secret", "MOCKIFYR_DECRYPT_KEY" in with_keys)
+
+    # Every optional resource renders when asked for.
+    everything = render(
+        "persistence.enabled=true", "ingress.enabled=true", "route.enabled=true",
+        "sandboxAuth.enabled=true", "cryptography.decryptKey=k1",
+    ).stdout
+    for kind in ("Deployment", "Service", "Ingress", "Route", "PersistentVolumeClaim", "Secret"):
+        check(f"{kind} renders when enabled", f"kind: {kind}" in everything)
+
+    print()
+    print(f"{len(failures)} failed" if failures else "chart posture verified")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

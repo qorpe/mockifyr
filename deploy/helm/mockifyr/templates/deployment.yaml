@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mockifyr.fullname" . }}
+  labels: {{- include "mockifyr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "mockifyr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "mockifyr.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mockifyr
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            {{- if .Values.adminAuth.enabled }}
+            - --admin-user
+            - $(MOCKIFYR_ADMIN_USER)
+            - --admin-pass
+            - $(MOCKIFYR_ADMIN_PASS)
+            {{- end }}
+            {{- if .Values.sandboxAuth.enabled }}
+            - --sandbox-auth
+            - "true"
+            {{- end }}
+            {{- with .Values.persistence.postgres }}
+            - --postgres
+            - {{ . | quote }}
+            {{- end }}
+            {{- with .Values.persistence.redis }}
+            - --redis
+            - {{ . | quote }}
+            {{- end }}
+            - --journal-limit
+            - {{ .Values.limits.journal | quote }}
+            - --message-limit
+            - {{ .Values.limits.messages | quote }}
+            - --resource-limit
+            - {{ .Values.limits.resources | quote }}
+            {{- if or .Values.cryptography.decryptKey .Values.cryptography.existingSecret }}
+            - --decrypt-key
+            - $(MOCKIFYR_DECRYPT_KEY)
+            {{- end }}
+            {{- if or .Values.cryptography.signKey .Values.cryptography.existingSecret }}
+            - --sign-key
+            - $(MOCKIFYR_SIGN_KEY)
+            {{- end }}
+            {{- with .Values.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- if .Values.adminAuth.enabled }}
+            - name: MOCKIFYR_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mockifyr.adminSecretName" . }}
+                  key: admin-user
+            - name: MOCKIFYR_ADMIN_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mockifyr.adminSecretName" . }}
+                  key: admin-pass
+            {{- end }}
+            {{- if or .Values.cryptography.decryptKey .Values.cryptography.existingSecret }}
+            - name: MOCKIFYR_DECRYPT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mockifyr.cryptoSecretName" . }}
+                  key: decrypt-key
+            {{- end }}
+            {{- if or .Values.cryptography.signKey .Values.cryptography.existingSecret }}
+            - name: MOCKIFYR_SIGN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mockifyr.cryptoSecretName" . }}
+                  key: sign-key
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+          # Unauthenticated by design (#242): liveness stays cheap so a slow dependency never gets
+          # the pod killed, and readiness fails while the pod is starting or draining.
+          livenessProbe:
+            httpGet:
+              path: /__admin/live
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /__admin/ready
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: work
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mockifyr.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
