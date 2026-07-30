@@ -165,7 +165,11 @@ public static class MockifyrHost
         else if (decryptKey is not null)
         {
             builder.Services.AddSingleton<IPayloadDecryptor>(new Crypto.JweFieldDecryptor(decryptKey));
-            Console.WriteLine($"mockifyr: payload decryption enabled (scheme {Crypto.JweFieldDecryptor.SchemeName}).");
+            // The same key protects responses (G20b): a partner that encrypts what it sends also
+            // decrypts what it receives, and asking the operator for two keys for one relationship
+            // would be ceremony without a security benefit.
+            builder.Services.AddSingleton<IPayloadProtector>(new Crypto.JweResponseProtector(decryptKey));
+            Console.WriteLine($"mockifyr: payload cryptography enabled (scheme {Crypto.JweFieldDecryptor.SchemeName}).");
         }
 
         // Journal masking (#227): --mask-headers / --mask-body-fields keep named values out of the

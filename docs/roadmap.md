@@ -605,8 +605,12 @@ abstract scheme (`IPayloadDecryptor` / `IPayloadProtector`).
   lives in the new `Mockifyr.Crypto` project; Core keeps zero dependencies. 11 unit + 4 wire tests
   against an independent RFC implementation, **Stryker 26/29** with the survivors analyzed as
   deliberate defense-in-depth redundancy in `docs/parity/g20-cryptography.md`.
-- [ ] **G20b — response protection.** `response.protect: { scheme, fields }` plus whole-body JWE, so a
-  client that decrypts what it receives is satisfied.
+- [x] **G20b — response protection.** `response.protect: { scheme, fields }` encrypts named fields
+  (readable envelope) and, with no field named, the whole body as one JWE token. Runs LAST — after
+  templating and every transformer — so what is encrypted is what would have gone on the wire; the
+  serve event records the protected response. Fresh nonce per token (asserted); a body that cannot
+  carry named fields is served as rendered rather than silently switching shape. 6 unit + 4 wire
+  tests, all decrypting with the paired implementation, **Stryker 100 %**.
 - [ ] **G20c — signing.** `signatureValid` request matcher and response signing (`Digest` + detached
   JWS, HMAC), with PSD2/Berlin-Group presets packaged the way the Twilio SMS profile is (ADR 0009).
 - [ ] **G20d — whole-body inbound decryption**, once key handling has settled.

@@ -366,6 +366,37 @@ public static class MappingJsonReader
     }
 
     /// <summary>
+    /// Reads the opt-in response-protection declaration (G20b, ADR 0012):
+    /// <c>"protect": { "scheme": "jwe-dir-a256gcm", "fields": ["encData"] }</c>. An absent or empty
+    /// <c>fields</c> array means whole-body protection, which is a valid shape — unlike the decrypt
+    /// side, where naming no field would be meaningless.
+    /// </summary>
+    private static PayloadProtectDirective? ReadProtectDirective(JsonElement response)
+    {
+        if (!response.TryGetProperty("protect", out var protect) || protect.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var scheme = protect.TryGetProperty("scheme", out var s) && s.ValueKind == JsonValueKind.String
+            ? s.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(scheme))
+        {
+            return null;
+        }
+
+        var names = protect.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array
+            ? fields.EnumerateArray()
+                .Where(f => f.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(f.GetString()))
+                .Select(f => f.GetString()!)
+                .ToArray()
+            : [];
+
+        return new PayloadProtectDirective(scheme, names);
+    }
+
+    /// <summary>
     /// Reads the opt-in payload-decryption declaration (G20a, ADR 0012):
     /// <c>"decrypt": { "scheme": "jwe-dir-a256gcm", "fields": ["encData"] }</c>. Absent, malformed
     /// or empty-field declarations read as null — a stub never becomes half-configured.
@@ -811,6 +842,7 @@ public static class MappingJsonReader
             Fault = ReadFault(response),
             Proxy = ReadProxy(response),
             State = ReadState(response),
+            Protect = ReadProtectDirective(response),
         };
     }
 
