@@ -83,13 +83,13 @@ jobs:
       # Scan what was actually published, not a local build: a HIGH/CRITICAL finding must be visible
       # in the release run rather than discovered by the customer's scanner.
       - name: Scan the published image
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '0'          # report, never block a tagged release
-          format: table
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.58.1
+          # Report, never block: a tagged release is already built and pushed by this point, and
+          # leaving it half-published because of a scan result would be worse than reporting.
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 \
+            ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
 
       - name: Attach the SBOM to the release
         uses: softprops/action-gh-release@v2
