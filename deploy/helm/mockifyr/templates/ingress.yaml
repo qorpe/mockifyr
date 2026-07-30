@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.adminAuth.enabled }}
+{{- fail "ingress.enabled requires adminAuth.enabled — exposing an unauthenticated admin API is never the intent" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mockifyr.fullname" . }}
+  labels: {{- include "mockifyr.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ include "mockifyr.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "mockifyr.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

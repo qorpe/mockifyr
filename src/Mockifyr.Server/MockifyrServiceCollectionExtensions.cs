@@ -47,6 +47,8 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IResourceStore, InMemoryResourceStore>();
         services.AddSingleton<IResourceIdGenerator, GuidResourceIdGenerator>();
         services.AddSingleton(new ResourceOptions());
+        // Readiness state (#242): startup flips it on, shutdown flips it off.
+        services.AddSingleton<HostReadiness>();
         services.AddSingleton<IApiKeyStore, InMemoryApiKeyStore>();
         services.AddSingleton<IApiKeyPersistence, NullApiKeyPersistence>();
         services.AddSingleton<FixedWindowRateLimiter>();

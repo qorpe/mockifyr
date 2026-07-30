@@ -140,6 +140,20 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 
 The hot path is always in-memory; a durable backend is opt-in and writes through.
 
+### Kubernetes / OpenShift
+
+The image runs unprivileged (UID 1001, GID 0 — compatible with OpenShift's arbitrary-UID model) and
+declares a container health check. Two probe endpoints sit outside admin auth: `/__admin/live`
+(process liveness) and `/__admin/ready` (turns off while starting or draining, so a rolling update
+drains cleanly).
+
+A Helm chart lives in [`deploy/helm/mockifyr`](deploy/helm/mockifyr) — Deployment, Service, optional
+PVC, Ingress and OpenShift Route, with credentials and crypto keys injected from Secrets:
+
+```bash
+helm install mockifyr deploy/helm/mockifyr --set persistence.enabled=true
+```
+
 ### Callbacks and proxies to your own machine
 
 Running in Docker, `localhost` inside the container means *the container* — so a callback or proxy

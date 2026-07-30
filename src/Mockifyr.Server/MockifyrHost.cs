@@ -26,6 +26,16 @@ namespace Mockifyr.Server;
 /// </summary>
 public static class MockifyrHost
 {
+    /// <summary>
+    /// The unauthenticated probe paths (#218, #242): health for humans and the dashboard, live and
+    /// ready for the orchestrator. Credentials cannot be attached to a kubelet probe, and a 401
+    /// health check restarts pods in a loop.
+    /// </summary>
+    private static bool IsProbePath(PathString path) =>
+        path.Equals("/__admin/health", StringComparison.OrdinalIgnoreCase)
+        || path.Equals("/__admin/live", StringComparison.OrdinalIgnoreCase)
+        || path.Equals("/__admin/ready", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
     private const string TenantCredentialHeader = "X-Mockifyr-Tenant";
 
@@ -486,8 +496,7 @@ public static class MockifyrHost
                 + "each may only address its own tenant; --admin-user remains the system scope.");
             app.Use(async (context, next) =>
             {
-                if (context.Request.Path.StartsWithSegments("/__admin") &&
-                    !context.Request.Path.Equals("/__admin/health", StringComparison.OrdinalIgnoreCase))
+                if (context.Request.Path.StartsWithSegments("/__admin") && !IsProbePath(context.Request.Path))
                 {
                     var presented = context.Request.Headers.Authorization.ToString();
                     // A principal we know: it must own the tenant it is addressing. Anything else
@@ -521,12 +530,11 @@ public static class MockifyrHost
             var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"));
             app.Use(async (context, next) =>
             {
-                // /__admin/health stays open (#218): Kubernetes/OpenShift probes cannot easily carry
-                // credentials, and a 401 health check sends the pod into a restart loop — enabling auth
-                // must never break the documented deployment target. The endpoint is read-only and
-                // exposes only name/version/persistence/tenant-count.
-                if (context.Request.Path.StartsWithSegments("/__admin") &&
-                    !context.Request.Path.Equals("/__admin/health", StringComparison.OrdinalIgnoreCase))
+                // The probe paths stay open (#218, #242): an orchestrator cannot attach credentials,
+                // and a 401 on liveness sends the pod into a restart loop — enabling auth must never
+                // break the documented deployment target. All three are read-only and expose only
+                // name/version/persistence/tenant-count or a status word.
+                if (context.Request.Path.StartsWithSegments("/__admin") && !IsProbePath(context.Request.Path))
                 {
                     var provided = context.Request.Headers.Authorization.ToString();
                     // A per-tenant credential authenticates too; the middleware above has already
@@ -546,6 +554,19 @@ public static class MockifyrHost
                 await next();
             });
         }
+
+        // Kubernetes probes (#242). Deliberately mapped here rather than in the admin facade: whether
+        // this host is ready is a composition concern, not an admin API feature. Both stay outside
+        // admin auth like /__admin/health (#218) — a probe cannot carry credentials.
+        var readiness = app.Services.GetRequiredService<HostReadiness>();
+        app.MapGet("/__admin/live", () => Results.Json(new { status = "alive" }));
+        app.MapGet("/__admin/ready", () => readiness.IsReady
+            ? Results.Json(new { status = readiness.State })
+            : Results.Json(new { status = readiness.State }, statusCode: StatusCodes.Status503ServiceUnavailable));
+
+        // Drain before the server stops accepting: readiness flips off first, so a rolling update
+        // takes this pod out of rotation while it finishes what it is already serving.
+        app.Lifetime.ApplicationStopping.Register(readiness.BeginDraining);
 
         app.MapAdminEndpoints();
 
@@ -583,6 +604,9 @@ public static class MockifyrHost
         ApplyStartupMappings(app);
         ApplyStartupEnvironments(app);
         ApplyStartupApiKeys(app);
+
+        // Everything the host needs in memory is loaded — only now may traffic be routed here (#242).
+        app.Services.GetRequiredService<HostReadiness>().MarkReady();
         return app;
     }
 

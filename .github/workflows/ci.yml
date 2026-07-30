@@ -26,6 +26,32 @@ jobs:
       - name: Test (unit)
         run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Differential"
 
+  chart:
+    name: Helm chart (lint & posture)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint
+        run: helm lint deploy/helm/mockifyr
+
+      # The chart's security promises are configuration, so they regress silently in a template
+      # edit. This asserts them (non-root, dropped capabilities, probe paths, secret-only
+      # credentials, an Ingress that refuses to expose an unauthenticated admin API).
+      - name: Verify posture
+        run: python3 deploy/helm/verify-chart.py
+
+      # The kubeconform image is built FROM scratch, so it cannot run a shell pipeline — install the
+      # released binary and feed it a rendered file instead.
+      - name: Validate against Kubernetes schemas
+        run: |
+          curl -sSLo kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform.tar.gz kubeconform
+          helm template verify deploy/helm/mockifyr --set persistence.enabled=true --set ingress.enabled=true > rendered.yaml
+          ./kubeconform -strict -summary -skip Route rendered.yaml
+
   ui:
     name: Dashboard (build)
     runs-on: ubuntu-latest

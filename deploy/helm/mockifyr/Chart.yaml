@@ -1,0 +1,11 @@
+apiVersion: v2
+name: mockifyr
+description: Enterprise API mocking and integration sandbox platform
+type: application
+version: 0.1.0
+appVersion: "0.22.0"
+home: https://mockifyr.qorpe.com
+sources:
+  - https://github.com/qorpe/mockifyr
+maintainers:
+  - name: Qorpe
