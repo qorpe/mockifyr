@@ -229,6 +229,7 @@ cannot turn verification off. Full detail:
 - Roadmap — [docs/roadmap.md](docs/roadmap.md) · decisions — [docs/decisions/](docs/decisions/)
 - Learned reference-engine behaviour, per feature group — [docs/parity/](docs/parity/)
 - Testing strategy (the binding test contract) — [docs/testing.md](docs/testing.md)
+- Measured performance and sizing guidance — [docs/parity/performance.md](docs/parity/performance.md) · harnesses — [bench/](bench/)
 - Brand assets and their usage rules — [brand/](brand/)
 - This is an AI-driven repository; how work is done here — [CLAUDE.md](CLAUDE.md)
 

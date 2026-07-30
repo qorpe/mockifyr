@@ -26,6 +26,7 @@ dotnet test tests/Mockifyr.Application.Tests -c Debug
 dotnet test tests/Mockifyr.Differential.Tests -c Debug   # needs Docker for oracle-backed tests
 cd tests/Mockifyr.Application.Tests && dotnet stryker --project <Project>.csproj --mutate "**/<File>.cs"
 cd ui && pnpm exec tsc -b && pnpm lint && pnpm build
+dotnet run --project bench/Mockifyr.Benchmarks -c Release -- --filter '*'   # engine benchmarks (#249)
 ```
 
 Stryker note (learned): it only offers as mutable the projects the test csproj references
