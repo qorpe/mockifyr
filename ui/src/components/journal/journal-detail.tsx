@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { AlertTriangle, ArrowUpRight, Clock } from 'lucide-react'
 import { fetchJournalDetail, fetchStubs, type JournalWebhook } from '@/lib/api'
 import { Sheet, SheetContent } from '@/components/ui/sheet'

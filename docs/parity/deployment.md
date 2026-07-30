@@ -62,3 +62,37 @@ Decisions worth remembering:
 **Deferred:** a NetworkPolicy example, PodDisruptionBudget and HPA guidance, and a
 ServiceMonitor — the last one waits for the metrics endpoint (#246), since there is nothing to scrape
 until then.
+
+
+## Supply-chain evidence (#244, #245)
+
+**What ships with a release.** The release workflow now produces the three artifacts an enterprise
+review asks for, alongside the image itself:
+
+- **SBOM** — a CycloneDX document generated from the published image, attached to the GitHub release
+  as a file *and* attested to the image with cosign. Procurement usually wants an artifact it can
+  archive, not only something attached to a registry manifest, so both exist.
+- **Signature and provenance** — keyless cosign signing (Sigstore) plus `provenance: mode=max` from
+  buildx. The signature is bound to this repository and workflow rather than to a private key we
+  would otherwise have to store, rotate and protect.
+- **A scan of what was actually published** — Trivy runs against the pushed digest, so a HIGH/CRITICAL
+  finding is visible in the release run rather than discovered later by a customer's scanner. It
+  reports without blocking: a tagged release that is already built and pushed should not be left in a
+  half-published state by a scan result.
+
+**What runs on every pull request.** A `Security scans` job audits NuGet (including transitive
+packages) and the dashboard's npm tree, then builds the image and scans it with Trivy — this one
+**fails** the build, because a PR is exactly where a vulnerable dependency should be stopped.
+`ignore-unfixed` is on: a base-image CVE with no available fix cannot be actioned in a PR, and
+failing on it would only teach the team to ignore the job. CodeQL runs on both C# and TypeScript, and
+`dependabot.yml` groups routine updates weekly (one PR per ecosystem) while security advisories still
+arrive on their own.
+
+**A real finding, fixed rather than suppressed.** Enabling the audit immediately surfaced two HIGH
+advisories in the dashboard tree: `postcss` (path traversal, via vite) and `react-router`. The postcss
+one was a lockfile refresh. The router one had no patched release on the `react-router-dom` line at
+all — the framework moved its entry point to the `react-router` package at v8 — so the dashboard was
+migrated to `react-router` 8 (an import rename; `react-router-dom` re-exported the same API) and the
+old package removed. Verified in the browser afterwards, because a routing library swap is exactly
+the change that type-checks and builds while breaking navigation: routes render, sidebar links
+navigate, and the tree/badges are intact.

@@ -26,6 +26,87 @@ jobs:
       - name: Test (unit)
         run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Differential"
 
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # publish CodeQL and Trivy findings to the Security tab
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Known-vulnerable NuGet packages, including transitive ones. Fails the build so a dependency
+      # bump that introduces a CVE is caught here rather than by a customer's scanner.
+      - name: Audit NuGet dependencies
+        run: |
+          dotnet restore
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee nuget-audit.txt
+          if grep -qE "Critical|High" nuget-audit.txt; then
+            echo "::error::A dependency with a High/Critical advisory is referenced — see the table above."
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Audit dashboard dependencies
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level high
+
+      # The image as it will ship: OS packages and the runtime layer, not just our code.
+      - name: Build the image for scanning
+        run: docker build -t mockifyr:scan .
+
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: mockifyr:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true    # a base-image CVE with no fix yet cannot be actioned here
+          exit-code: '1'
+          format: table
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [csharp, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        if: matrix.language == 'csharp'
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+
+      - name: Build (C#)
+        if: matrix.language == 'csharp'
+        run: dotnet build -c Release
+
+      - uses: github/codeql-action/analyze@v3
+
   chart:
     name: Helm chart (lint & posture)
     runs-on: ubuntu-latest

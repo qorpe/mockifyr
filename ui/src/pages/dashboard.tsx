@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Activity, ArrowRight, Check, CheckCircle2, Copy, Database, Disc, Download, FileJson, KeyRound, Link2, ListTree, Plus, Waypoints, XCircle } from 'lucide-react'

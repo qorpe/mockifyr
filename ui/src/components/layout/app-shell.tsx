@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router'
 import { AppSidebar } from './app-sidebar'
 import { CommandPalette } from '@/components/command-palette'
 import { HelpersDialog } from '@/components/templating/helpers-dialog'
