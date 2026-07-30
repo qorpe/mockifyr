@@ -14,6 +14,7 @@ const RecordingsPage = lazy(() => import('@/pages/recordings').then((m) => ({ de
 const EnvironmentsPage = lazy(() => import('@/pages/environments').then((m) => ({ default: m.EnvironmentsPage })))
 const ResourcesPage = lazy(() => import('@/pages/resources').then((m) => ({ default: m.ResourcesPage })))
 const AccessPage = lazy(() => import('@/pages/access').then((m) => ({ default: m.AccessPage })))
+const AuditPage = lazy(() => import('@/pages/audit').then((m) => ({ default: m.AuditPage })))
 const ExtensionsPage = lazy(() => import('@/pages/extensions').then((m) => ({ default: m.ExtensionsPage })))
 const SettingsPage = lazy(() => import('@/pages/settings').then((m) => ({ default: m.SettingsPage })))
 
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
       { path: 'environments', element: <Page><EnvironmentsPage /></Page> },
       { path: 'resources', element: <Page><ResourcesPage /></Page> },
       { path: 'access', element: <Page><AccessPage /></Page> },
+      { path: 'audit', element: <Page><AuditPage /></Page> },
       { path: 'extensions', element: <Page><ExtensionsPage /></Page> },
       { path: 'settings', element: <Page><SettingsPage /></Page> },
     ],

@@ -255,5 +255,16 @@ validation is round-trips against independent implementations of the same RFCs
 (`docs/parity/g20-cryptography.md`). Deferred: asymmetric signatures, the full Berlin Group signing
 string, key rotation, wrapped-key JWE.
 
+**Enterprise readiness (epic #253)** is running as its own track of hardening issues rather than a
+roadmap group, recorded in `docs/parity/deployment.md` and `docs/parity/g7-admin.md`: deployment
+posture (non-root image, `/__admin/live` + `/__admin/ready` with drain, a Helm chart whose posture is
+asserted by `deploy/helm/verify-chart.py` in CI — #241–#243); supply-chain evidence (SBOM, keyless
+cosign signing, provenance, Trivy, Dependabot — #244/#245); observability (OpenTelemetry traces and
+metrics, a credential-free Prometheus scrape at `/__admin/metrics`, JSON logs, deliberately bounded
+label cardinality — #246); and the admin audit trail (`--audit`: every admin change recorded with
+principal/tenant/action/target/outcome at `/__admin/audit`, on the dashboard, and as an `admin.audit`
+log line for a SIEM — #247). Remaining: documentation and support policy (#248), benchmarks (#249),
+backup/restore (#252), and — scoped on demand — key sources and rotation (#250) plus OIDC (#251).
+
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 603 tests green across the four suites.
+(0 warnings); 687 tests green across the four suites.

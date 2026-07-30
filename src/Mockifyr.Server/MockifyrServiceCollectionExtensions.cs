@@ -40,6 +40,10 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IEnvironmentStore>(sp => sp.GetRequiredService<InMemoryEnvironmentStore>());
         services.AddSingleton<IEnvironmentResolver>(sp => sp.GetRequiredService<InMemoryEnvironmentStore>());
         services.AddSingleton<IRequestJournal, InMemoryRequestJournal>();
+        // Admin audit trail (#247): off unless the host is started with --audit, which replaces this
+        // registration. Registered here rather than only in the host so every composition that maps
+        // the admin API — including tests — resolves a working log.
+        services.AddSingleton<IAuditLog, NullAuditLog>();
 
         // Captured messages (G18a, ADR 0009): the tenant-scoped, bounded inbox behind /__admin/messages.
         // Facades (SMTP, SMS profiles) write through IMessageSink; behavior decorates the sink, not them.

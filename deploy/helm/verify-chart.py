@@ -75,6 +75,13 @@ def main() -> int:
         orphan_monitor.returncode != 0 and "metrics.enabled" in orphan_monitor.stderr,
     )
 
+    # The audit trail is opt-in and always bounded when on (#247) — an unbounded trail in a pod's
+    # memory is a leak, and the durable copy is meant to be the log line a SIEM keeps.
+    check("audit flag absent by default", "--audit" not in manifest)
+    with_audit = render("audit.enabled=true", "audit.limit=250").stdout
+    check("audit flag appears when enabled", "--audit" in with_audit)
+    check("audit trail carries its bound", '"250"' in with_audit)
+
     # Every optional resource renders when asked for.
     everything = render(
         "persistence.enabled=true", "ingress.enabled=true", "route.enabled=true",

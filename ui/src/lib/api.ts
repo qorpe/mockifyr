@@ -393,6 +393,8 @@ export interface Health {
     signatureVerification: boolean
     responseSigning: boolean
   }
+  /** Whether the host records administrative changes (#247); absent on older hosts. */
+  audit?: boolean
 }
 
 const PERSISTENCE_LABEL: Record<string, string> = {
@@ -989,4 +991,31 @@ export async function issueApiKey(tenant: string, name: string, quotaPerHour: nu
 export async function revokeApiKey(tenant: string, id: string): Promise<void> {
   const res = await adminFetch(`/apikeys/${encodeURIComponent(id)}`, tenant, { method: 'DELETE' })
   if (!res.ok) throw await sandboxError(res)
+}
+
+/** One recorded administrative change (#247). */
+export interface AuditEntry {
+  id: string
+  timestamp: string
+  principal: string
+  tenant: string
+  action: string
+  target: string | null
+  outcome: number
+}
+
+/**
+ * Lists the tenant's audit entries, newest first (GET /__admin/audit). A host started without
+ * --audit answers an empty list rather than an error, so the screen can say "not enabled" instead of
+ * looking broken.
+ */
+export async function fetchAuditEntries(tenant: string, limit = 200): Promise<{ entries: AuditEntry[]; mock: boolean }> {
+  try {
+    const res = await adminFetch(`/audit?limit=${limit}`, tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { entries?: AuditEntry[] }
+    return { entries: body.entries ?? [], mock: false }
+  } catch {
+    return { entries: [], mock: true }
+  }
 }

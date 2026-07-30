@@ -65,6 +65,12 @@ spec:
             - --log-json
             - "true"
             {{- end }}
+            {{- if .Values.audit.enabled }}
+            - --audit
+            - "true"
+            - --audit-limit
+            - {{ .Values.audit.limit | quote }}
+            {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

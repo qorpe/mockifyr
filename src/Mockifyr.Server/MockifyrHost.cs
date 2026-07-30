@@ -170,6 +170,21 @@ public static class MockifyrHost
                 new InMemoryRequestJournal(journalLimit > 0 ? journalLimit : null));
         }
 
+        // Admin audit trail (#247): opt-in with --audit, bounded per tenant by --audit-limit (default
+        // 1000, oldest evicted first — the journal's retention model, so an operator learns one). Off
+        // by default because a laptop mock has nothing to audit; on, it is the "who changed what"
+        // record a review asks for. The trail lives in memory and is also emitted as a log line, so a
+        // SIEM keeps the durable copy — deliberately not persisted through the G16 seam, which would
+        // make the audit log a tenant-writable store.
+        var auditEnabled = builder.Configuration.GetValue<bool>("audit");
+        if (auditEnabled)
+        {
+            var auditLimit = int.TryParse(builder.Configuration["audit-limit"], out var parsedAuditLimit)
+                ? parsedAuditLimit
+                : InMemoryAuditLog.DefaultLimit;
+            builder.Services.AddSingleton<IAuditLog>(new InMemoryAuditLog(auditLimit));
+        }
+
         // Observability (#246): opt-in, because a mock on a laptop should not open a metrics port or
         // ship spans anywhere. --otel-endpoint enables the OTLP exporter (traces + metrics);
         // --metrics-port… no: the scrape endpoint rides on the existing port at /__admin/metrics so
@@ -552,6 +567,26 @@ public static class MockifyrHost
         // --admin-user stays the privileged "system" scope ARCHITECTURE §6 anticipates, and a host
         // with no --tenant-credential behaves exactly as before.
         var tenantCredentials = TenantCredentials.Parse(args);
+
+        // The audit trail (#247) sits ahead of the authorization middlewares on purpose: a refused
+        // cross-tenant attempt (403) is exactly the event a reviewer wants, and it is recorded with the
+        // principal that made it. Unauthenticated attempts are skipped inside the middleware — they
+        // have no principal, and auditing them would let anyone evict the bounded trail.
+        if (auditEnabled)
+        {
+            Console.WriteLine("mockifyr: --audit is on — admin changes are recorded at /__admin/audit "
+                + "and emitted as admin.audit log lines.");
+            var auditLog = app.Services.GetRequiredService<IAuditLog>();
+            var auditLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Mockifyr.Audit");
+            var principals = new AuditPrincipalResolver(
+                adminAuthenticated
+                    ? "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"))
+                    : null,
+                tenantCredentials);
+            app.Use((context, next) => AdminAuditMiddleware.InvokeAsync(
+                context, _ => next(), auditLog, principals, auditLogger, TenantCredentialHeader));
+        }
+
         if (!tenantCredentials.IsEmpty)
         {
             Console.WriteLine($"mockifyr: {tenantCredentials.Count} per-tenant admin credential(s) configured — "

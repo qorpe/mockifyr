@@ -648,3 +648,17 @@ public sealed class RevokeApiKeyHandler(IApiKeyStore store, IApiKeyPersistence p
         return ValueTask.FromResult(Result.Success());
     }
 }
+
+/// <summary>
+/// Reads the tenant's audit entries (#247). Tenant-scoped like every other query here: one tenant's
+/// administrative history is not another's to read, and the limit is clamped so a caller cannot ask
+/// for a response big enough to hurt the host.
+/// </summary>
+public sealed class GetAuditEntriesHandler(IAuditLog log)
+    : IQueryHandler<GetAuditEntriesQuery, Result<IReadOnlyList<AuditEntry>>>
+{
+    public ValueTask<Result<IReadOnlyList<AuditEntry>>> Handle(
+        GetAuditEntriesQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(
+            log.Read(query.Tenant, Math.Clamp(query.Limit ?? 200, 1, 1000))));
+}

@@ -143,7 +143,8 @@ public static class AdminEndpoints
             IEnumerable<IPayloadDecryptor> decryptors,
             IEnumerable<IPayloadProtector> protectors,
             IEnumerable<ISignatureVerifier> verifiers,
-            IEnumerable<IResponseSigner> signers) =>
+            IEnumerable<IResponseSigner> signers,
+            IAuditLog auditLog) =>
         {
             var tenants = store.GetTenants();
             return Results.Json(new
@@ -164,6 +165,10 @@ public static class AdminEndpoints
                     signatureVerification = verifiers.Any(),
                     responseSigning = signers.Any(),
                 },
+                // Whether this host records administrative changes (#247). An empty trail is
+                // ambiguous on its own — "nothing has changed" and "nobody is recording" look
+                // identical — so the dashboard needs to be told which it is.
+                audit = auditLog is not NullAuditLog,
             });
         });
 
@@ -375,6 +380,27 @@ public static class AdminEndpoints
         // Sandbox access (G19d, ADR 0011): operator-issued API keys. The token appears in the
         // issue response ONCE; every later view carries only the display prefix. These endpoints
         // never accept a sandbox key as authentication — admin auth stays --admin-user/--admin-pass.
+        // The audit trail (#247) is read-only here by design: entries are appended by the host as a
+        // side effect of the change they describe, so nothing on the admin API can rewrite history.
+        admin.MapGet("/audit", async (HttpRequest request, ISender sender) =>
+        {
+            var limit = int.TryParse(request.Query["limit"], out var parsed) ? parsed : (int?)null;
+            var result = await sender.Send(new GetAuditEntriesQuery(TenantOf(request), limit));
+            return Results.Json(new
+            {
+                entries = result.Value.Select(entry => new
+                {
+                    id = entry.Id,
+                    timestamp = entry.Timestamp,
+                    principal = entry.Principal,
+                    tenant = entry.Tenant.Value,
+                    action = entry.Action,
+                    target = entry.Target,
+                    outcome = entry.Outcome,
+                }),
+            });
+        });
+
         admin.MapGet("/apikeys", async (HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new GetApiKeysQuery(TenantOf(request)));

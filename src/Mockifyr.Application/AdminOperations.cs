@@ -130,3 +130,10 @@ public sealed record GetApiKeysQuery(TenantId Tenant) : IQuery<Result<IReadOnlyL
 
 /// <summary>Revokes one of the tenant's keys.</summary>
 public sealed record RevokeApiKeyCommand(string Id, TenantId Tenant) : ICommand<Result>;
+
+// Admin audit trail (#247): read-only from the management API — entries are appended by the host's
+// audit middleware, never by an API caller, so a trail cannot be edited through the surface it audits.
+
+/// <summary>Lists the tenant's audit entries, newest first (limit clamped to 1..1000, default 200).</summary>
+public sealed record GetAuditEntriesQuery(TenantId Tenant, int? Limit = null)
+    : IQuery<Result<IReadOnlyList<AuditEntry>>>;
