@@ -96,3 +96,48 @@ migrated to `react-router` 8 (an import rename; `react-router-dom` re-exported t
 old package removed. Verified in the browser afterwards, because a routing library swap is exactly
 the change that type-checks and builds while breaking navigation: routes render, sidebar links
 navigate, and the tree/badges are intact.
+
+
+## Observability (#246)
+
+**What ships.** Three switches, all off by default — a mock on a laptop should not open a metrics
+port or ship spans anywhere:
+
+| Flag | Effect |
+|---|---|
+| `--metrics` | Prometheus scrape endpoint at `/__admin/metrics` |
+| `--otel-endpoint <url>` | OTLP exporter for traces **and** metrics (collector, gRPC) |
+| `--log-json` | JSON console logs with scopes, for a log pipeline or SIEM |
+
+**Decisions worth remembering.**
+
+- **Metrics come from the `IServeEventListener` seam, not from inside the engine.** Every serve event
+  already flows through that choke point (the journal and webhooks use it), so nothing can be served
+  without being counted — and `Mockifyr.Core` keeps its zero dependencies. Instrumenting the engine
+  directly would have put a metrics library behind the purity rule.
+- **The scrape endpoint rides on the existing port** rather than opening a second listener: one port
+  to expose, one Service, one probe surface. It also stays **outside admin auth**, for the same reason
+  the probes do (#242) — a Prometheus scraper cannot carry credentials, and what it reads are counts
+  and latencies, never payloads.
+- **Cardinality is a design decision, not an accident.** Labels are `tenant` (bounded — an operator
+  names them), `matched` (boolean) and `method` (closed set). Stub id and URL are deliberately *not*
+  labels: a mock host can hold thousands of stubs, and a metrics backend would fall over. The wire
+  test asserts their absence, so a well-meaning future addition fails the suite.
+- **Probes and the scrape endpoint are filtered out of tracing**, or they would dominate the span
+  volume with data nobody reads.
+- **Instrument names are contract.** `mockifyr.requests.served` and `mockifyr.response.status` are
+  referenced by dashboards and alert rules; renaming them is a breaking change, which is why they live
+  in one place with a comment saying so.
+- **The Prometheus ASP.NET exporter is still pre-release upstream.** It is pinned and confined to
+  `Mockifyr.Server`, so nothing in the engine or the facades depends on a beta package.
+
+**Validation story.** `ObservabilityTests` (3 wire tests): metrics exposed with the intended labels
+after a match and a miss — **and the cardinality-exploding labels asserted absent**; the scrape
+endpoint reachable without credentials on a host where every other admin route answers 401; and a
+host without the flag exposing no scrape output at all while serving normally. The chart gained a
+`ServiceMonitor` (refused unless `metrics.enabled`, asserted in the posture verifier) and the flags
+are wired through values.
+
+**Deferred.** Spans for the individual engine phases (matching, templating, crypto) — the ASP.NET and
+HttpClient spans already cover request→response and outbound calls, and per-phase spans are worth
+adding once someone needs them rather than on speculation.

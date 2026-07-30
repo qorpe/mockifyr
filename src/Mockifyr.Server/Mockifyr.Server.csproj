@@ -7,6 +7,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
     <ProjectReference Include="..\Mockifyr.Crypto\Mockifyr.Crypto.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Http\Mockifyr.Facade.Http.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Admin\Mockifyr.Facade.Admin.csproj" />

@@ -64,6 +64,16 @@
     <PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
     <!-- gRPC client to drive the G13 differential against both sides. -->
     <PackageVersion Include="Grpc.Net.Client" Version="2.80.0" />
+
+    <!-- Observability (#246). The OTLP exporter is the shipped default; the Prometheus scrape
+         endpoint is opt-in behind a flag. Prometheus's ASP.NET exporter is still pre-release
+         upstream — pinned deliberately and isolated in Mockifyr.Server, so nothing in the engine
+         or the facades depends on it. -->
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.17.0-beta.1" />
   </ItemGroup>
 
 </Project>

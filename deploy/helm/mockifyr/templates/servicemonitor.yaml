@@ -1,0 +1,22 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- if not .Values.metrics.enabled }}
+{{- fail "metrics.serviceMonitor.enabled requires metrics.enabled — there is nothing to scrape otherwise" }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "mockifyr.fullname" . }}
+  labels: {{- include "mockifyr.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels: {{- include "mockifyr.selectorLabels" . | nindent 6 }}
+  endpoints:
+    # The scrape path rides on the existing service port and stays outside admin auth, so a
+    # Prometheus scraper needs no credentials (#246).
+    - port: http
+      path: /__admin/metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+{{- end }}
