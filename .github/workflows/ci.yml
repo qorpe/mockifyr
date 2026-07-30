@@ -43,11 +43,14 @@ jobs:
       - name: Verify posture
         run: python3 deploy/helm/verify-chart.py
 
+      # The kubeconform image is built FROM scratch, so it cannot run a shell pipeline — install the
+      # released binary and feed it a rendered file instead.
       - name: Validate against Kubernetes schemas
-        uses: docker://ghcr.io/yannh/kubeconform:latest
-        with:
-          entrypoint: /bin/sh
-          args: -c "helm template verify deploy/helm/mockifyr --set persistence.enabled=true --set ingress.enabled=true | kubeconform -strict -summary -skip Route -"
+        run: |
+          curl -sSLo kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform.tar.gz kubeconform
+          helm template verify deploy/helm/mockifyr --set persistence.enabled=true --set ingress.enabled=true > rendered.yaml
+          ./kubeconform -strict -summary -skip Route rendered.yaml
 
   ui:
     name: Dashboard (build)
