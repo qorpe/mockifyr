@@ -1,3 +1,4 @@
+import { Lock, Signature } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Protocol, StubStatus } from '@/lib/api'
 
@@ -33,6 +34,27 @@ export function ProtocolChip({ protocol }: { protocol: Protocol }) {
   return (
     <span className={cn('inline-flex rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold', p.tone)}>
       {p.label}
+    </span>
+  )
+}
+
+/**
+ * Crypto markers for a stub row (G20e): a lock when the stub declares payload encryption
+ * (request `decrypt` or response `protect`), a pen-nib when it requires or produces a signature.
+ * Icon-only and tooltip-titled — the row is dense, and the Settings page is where the host's
+ * ability to honor these is stated.
+ */
+export function CryptoChips({ encrypted, signed, encryptedLabel, signedLabel }: {
+  encrypted: boolean
+  signed: boolean
+  encryptedLabel: string
+  signedLabel: string
+}) {
+  if (!encrypted && !signed) return null
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
+      {encrypted && <Lock className="size-3.5" aria-label={encryptedLabel}><title>{encryptedLabel}</title></Lock>}
+      {signed && <Signature className="size-3.5" aria-label={signedLabel}><title>{signedLabel}</title></Signature>}
     </span>
   )
 }

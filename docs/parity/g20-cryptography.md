@@ -172,3 +172,25 @@ documented under G20a.
 (RSA/EC detached JWS with certificates), the full Berlin Group signing string over selected headers,
 multiple keys / rotation / per-tenant keys, wrapped-key JWE (`alg != dir`, refused today rather than
 half-supported), and content negotiation (`application/jose` on protected responses).
+
+
+## G20e — cryptography in the dashboard
+
+**What shipped.** `/__admin/health` now reports a `cryptography` block — four booleans for what the
+host was actually given keys for (payload decryption, response protection, signature verification,
+response signing) — and the dashboard surfaces it two ways: a **Payload cryptography** card on
+Settings listing each capability as on/off, and **lock / signature icons on stub rows** for stubs
+that declare `decrypt`/`protect` or `signature`/`sign`.
+
+**Why this is a feature and not decoration.** A stub may declare encryption or signing on a host
+that has no key. Everything then behaves correctly — the stub simply never matches — but the symptom
+is indistinguishable from a bad matcher, and an operator can burn an afternoon on it. The two
+surfaces answer the two different questions: the badge says *what this stub asks for*, the Settings
+card says *what this host can honor*. Neither invents state: both read from what already exists (the
+mapping, and the DI registrations).
+
+**Validation story.** `CryptoCapabilityTests` (2 wire tests: a keyless host reports every capability
+off; each key switches on exactly the pair it enables, and both keys light all four) plus in-browser
+verification against a live host with both keys — the Settings card showing four ✓ and a seeded
+encrypted+signed stub carrying both icons while a plain stub carries none. UI `tsc`, lint and build
+clean; six locales.

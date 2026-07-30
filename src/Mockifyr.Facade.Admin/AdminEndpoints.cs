@@ -137,7 +137,13 @@ public static class AdminEndpoints
         // Host status for the dashboard's Settings/Status screen: the active persistence provider and
         // live tenant/stub counts, gathered from DI. Host-config knobs (TLS, ports) are set by CLI flags
         // at startup and aren't admin-mutable, so they are documented in the UI rather than reported here.
-        admin.MapGet("/health", (IStubStore store, IStubPersistence persistence) =>
+        admin.MapGet("/health", (
+            IStubStore store,
+            IStubPersistence persistence,
+            IEnumerable<IPayloadDecryptor> decryptors,
+            IEnumerable<IPayloadProtector> protectors,
+            IEnumerable<ISignatureVerifier> verifiers,
+            IEnumerable<IResponseSigner> signers) =>
         {
             var tenants = store.GetTenants();
             return Results.Json(new
@@ -147,6 +153,17 @@ public static class AdminEndpoints
                 persistence = persistence.ProviderName,
                 tenants = tenants.Count,
                 totalStubs = tenants.Sum(t => store.GetStubs(t).Count),
+                // Cryptography capabilities (G20e): a stub can declare decrypt/protect/sign, but
+                // whether the host can honor it depends on the keys it was started with. Reporting
+                // it here is what lets the dashboard say so instead of leaving an operator to
+                // discover it from a stub that mysteriously never matches.
+                cryptography = new
+                {
+                    payloadDecryption = decryptors.Any(),
+                    responseProtection = protectors.Any(),
+                    signatureVerification = verifiers.Any(),
+                    responseSigning = signers.Any(),
+                },
             });
         });
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowDownToLine, ArrowUpFromLine, Boxes, Check, Database, GitBranch, KeyRound, Lock, Moon, Palette, Plus, ShieldCheck, Sun, Trash2, Workflow } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, Boxes, Check, Database, GitBranch, KeyRound, Lock, Moon, Palette, Plus, ShieldCheck, Sun, Trash2, Workflow, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import {
@@ -66,6 +66,11 @@ export function SettingsPage() {
 
         {/* gRPC descriptors (G18-pre, ADR 0010): upload a compiled *.dsc; serving hot-reloads. */}
         <GrpcDescriptorsCard />
+
+        {/* Payload cryptography (G20e, read-only): what the host was given keys for. A stub can
+            declare decrypt/protect/sign regardless; this card is what tells the operator whether
+            this host can honor it, instead of leaving them to debug a stub that never matches. */}
+        <CryptographyCard />
 
         {/* Transport (host-config, read-only) */}
         <Card icon={ShieldCheck} title={t('settings.transport')}>
@@ -452,4 +457,35 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function SampleHint({ t }: { t: (k: string) => string }) {
   return <div className="mb-3 inline-flex rounded-full border border-warning-border bg-warning-bg px-2.5 py-0.5 text-[11.5px] font-medium text-warning">{t('stubs.sample')}</div>
+}
+
+function CryptographyCard() {
+  const { t } = useTranslation()
+  const { tenant } = useUi()
+  const health = useQuery({ queryKey: ['health', tenant], queryFn: () => fetchHealth(tenant) })
+  const crypto = health.data?.health.cryptography
+
+  const rows: { label: string; on: boolean }[] = [
+    { label: t('crypto.payloadDecryption'), on: !!crypto?.payloadDecryption },
+    { label: t('crypto.responseProtection'), on: !!crypto?.responseProtection },
+    { label: t('crypto.signatureVerification'), on: !!crypto?.signatureVerification },
+    { label: t('crypto.responseSigning'), on: !!crypto?.responseSigning },
+  ]
+  const anyOn = rows.some((r) => r.on)
+
+  return (
+    <Card icon={KeyRound} title={t('crypto.title')}>
+      <p className="mb-3 text-sm text-muted-foreground">{anyOn ? t('crypto.onHint') : t('crypto.offHint')}</p>
+      <ul className="space-y-2 text-sm">
+        {rows.map((row) => (
+          <li key={row.label} className="flex items-center gap-2">
+            {row.on
+              ? <Check className="size-4 text-success" />
+              : <X className="size-4 text-faint" />}
+            <span className={row.on ? undefined : 'text-muted-foreground'}>{row.label}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )
 }
