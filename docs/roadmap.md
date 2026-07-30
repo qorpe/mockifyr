@@ -617,6 +617,11 @@ abstract scheme (`IPayloadDecryptor` / `IPayloadProtector`).
   protection so it covers what the client receives. PSD2 / Berlin Group header names by default,
   HMAC-SHA256 over the `Digest` value, `--sign-key`. 8 unit + 4 wire tests with independently
   computed signatures; **Stryker 11/14** with three analyzed equivalents.
+- [x] **G20e — cryptography in the dashboard.** `/__admin/health` reports the four capabilities the
+  host was given keys for; Settings shows them as a card, and stub rows carry lock/signature icons
+  for declared crypto. Answers the two different questions — what the stub asks for, and what the
+  host can honor — so a keyless host is diagnosable instead of mysterious. 2 wire tests +
+  in-browser verification, six locales.
 - [x] **G20d — whole-body inbound decryption.** `decrypt` with no `fields` decrypts the entire body
   as one JWE token — the mirror of `protect` with no fields, and the case `binaryEqualTo` cannot
   express because a fresh IV changes the bytes every request. Whitespace tolerated; a non-token body

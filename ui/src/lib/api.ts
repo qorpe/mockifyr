@@ -18,6 +18,10 @@ export interface Stub {
   status: StubStatus
   /** The HTTP response status code (from response.status), when the mapping declares one. */
   responseStatus: number | null
+  /** Payload cryptography declared by this stub (G20e): decrypt/protect. */
+  encrypted: boolean
+  /** Request signature required or response signed (G20e). */
+  signed: boolean
   /** The full mapping (when a host returned it), so the editor can round-trip an edit. */
   raw?: Record<string, unknown>
 }
@@ -88,8 +92,11 @@ interface RawMapping {
   scenarioName?: string
   /** Computed server-side per ADR 0010 (G18-pre); never part of the stored mapping. */
   protocol?: string
-  request?: { method?: string; url?: string; urlPath?: string; urlPattern?: string; urlPathPattern?: string }
-  response?: { proxyBaseUrl?: string; status?: number }
+  request?: {
+    method?: string; url?: string; urlPath?: string; urlPattern?: string; urlPathPattern?: string
+    decrypt?: unknown; signature?: unknown
+  }
+  response?: { proxyBaseUrl?: string; status?: number; protect?: unknown; sign?: unknown }
   metadata?: { 'mockifyr:persistence'?: string }
 }
 
@@ -114,6 +121,10 @@ function projectMapping(m: RawMapping): Stub {
     lastMatched: null,
     status: m.response?.proxyBaseUrl ? 'proxy' : 'live',
     responseStatus: typeof m.response?.status === 'number' ? m.response.status : null,
+    // Crypto declarations are read straight off the mapping (G20e): the badges say what the stub
+    // asks for, while the Settings page says whether the host was given the keys to honor it.
+    encrypted: !!m.request?.decrypt || !!m.response?.protect,
+    signed: !!m.request?.signature || !!m.response?.sign,
     // `protocol` is computed by the server per response (ADR 0010) — strip it from the editable
     // mapping so a JSON-tab or channel-form save can never persist it into the stored Source.
     raw: (({ protocol: _p, ...rest }) => rest)(m as unknown as Record<string, unknown>),
@@ -375,6 +386,13 @@ export interface Health {
   persistence: string
   tenants: number
   totalStubs: number
+  /** What the host can honor of a stub's crypto declarations (G20e); absent on older hosts. */
+  cryptography?: {
+    payloadDecryption: boolean
+    responseProtection: boolean
+    signatureVerification: boolean
+    responseSigning: boolean
+  }
 }
 
 const PERSISTENCE_LABEL: Record<string, string> = {
@@ -652,18 +670,18 @@ function sampleStubs(tenant: string): Stub[] {
   if (!DEMO_TENANTS.has(tenant)) return []
   const base: Stub[] = [
     // A few endpoints carry more than one case (same URL+method, different status/name) to show the tree.
-    { id: '1', name: 'Account found', method: 'GET', url: '/api/v2/accounts/{id}', protocol: 'http', priority: 5, scenario: null, persistence: 'Postgres', lastMatched: '12s', status: 'live', responseStatus: 200 },
-    { id: '1b', name: 'Account not found', method: 'GET', url: '/api/v2/accounts/{id}', protocol: 'http', priority: 3, scenario: null, persistence: 'Postgres', lastMatched: '4m', status: 'live', responseStatus: 404 },
-    { id: '2', name: 'Payment accepted', method: 'POST', url: '/api/v2/payments', protocol: 'http', priority: 10, scenario: 'Checkout', persistence: 'Postgres', lastMatched: '3s', status: 'live', responseStatus: 201 },
-    { id: '2b', name: 'Payment declined', method: 'POST', url: '/api/v2/payments', protocol: 'http', priority: 10, scenario: 'Checkout', persistence: 'Postgres', lastMatched: '30s', status: 'live', responseStatus: 402 },
-    { id: '3', name: null, method: 'POST', url: '/api/v2/payments/{id}/capture', protocol: 'http', priority: 10, scenario: 'Checkout', persistence: 'Postgres', lastMatched: '7s', status: 'live', responseStatus: 200 },
-    { id: '4', name: null, method: 'GET', url: '/api/v2/rates?from={a}&to={b}', protocol: 'http', priority: 3, scenario: null, persistence: 'Redis', lastMatched: '1m', status: 'proxy', responseStatus: null },
-    { id: '5', name: null, method: 'PUT', url: '/api/v2/accounts/{id}/limits', protocol: 'http', priority: 5, scenario: null, persistence: 'Postgres', lastMatched: '18m', status: 'live', responseStatus: 200 },
-    { id: '6', name: null, method: 'DELETE', url: '/api/v2/mandates/{id}', protocol: 'http', priority: 5, scenario: null, persistence: 'Postgres', lastMatched: '2h', status: 'draft', responseStatus: 204 },
-    { id: '7', name: null, method: 'PATCH', url: '/api/v2/webhooks/{id}', protocol: 'http', priority: 1, scenario: null, persistence: 'LiteDB', lastMatched: '1d', status: 'live', responseStatus: 200 },
-    { id: '8', name: null, method: 'POST', url: 'mockifyr.grpc.Greeter/SayHello', protocol: 'grpc', priority: 8, scenario: null, persistence: 'Postgres', lastMatched: '41s', status: 'live', responseStatus: 200 },
-    { id: '9', name: null, method: 'POST', url: '/graphql · query Balance', protocol: 'graphql', priority: 8, scenario: null, persistence: 'Postgres', lastMatched: '55s', status: 'live', responseStatus: 200 },
-    { id: '10', name: null, method: 'GET', url: '/ws/notifications', protocol: 'websocket', priority: 5, scenario: null, persistence: 'In-memory', lastMatched: '2m', status: 'live', responseStatus: 101 },
+    { id: '1', name: 'Account found', method: 'GET', url: '/api/v2/accounts/{id}', protocol: 'http', priority: 5, scenario: null, persistence: 'Postgres', lastMatched: '12s', status: 'live', responseStatus: 200, encrypted: false, signed: false },
+    { id: '1b', name: 'Account not found', method: 'GET', url: '/api/v2/accounts/{id}', protocol: 'http', priority: 3, scenario: null, persistence: 'Postgres', lastMatched: '4m', status: 'live', responseStatus: 404, encrypted: false, signed: false },
+    { id: '2', name: 'Payment accepted', method: 'POST', url: '/api/v2/payments', protocol: 'http', priority: 10, scenario: 'Checkout', persistence: 'Postgres', lastMatched: '3s', status: 'live', responseStatus: 201, encrypted: true, signed: true },
+    { id: '2b', name: 'Payment declined', method: 'POST', url: '/api/v2/payments', protocol: 'http', priority: 10, scenario: 'Checkout', persistence: 'Postgres', lastMatched: '30s', status: 'live', responseStatus: 402, encrypted: true, signed: false },
+    { id: '3', name: null, method: 'POST', url: '/api/v2/payments/{id}/capture', protocol: 'http', priority: 10, scenario: 'Checkout', persistence: 'Postgres', lastMatched: '7s', status: 'live', responseStatus: 200, encrypted: false, signed: false },
+    { id: '4', name: null, method: 'GET', url: '/api/v2/rates?from={a}&to={b}', protocol: 'http', priority: 3, scenario: null, persistence: 'Redis', lastMatched: '1m', status: 'proxy', responseStatus: null, encrypted: false, signed: false },
+    { id: '5', name: null, method: 'PUT', url: '/api/v2/accounts/{id}/limits', protocol: 'http', priority: 5, scenario: null, persistence: 'Postgres', lastMatched: '18m', status: 'live', responseStatus: 200, encrypted: false, signed: false },
+    { id: '6', name: null, method: 'DELETE', url: '/api/v2/mandates/{id}', protocol: 'http', priority: 5, scenario: null, persistence: 'Postgres', lastMatched: '2h', status: 'draft', responseStatus: 204, encrypted: false, signed: false },
+    { id: '7', name: null, method: 'PATCH', url: '/api/v2/webhooks/{id}', protocol: 'http', priority: 1, scenario: null, persistence: 'LiteDB', lastMatched: '1d', status: 'live', responseStatus: 200, encrypted: false, signed: false },
+    { id: '8', name: null, method: 'POST', url: 'mockifyr.grpc.Greeter/SayHello', protocol: 'grpc', priority: 8, scenario: null, persistence: 'Postgres', lastMatched: '41s', status: 'live', responseStatus: 200, encrypted: false, signed: false },
+    { id: '9', name: null, method: 'POST', url: '/graphql · query Balance', protocol: 'graphql', priority: 8, scenario: null, persistence: 'Postgres', lastMatched: '55s', status: 'live', responseStatus: 200, encrypted: false, signed: false },
+    { id: '10', name: null, method: 'GET', url: '/ws/notifications', protocol: 'websocket', priority: 5, scenario: null, persistence: 'In-memory', lastMatched: '2m', status: 'live', responseStatus: 101, encrypted: false, signed: false },
   ]
   if (tenant === 'globex') return base.slice(0, 6).map((s) => ({ ...s, url: s.url.replace('/api/v2', '/retail/v1') }))
   if (tenant === 'default') return base.slice(0, 3)

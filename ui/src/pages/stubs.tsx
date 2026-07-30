@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import { deleteMessageMapping, deleteStub, fetchEnvironments, fetchMessageMappings, fetchStubs, type MessageMapping, type Stub } from '@/lib/api'
 import { buildStubTree, countStubs, type StubTreeNode } from '@/lib/stub-tree'
-import { MethodChip, ProtocolChip, StatusCode } from '@/components/ui/badges'
+import { CryptoChips, MethodChip, ProtocolChip, StatusCode } from '@/components/ui/badges'
 import { NewStubWorkspace } from '@/components/stubs/channel-editors'
 import { JsonEditor } from '@/components/ui/json-editor'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
@@ -521,6 +521,8 @@ function CaseLeaf({ stub, active, onOpen, onDelete }: { stub: Stub; active: bool
         active ? 'bg-muted font-medium text-foreground' : 'text-foreground hover:bg-muted/60')}>
       <StatusCode code={stub.responseStatus} />
       <ProtocolChip protocol={stub.protocol} />
+      <CryptoChips encrypted={stub.encrypted} signed={stub.signed}
+        encryptedLabel={t('crypto.encrypted')} signedLabel={t('crypto.signed')} />
       <span className="min-w-0 flex-1 truncate">{stub.name?.trim() || t('stubs.untitledCase')}</span>
       <span role="button" tabIndex={-1} aria-label="Delete" onClick={(e) => { e.stopPropagation(); onDelete(stub) }}
         className="shrink-0 rounded p-0.5 text-faint opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger group-hover:opacity-100"><Trash2 className="size-3.5" /></span>
