@@ -185,6 +185,12 @@ public sealed record RequestPattern
     public PayloadDecryptDirective? Decrypt { get; init; }
 
     /// <summary>
+    /// Opt-in requirement that the request carry a valid signature (G20c, ADR 0012). A request that
+    /// fails the check does not match this stub. Null on every stub that does not declare it.
+    /// </summary>
+    public SignatureRequirement? Signature { get; init; }
+
+    /// <summary>
     /// The raw <c>urlPathTemplate</c> string (e.g. <c>/users/{id}</c>) when the stub matched by URI
     /// template, else null. Carried so response templating can expose named path variables as
     /// <c>{{request.path.&lt;name&gt;}}</c> (verified by the differential suite). The engine records it; extraction happens
@@ -237,6 +243,12 @@ public sealed record ResponseDefinition
     /// ADR 0012). Null on every stub that does not declare it — the default path.
     /// </summary>
     public PayloadProtectDirective? Protect { get; init; }
+
+    /// <summary>
+    /// Opt-in declaration that the response must be signed (G20c, ADR 0012): a digest of the served
+    /// body plus a signature header. Applied after protection, so it covers what goes on the wire.
+    /// </summary>
+    public ResponseSignature? Sign { get; init; }
 
     /// <summary>Optional status message.</summary>
     public string? StatusMessage { get; init; }

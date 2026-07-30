@@ -122,6 +122,7 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--tenant-credential <tenant>:<user>:<pass>` | repeatable — an admin credential scoped to ONE tenant; it cannot address another by renaming `X-Mockifyr-Tenant` (403). `--admin-user` stays the system scope |
 | `--block-outbound-routes` | while the admin API is unauthenticated, refuse the routes that act on the network (start recording, outbound trust, Git) with **403** — an open host cannot be turned into a forward proxy |
 | `--decrypt-key <base64>` | 256-bit key enabling payload cryptography: a stub's `"decrypt"` block makes encrypted request fields matchable/templatable (the journal keeps the ciphertext), and its `"protect"` block encrypts named response fields — or the whole body — on the way out |
+| `--sign-key <base64>` | 256-bit secret enabling signing: a stub's `"signature"` block requires a validly signed request (unsigned → non-match), and its `"sign"` block adds `Digest` + HMAC headers to the response |
 | `--mask-headers <names>` | keep named header values out of the journal entirely (comma-separated, case-insensitive) — e.g. `Authorization,Cookie,X-Api-Key` |
 | `--mask-body-fields <names>` | keep named JSON body fields out of the journal (any depth, arrays included) — e.g. `pan,cvv,password` |
 | `--journal-limit <n>` | per-tenant request-journal bound (default 1000, oldest evicted first; `<=0` = unbounded). `--max-request-journal-entries` is a kept alias |

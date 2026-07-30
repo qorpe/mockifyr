@@ -611,8 +611,12 @@ abstract scheme (`IPayloadDecryptor` / `IPayloadProtector`).
   serve event records the protected response. Fresh nonce per token (asserted); a body that cannot
   carry named fields is served as rendered rather than silently switching shape. 6 unit + 4 wire
   tests, all decrypting with the paired implementation, **Stryker 100 %**.
-- [ ] **G20c — signing.** `signatureValid` request matcher and response signing (`Digest` + detached
-  JWS, HMAC), with PSD2/Berlin-Group presets packaged the way the Twilio SMS profile is (ADR 0009).
+- [x] **G20c — signing.** `request.signature { scheme, header, digestHeader }` requires a signed
+  request (an unsigned or tampered one is a non-match, and the gate fails closed with no verifier),
+  and `response.sign { … }` adds the digest of the served bytes plus its HMAC — applied after
+  protection so it covers what the client receives. PSD2 / Berlin Group header names by default,
+  HMAC-SHA256 over the `Digest` value, `--sign-key`. 8 unit + 4 wire tests with independently
+  computed signatures; **Stryker 11/14** with three analyzed equivalents.
 - [ ] **G20d — whole-body inbound decryption**, once key handling has settled.
 
 No oracle exists (the reference engine has no payload cryptography), so validation follows the

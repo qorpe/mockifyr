@@ -324,6 +324,7 @@ public static class MappingJsonReader
             Cookies = ReadNamedMatchers(request, "cookies", static (name, vm) => new CookieMatcher(name, vm)),
             Body = ReadBodyMatchers(request),
             Decrypt = ReadDecryptDirective(request),
+            Signature = ReadSignatureRequirement(request),
             Custom = ReadCustomMatchers(request, matchers),
         };
     }
@@ -364,6 +365,52 @@ public static class MappingJsonReader
 
         return matchers?.Resolve(matcherName) is { } matcher ? [matcher] : [];
     }
+
+    /// <summary>
+    /// Reads the opt-in request-signature requirement (G20c, ADR 0012):
+    /// <c>"signature": { "scheme": "hmac-sha256", "header": "X-JWS-Signature", "digestHeader": "Digest" }</c>.
+    /// The header names default to the PSD2 / Berlin Group ones, so the common case is just a scheme.
+    /// </summary>
+    private static SignatureRequirement? ReadSignatureRequirement(JsonElement request)
+    {
+        if (!request.TryGetProperty("signature", out var signature) || signature.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var scheme = ReadText(signature, "scheme");
+        return string.IsNullOrWhiteSpace(scheme)
+            ? null
+            : new SignatureRequirement(
+                scheme,
+                ReadText(signature, "header") ?? "X-JWS-Signature",
+                ReadText(signature, "digestHeader") ?? "Digest");
+    }
+
+    /// <summary>
+    /// Reads the opt-in response-signing declaration (G20c, ADR 0012):
+    /// <c>"sign": { "scheme": "hmac-sha256", "header": "X-JWS-Signature", "digestHeader": "Digest" }</c>.
+    /// </summary>
+    private static ResponseSignature? ReadResponseSignature(JsonElement response)
+    {
+        if (!response.TryGetProperty("sign", out var sign) || sign.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var scheme = ReadText(sign, "scheme");
+        return string.IsNullOrWhiteSpace(scheme)
+            ? null
+            : new ResponseSignature(
+                scheme,
+                ReadText(sign, "header") ?? "X-JWS-Signature",
+                ReadText(sign, "digestHeader") ?? "Digest");
+    }
+
+    private static string? ReadText(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     /// <summary>
     /// Reads the opt-in response-protection declaration (G20b, ADR 0012):
@@ -843,6 +890,7 @@ public static class MappingJsonReader
             Proxy = ReadProxy(response),
             State = ReadState(response),
             Protect = ReadProtectDirective(response),
+            Sign = ReadResponseSignature(response),
         };
     }
 

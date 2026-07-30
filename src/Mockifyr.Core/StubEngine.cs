@@ -34,6 +34,8 @@ public sealed class StubEngine
     private readonly IReadOnlyList<IResponseTransformer> _responseTransformers;
     private readonly PayloadDecryptionView _decryption;
     private readonly PayloadProtectionApplier _protection;
+    private readonly SignatureGate _signatures;
+    private readonly ResponseSigningApplier _signing;
 
     /// <summary>Creates the engine with its collaborators.</summary>
     public StubEngine(
@@ -44,7 +46,9 @@ public sealed class StubEngine
         IEnumerable<IServeEventListener> serveEventListeners,
         IEnumerable<IResponseTransformer>? responseTransformers = null,
         IEnumerable<IPayloadDecryptor>? payloadDecryptors = null,
-        IEnumerable<IPayloadProtector>? payloadProtectors = null)
+        IEnumerable<IPayloadProtector>? payloadProtectors = null,
+        IEnumerable<ISignatureVerifier>? signatureVerifiers = null,
+        IEnumerable<IResponseSigner>? responseSigners = null)
     {
         _stubStore = stubStore;
         _renderer = renderer;
@@ -54,6 +58,8 @@ public sealed class StubEngine
         _responseTransformers = responseTransformers is null ? [] : [.. responseTransformers];
         _decryption = new PayloadDecryptionView(payloadDecryptors ?? []);
         _protection = new PayloadProtectionApplier(payloadProtectors ?? []);
+        _signatures = new SignatureGate(signatureVerifiers ?? []);
+        _signing = new ResponseSigningApplier(responseSigners ?? []);
     }
 
     /// <summary>
@@ -76,6 +82,13 @@ public sealed class StubEngine
 
             // Encrypted-payload stubs (G20a) match against a decrypted view; every other stub keeps
             // the very same MatchInput instance, so the default path is untouched.
+            // Signature requirement (G20c): an unsigned or badly signed request cannot match a stub
+            // that demands a signature. It fails closed — including when no verifier is registered.
+            if (!_signatures.Satisfied(request, stub.Request.Signature))
+            {
+                continue;
+            }
+
             var stubInput = stub.Request.Decrypt is null || _decryption.IsEmpty
                 ? input
                 : new MatchInput { Request = _decryption.For(request, stub.Request.Decrypt) };
@@ -104,6 +117,11 @@ public sealed class StubEngine
             // what gets encrypted is exactly what would otherwise have gone on the wire. The serve
             // event records the protected response, because that IS what the client received.
             response = _protection.For(response, winner.Response.Protect);
+
+            // Signing comes after protection (G20c), so the digest covers the bytes the client will
+            // actually receive and verify — signing the plaintext would be a signature over
+            // something that never went on the wire.
+            response = _signing.For(response, winner.Response.Sign);
 
             ApplyTransition(tenant, winner);
             DispatchServeEvent(tenant, request, winner, response);
