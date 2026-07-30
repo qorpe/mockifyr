@@ -232,6 +232,12 @@ public sealed record ResponseDefinition
     /// <summary>Status code.</summary>
     public required int Status { get; init; }
 
+    /// <summary>
+    /// Opt-in declaration that the rendered body must be encrypted before it is served (G20b,
+    /// ADR 0012). Null on every stub that does not declare it — the default path.
+    /// </summary>
+    public PayloadProtectDirective? Protect { get; init; }
+
     /// <summary>Optional status message.</summary>
     public string? StatusMessage { get; init; }
 

@@ -33,6 +33,7 @@ public sealed class StubEngine
     private readonly IReadOnlyList<IServeEventListener> _serveEventListeners;
     private readonly IReadOnlyList<IResponseTransformer> _responseTransformers;
     private readonly PayloadDecryptionView _decryption;
+    private readonly PayloadProtectionApplier _protection;
 
     /// <summary>Creates the engine with its collaborators.</summary>
     public StubEngine(
@@ -42,7 +43,8 @@ public sealed class StubEngine
         IRequestJournal journal,
         IEnumerable<IServeEventListener> serveEventListeners,
         IEnumerable<IResponseTransformer>? responseTransformers = null,
-        IEnumerable<IPayloadDecryptor>? payloadDecryptors = null)
+        IEnumerable<IPayloadDecryptor>? payloadDecryptors = null,
+        IEnumerable<IPayloadProtector>? payloadProtectors = null)
     {
         _stubStore = stubStore;
         _renderer = renderer;
@@ -51,6 +53,7 @@ public sealed class StubEngine
         _serveEventListeners = [.. serveEventListeners];
         _responseTransformers = responseTransformers is null ? [] : [.. responseTransformers];
         _decryption = new PayloadDecryptionView(payloadDecryptors ?? []);
+        _protection = new PayloadProtectionApplier(payloadProtectors ?? []);
     }
 
     /// <summary>
@@ -96,6 +99,11 @@ public sealed class StubEngine
                     UrlPathTemplate = winner.Request.UrlPathTemplate,
                 });
             response = ApplyResponseTransformers(response, tenant, request, winner);
+
+            // Payload protection (G20b) runs LAST — after templating and after every transformer, so
+            // what gets encrypted is exactly what would otherwise have gone on the wire. The serve
+            // event records the protected response, because that IS what the client received.
+            response = _protection.For(response, winner.Response.Protect);
 
             ApplyTransition(tenant, winner);
             DispatchServeEvent(tenant, request, winner, response);

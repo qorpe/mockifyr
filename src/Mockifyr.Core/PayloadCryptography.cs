@@ -64,3 +64,63 @@ public sealed class PayloadDecryptionView(IEnumerable<IPayloadDecryptor> decrypt
         return request;
     }
 }
+
+/// <summary>
+/// A stub's declaration that its rendered response must be protected before it goes on the wire
+/// (G20b, ADR 0012). <see cref="Fields"/> names the JSON fields to encrypt individually — the
+/// envelope stays readable, which is what gateways and log pipelines need; an empty list means the
+/// WHOLE body becomes one token, the fixed-partner shape.
+/// </summary>
+public sealed record PayloadProtectDirective(string Scheme, IReadOnlyList<string> Fields);
+
+/// <summary>
+/// Encrypts (and later signs) a rendered response (G20b). Like <see cref="IPayloadDecryptor"/>, the
+/// implementation lives at the edge and holds the key; Core only knows that a scheme was declared.
+/// Returning the response unchanged is always allowed — a mock that cannot protect its body must not
+/// pretend it did.
+/// </summary>
+public interface IPayloadProtector
+{
+    /// <summary>True when this protector handles the named scheme.</summary>
+    bool Handles(string scheme);
+
+    /// <summary>
+    /// Returns the protected response. Implementations must never throw: a body that cannot be
+    /// protected (not JSON when field-level was asked for, for instance) is returned as it was, so
+    /// serving degrades visibly rather than turning into a 500.
+    /// </summary>
+    CanonicalResponse Protect(CanonicalResponse response, PayloadProtectDirective directive);
+}
+
+/// <summary>
+/// Applies whichever registered protector handles a stub's declared scheme (G20b). No protector for
+/// the scheme means the response goes out as rendered — the same honest degradation as the
+/// decryption side, and the reason a host without a key never silently ships plaintext it promised
+/// to encrypt: the operator sees the plaintext immediately.
+/// </summary>
+public sealed class PayloadProtectionApplier(IEnumerable<IPayloadProtector> protectors)
+{
+    private readonly IReadOnlyList<IPayloadProtector> _protectors = [.. protectors];
+
+    /// <summary>True when nothing is registered — the zero-cost default path.</summary>
+    public bool IsEmpty => _protectors.Count == 0;
+
+    /// <summary>The response to serve: protected when declared and handled, else as rendered.</summary>
+    public CanonicalResponse For(CanonicalResponse response, PayloadProtectDirective? directive)
+    {
+        if (directive is null || _protectors.Count == 0)
+        {
+            return response;
+        }
+
+        foreach (var protector in _protectors)
+        {
+            if (protector.Handles(directive.Scheme))
+            {
+                return protector.Protect(response, directive);
+            }
+        }
+
+        return response;
+    }
+}

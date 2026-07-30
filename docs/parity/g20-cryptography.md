@@ -55,3 +55,43 @@ them; removing *both* would be observable, and that combination is not a mutant 
 **Deferred (tracked in ADR 0012).** G20b response protection, G20c signing, G20d whole-body inbound
 decryption. Also deferred: multiple keys / key rotation, per-tenant keys, and wrapped-key JWE
 (`alg != dir`), which is explicitly refused today rather than half-supported.
+
+
+## G20b — response protection
+
+**What shipped.** A stub may declare `"protect": { "scheme": "jwe-dir-a256gcm", "fields": ["encData"] }`
+inside its `response`. Named fields are encrypted individually (the envelope stays readable — what
+gateways, routing and log pipelines need); **naming no field encrypts the whole body** as one token,
+the fixed-partner shape. The same `--decrypt-key` serves both directions: a partner that encrypts
+what it sends also decrypts what it receives, and asking for two keys per relationship would be
+ceremony without a security benefit.
+
+**Decisions worth remembering.**
+
+- **Protection runs LAST** — after templating and after every response transformer — so what gets
+  encrypted is exactly what would otherwise have gone on the wire. The wire test pins this: a
+  templated `{{jsonPath request.body …}}` value decrypts back out of the ciphertext.
+- **The serve event records the PROTECTED response**, unlike the request side which records the
+  verbatim ciphertext. Both rules follow one principle: the journal holds what actually crossed the
+  wire in each direction.
+- **A fresh nonce per token, always.** Reusing a nonce under one key voids GCM's confidentiality
+  guarantee entirely, so this is asserted directly: two protections of the same plaintext must
+  differ, and both must decrypt to it.
+- **Visible degradation over silent fallback.** Field-level protection asked for on a body that has
+  no fields (not JSON, an array, or the field simply absent) serves the response **as rendered**
+  rather than quietly switching to whole-body protection — the operator sees plaintext immediately
+  and fixes the stub. A mock that pretends it encrypted is worse than one that visibly did not.
+- **Scalar vs structured fields:** a string field is encrypted as its raw value, an object/array as
+  its JSON text — exactly what the decryption side expects to find on the way back, so the two
+  halves compose without special cases.
+
+**Validation story.** `JweResponseProtectorTests` (6 unit tests, every assertion **decrypting with
+the paired implementation**: field-level with a surviving envelope, scalar round-trip, whole-body
+token, fresh-nonce proof, the four degradation cases, scheme selection through the applier) plus
+`ResponseProtectionWireTests` (4 end-to-end tests against a real host: templated field encrypted on
+the way out, the **full round trip** — encrypted in, matched on plaintext, encrypted out, which is
+the shape a bank integration actually has — whole-body protection, and an undeclared stub still
+serving plaintext). **Stryker: 100 %.**
+
+**Deferred (tracked in ADR 0012).** G20c signing, G20d whole-body inbound decryption; plus content
+negotiation (an `application/jose` content type on protected responses) and per-field schemes.
