@@ -26,9 +26,19 @@ public sealed class JweFieldDecryptor(byte[] key) : IPayloadDecryptor
     /// <inheritdoc />
     public CanonicalRequest Decrypt(CanonicalRequest request, PayloadDecryptDirective directive)
     {
-        if (request.Body.Length == 0 || directive.Fields.Count == 0)
+        if (request.Body.Length == 0)
         {
             return request;
+        }
+
+        // Whole-body inbound decryption (G20d): no field named means the entire body IS one JWE
+        // token — the fixed-partner shape, and the mirror of what G20b produces on the way out.
+        // This is the case a byte comparison cannot express at all: a correct sender uses a fresh
+        // IV, so the bytes differ on every request even for identical plaintext.
+        if (directive.Fields.Count == 0)
+        {
+            var whole = TryDecrypt(Encoding.UTF8.GetString(request.Body).Trim());
+            return whole is null ? request : request with { Body = Encoding.UTF8.GetBytes(whole) };
         }
 
         JsonNode? root;
