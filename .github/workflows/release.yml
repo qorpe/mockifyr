@@ -37,7 +37,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            # `latest` is added automatically for a semver tag (flavor latest=auto); naming it
+            # explicitly as well produced a duplicate in the tag list.
 
       # Multi-arch via cross-compilation (the Dockerfile builds on $BUILDPLATFORM and targets
       # $TARGETARCH), so arm64 is produced without slow QEMU emulation of the SDK build.
@@ -70,11 +71,12 @@ jobs:
 
       # Keyless signing (Sigstore): the signature is bound to this repository and workflow rather
       # than to a private key we would have to store and rotate.
+      # Signed by digest, once. A cosign signature is attached to the digest regardless of which tag
+      # names it, so every tag pushed above is covered — and the previous per-tag loop interpolated a
+      # multi-line output straight into the shell, which is a syntax error the moment more than one
+      # tag exists (it did, on this step's first tagged run).
       - name: Sign the image
-        run: |
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}" || cosign sign --yes "$tag"
-          done
+        run: cosign sign --yes "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
 
       - name: Attest the SBOM
         run: cosign attest --yes --predicate mockifyr-sbom.cdx.json --type cyclonedx \
