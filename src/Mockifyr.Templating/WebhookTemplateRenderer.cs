@@ -12,7 +12,8 @@ namespace Mockifyr.Templating;
 /// </summary>
 public sealed class WebhookTemplateRenderer(IEnvironmentResolver? environments = null) : IServeEventTemplateRenderer
 {
-    private readonly IHandlebars _handlebars = HandlebarsFactory.Create();
+    // Compiled once per distinct template (#266) — a webhook body re-renders on every delivery.
+    private readonly CompiledTemplateCache _templates = CompiledTemplateCache.Create();
 
     /// <inheritdoc />
     public string Render(string template, CanonicalRequest originalRequest, TenantId tenant)
@@ -27,6 +28,6 @@ public sealed class WebhookTemplateRenderer(IEnvironmentResolver? environments =
         }
 
         var model = new Dictionary<string, object?> { ["originalRequest"] = RequestModel.Build(originalRequest) };
-        return _handlebars.Compile(template)(model);
+        return _templates.Render(template, model);
     }
 }
