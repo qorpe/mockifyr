@@ -15,16 +15,21 @@ network, no client — those are the load harness's job, and mixing them in woul
 regression under transport noise.
 
 **Machine:** Apple M5, 10 cores, 24 GB, macOS 26.5.2, .NET 10.0.101, Release, server GC.
-**Store:** 1000 stubs. **Date:** 2026-07-30 (v0.22.0 + backup/restore).
+**Store:** 1000 stubs. **Date:** 2026-07-30, after template caching (#266).
 
 | Case | Mean | Allocated | vs. baseline |
 |------|-----:|----------:|-------------:|
-| `Match` — one stub, method + path | **357 ns** | 1.14 KB | 1.0× |
-| `MatchWithJournal` — the same, journal on | **490 ns** | 1.14 KB | 1.4× |
-| `MatchJsonBody` — structural `equalToJson` | **651 ns** | 1.80 KB | 1.8× |
-| `MatchAmongManyStubs` — 1000 stubs, matching the **last** | **32.0 µs** | 94.8 KB | 90× |
-| `MatchAndRenderTemplate` — templated response | **699 µs** | 88.9 KB | 1961× |
-| `MatchAndRenderLargeBody` — 256 KiB templated body | **1.06 ms** | 2.52 MB | 2982× |
+| `Match` — one stub, method + path | **378 ns** | 1.14 KB | 1.0× |
+| `MatchWithJournal` — the same, journal on | **491 ns** | 1.14 KB | 1.3× |
+| `MatchJsonBody` — structural `equalToJson` | **686 ns** | 1.80 KB | 1.8× |
+| `MatchAndRenderTemplate` — templated response | **1.21 µs** | 4.55 KB | 3.2× |
+| `MatchAmongManyStubs` — 1000 stubs, matching the **last** | **29.1 µs** | 94.8 KB | 77× |
+| `MatchAndRenderLargeBody` — 256 KiB templated body | **262 µs** | 2.49 MB | 693× |
+
+Before template caching landed, `MatchAndRenderTemplate` was **699 µs / 88.9 KB** — the Handlebars
+template was recompiled on every request. Publishing that number is what got it fixed; the history is
+kept here because a performance document that only ever shows good numbers is not evidence of
+anything.
 
 Reproduce with `dotnet run --project bench/Mockifyr.Benchmarks -c Release -- --filter '*'`.
 
@@ -42,15 +47,17 @@ Reproduce with `dotnet run --project bench/Mockifyr.Benchmarks -c Release -- --f
   baseline. Two consequences: keep stub sets per tenant rather than piling every team's stubs into one
   tenant, and expect the 94.8 KB allocated in that case to be the dominant GC pressure on a busy host
   with a large store. Indexing candidate stubs by method and path prefix is the obvious optimization
-  and is **not** implemented — tracked in [#265](https://github.com/qorpe/mockifyr/issues/265).
-- **Templating is the dominant cost, by three orders of magnitude, and that is a defect rather than a
-  property of templating.** `TemplatingResponseRenderer` compiles the Handlebars template on **every
-  request** instead of caching the compiled delegate. 699 µs is almost entirely compilation. Tracked
-  in [#266](https://github.com/qorpe/mockifyr/issues/266); until it lands, plan for roughly
-  **1.4 k templated responses/second/core** and treat static stubs as an order-of-magnitude cheaper.
+  and is **not** implemented — tracked in [#265](https://github.com/qorpe/mockifyr/issues/265). This
+  is now the largest cost in the engine.
+- **Templating costs about 830 ns over a static match** — roughly 3× a static stub, not the 2000×
+  it was before compiled templates were cached ([#266](https://github.com/qorpe/mockifyr/issues/266)).
+  Templating is no longer a reason to reach for a static stub, and per-request helpers
+  (`randomValue`, `now`, `faker`) still run per request: the cache holds the compiled delegate, never
+  the rendered output.
 - **A large body costs about 10× its own size in allocations** (2.5 MB for 256 KiB), which lands in
   Gen2 — visible as GC pauses under sustained large-payload load. Prefer proxying or a file-backed
-  response for multi-megabyte payloads.
+  response for multi-megabyte payloads. The 262 µs is dominated by copying and rendering those bytes,
+  not by matching.
 
 ## Load tests
 
@@ -74,7 +81,7 @@ Starting points, not promises — measure with your own stubs, which is what the
 | Workload | CPU request | Memory request | Notes |
 |----------|------------:|---------------:|-------|
 | A team's static mocks (< 200 stubs, low hundreds of rps) | 100m | 256 Mi | The default Helm values |
-| A shared sandbox (1000+ stubs, templated responses) | 500m–1 | 512 Mi | Templating is CPU-bound; scale on CPU |
+| A shared sandbox (1000+ stubs, templated responses) | 500m–1 | 512 Mi | Cost here is stub-count, not templating; scale on CPU |
 | Large payloads (≥ 256 KiB bodies) | 500m | 1 Gi | Allocation, not CPU, is the constraint |
 | Load-test target | 1–2 | 512 Mi | Add `--journal-disabled`; the journal is pure overhead here |
 
@@ -101,3 +108,38 @@ throws, or allocates unboundedly shows up on the pull request that caused it rat
 release measurement. Results are uploaded as an artifact on every run.
 
 Published figures come from a full run on the machine stated above, refreshed per release.
+
+## Template compilation caching (#266)
+
+The first thing measuring found. `TemplatingResponseRenderer.RenderTemplate` was
+`_handlebars.Compile(template)(model)` — every templated response paid full Handlebars compilation, so
+a templated stub cost **1961× a static one**. `CompiledTemplateCache` caches the compiled delegate by
+template text, and the same fix applies to the webhook and WebSocket-message renderers, which had the
+same line.
+
+| | Before | After |
+|---|-------:|------:|
+| Templated response | 699 µs | **1.21 µs** |
+| Allocated | 88.9 KB | **4.55 KB** |
+
+Two things had to stay true, and both are pinned by tests:
+
+- **Compilation is cached; output is not.** `randomValue`, `now` and `faker` are helper invocations
+  *inside* the compiled delegate, so they still run per render. Caching the rendered body instead
+  would silently break every stub that relies on them — `Per_request_helpers_still_vary_between_renders`
+  is the test that would fail.
+- **The cache is bounded.** Template text is authored input, and on a shared sandbox a stub author can
+  produce unlimited distinct templates, so an unbounded dictionary keyed by them is a memory leak with
+  a trivial trigger. At the bound the cache clears rather than evicting one entry at a time: a
+  template still in use recompiles once, while an LRU would cost a bookkeeping write on every hit to
+  defend against a pathological case rather than a normal one. The bound is asserted after *every*
+  render, not once at the end — a bound that is exceeded and then happens to be back under the limit
+  when the test looks is not a bound.
+
+Rendering output is unchanged, proven by the differential suite staying green (257 tests) rather than
+by inspection.
+
+**Stryker: 4/5 killed.** The survivor is the cache-hit fast path itself — removing it leaves behaviour
+identical and only makes everything slower, so no unit test can see it. It is an equivalent mutant
+*for correctness* and precisely the thing the benchmark exists to catch: with the branch gone,
+`MatchAndRenderTemplate` returns to ~699 µs, which the CI benchmark job would show.

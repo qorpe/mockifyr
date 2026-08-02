@@ -1,5 +1,3 @@
-using HandlebarsDotNet;
-
 namespace Mockifyr.Templating;
 
 /// <summary>
@@ -9,7 +7,8 @@ namespace Mockifyr.Templating;
 /// </summary>
 public sealed class MessageTemplateRenderer
 {
-    private readonly IHandlebars _handlebars = HandlebarsFactory.Create();
+    // Compiled once per distinct template (#266) — a message action re-renders per message.
+    private readonly CompiledTemplateCache _templates = CompiledTemplateCache.Create();
 
     /// <summary>Renders <paramref name="template"/> with the inbound message body in scope.</summary>
     public string Render(string template, string messageBody)
@@ -19,6 +18,6 @@ public sealed class MessageTemplateRenderer
             ["message"] = new Dictionary<string, object?> { ["body"] = messageBody },
         };
 
-        return _handlebars.Compile(template)(model);
+        return _templates.Render(template, model);
     }
 }

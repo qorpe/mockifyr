@@ -26,6 +26,7 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
 
     // TextEncoder = null disables HTML escaping so output is emitted raw (non-escaping).
     private readonly IHandlebars _handlebars;
+    private readonly CompiledTemplateCache _templates;
     private readonly bool _globalTemplating;
     private readonly IEnvironmentResolver? _environments;
 
@@ -50,6 +51,7 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         ResourceOptions? resourceOptions = null)
     {
         _handlebars = HandlebarsFactory.Create(extraHelpers);
+        _templates = new CompiledTemplateCache(_handlebars);
         _globalTemplating = globalTemplating;
         _environments = environments;
         _resources = resources;
@@ -181,7 +183,9 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         return definition with { Body = body, Headers = headers, Proxy = proxy };
     }
 
-    private string RenderTemplate(string template, object model) => _handlebars.Compile(template)(model);
+    // Compiled once per distinct template (#266). Per-request helpers (randomValue, now, faker)
+    // live inside the compiled delegate, so they still run — and still vary — on every render.
+    private string RenderTemplate(string template, object model) => _templates.Render(template, model);
 
     private static Dictionary<string, object?> BuildModel(RenderContext context) =>
         new() { ["request"] = RequestModel.Build(context.Request, context.UrlPathTemplate) };
