@@ -10,6 +10,18 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Released
 
+### [v0.25.0](https://github.com/qorpe/mockifyr/releases/tag/v0.25.0) — 2026-08-02
+
+Matching stops caring how many stubs you have.
+
+#### Changed
+
+- Stubs are indexed by method and path, so matching no longer evaluates every stub in the tenant.
+  Finding the last of 1000 went from **29.1 µs / 94.8 KB to 392 ns / 1.33 KB** — the same cost as
+  matching a single stub. Behaviour is unchanged, proven by the differential suite. Stubs whose URL
+  is a pattern rather than a literal path are still evaluated on every request. (#265)
+- `/__admin/health` reports the running build's version instead of a hard-coded `"1.0"`. (#265)
+
 ### [v0.24.0](https://github.com/qorpe/mockifyr/releases/tag/v0.24.0) — 2026-08-02
 
 Key rotation without a restart, and the last of the enterprise-readiness track.
