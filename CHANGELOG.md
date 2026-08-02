@@ -10,6 +10,24 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Released
 
+### [v0.24.0](https://github.com/qorpe/mockifyr/releases/tag/v0.24.0) — 2026-08-02
+
+Key rotation without a restart, and the last of the enterprise-readiness track.
+
+#### Added
+
+- Key files: `--decrypt-key-file`, `--sign-key-file` and `--admin-pass-file` read secrets from disk
+  instead of the command line. A key file holds a ring — new payloads use the newest key while every
+  key in the file is still accepted — so a rollover is add, drain, remove with no restart at any
+  step. `/__admin/health` reports how many keys are active per capability. (#250)
+- `cryptography.mountAsFiles` in the Helm chart: the Secret is mounted read-only and no key reaches
+  the container's arguments or environment. (#250)
+
+#### Changed
+
+- `VERSIONING.md` now records what is **deliberately deferred**, starting with OIDC login for the
+  dashboard (#251) — deferred past 1.0, with the reasoning and the practical alternative.
+
 ### [v0.23.0](https://github.com/qorpe/mockifyr/releases/tag/v0.23.0) — 2026-08-02
 
 Operations release: the admin audit trail, tenant backup and restore, a published performance
