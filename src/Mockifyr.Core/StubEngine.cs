@@ -69,7 +69,10 @@ public sealed class StubEngine
     public StubResolution Handle(TenantId tenant, CanonicalRequest request)
     {
         var input = new MatchInput { Request = request };
-        var stubs = _stubStore.GetStubs(tenant); // ISOLATION: only this tenant's stubs are visible.
+        // ISOLATION: only this tenant's stubs are visible. The store may narrow these to the ones that
+        // could match (#265); it never decides the match, and a store without an index returns
+        // everything, so behaviour is identical either way.
+        var stubs = _stubStore.GetCandidates(tenant, request);
 
         var scored = new List<(StubMapping Stub, MatchResult Result, int Index)>(stubs.Count);
         for (var i = 0; i < stubs.Count; i++)
@@ -129,11 +132,12 @@ public sealed class StubEngine
             return new StubResolution { Matched = true, Response = response, MatchedStub = winner, NearMisses = [] };
         }
 
-        var nearMisses = scored
-            .OrderBy(x => x.Result.Distance)
-            .Take(3)
-            .Select(x => new NearMiss(x.Stub, x.Result.Distance))
-            .ToList();
+        // Nothing matched, so this is the diagnostic path — and the near-miss answer must be the
+        // closest stubs in the WHOLE tenant, not merely the closest among the candidates the index
+        // offered. A request that hit no bucket would otherwise report no near misses at all, which
+        // is precisely when an operator most needs them. The full scan costs what matching always
+        // cost; it just no longer happens on the path that succeeds.
+        var nearMisses = FindNearMisses(tenant, request);
 
         DispatchServeEvent(tenant, request, matchedStub: null, response: null);
 

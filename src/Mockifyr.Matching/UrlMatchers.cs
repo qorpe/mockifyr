@@ -23,9 +23,16 @@ public sealed class UrlEqualToMatcher(string expected) : IMatcher
 /// Matches the request path (ignoring the query string) for exact equality.
 /// Maps from the imported JSON <c>request.urlPath</c> field.
 /// </summary>
-public sealed class UrlPathEqualToMatcher(string expected) : IMatcher
+public sealed class UrlPathEqualToMatcher(string expected) : IMatcher, IExactValueMatcher
 {
     private readonly string _expected = expected;
+
+    /// <summary>
+    /// The path this matcher pins, for the engine's index (#265). Note that
+    /// <see cref="UrlEqualToMatcher"/> deliberately does NOT implement this: it pins path plus query
+    /// string, which the index's path-based key cannot reproduce.
+    /// </summary>
+    public string? ExactValue => _expected;
 
     /// <inheritdoc />
     public MatchResult Match(MatchInput input) =>

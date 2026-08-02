@@ -273,9 +273,10 @@ defer, recorded rather than silent. The measured performance
 envelope and sizing guidance are in `docs/parity/performance.md`, with the harnesses in `bench/`
 (BenchmarkDotNet for the engine, k6 for the transport); measuring immediately paid for itself: #266 (templates
 were recompiled on every request) is fixed — a templated response went from 699 µs to 1.21 µs — and
-#265 (matching is a linear scan over the tenant's stubs) is filed with measured evidence. Backup and restore
+#265 is fixed too — candidate indexing took matching the last of 1000 stubs from 29.1 µs / 94.8 KB to
+392 ns / 1.33 KB, with the differential suite proving the semantics did not move. Backup and restore
 (#252) and the policy documents (#248 — `CHANGELOG.md`, `VERSIONING.md`, `SUPPORT.md`,
 `CONTRIBUTING.md`) are done.
 
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 747 tests green across the four suites.
+(0 warnings); 760 tests green across the four suites.

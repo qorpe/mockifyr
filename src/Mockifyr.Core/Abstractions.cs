@@ -22,6 +22,19 @@ public interface IStubStore
 
     /// <summary>Removes a stub from a tenant.</summary>
     void Remove(TenantId tenant, Guid id);
+
+    /// <summary>
+    /// The stubs that could match <paramref name="request"/>, in store order (#265). A store may
+    /// narrow the field with an index; the caller still evaluates every candidate, so narrowing is an
+    /// optimization and never a decision.
+    /// </summary>
+    /// <remarks>
+    /// Defaulted to "everything", so a store that has no index — or a custom one written before this
+    /// existed — keeps working unchanged and simply gains nothing. A candidate set must always be a
+    /// superset of the stubs that can match: dropping one would silently change behaviour, which is
+    /// why the default is the safe answer rather than an error.
+    /// </remarks>
+    IReadOnlyList<StubMapping> GetCandidates(TenantId tenant, CanonicalRequest request) => GetStubs(tenant);
 }
 
 /// <summary>

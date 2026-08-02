@@ -13,6 +13,11 @@ public sealed class InMemoryStubStore : IStubStore
     private readonly ConcurrentDictionary<TenantId, List<StubMapping>> _byTenant = new();
     private readonly Lock _gate = new();
 
+    // Per-tenant match index (#265), rebuilt lazily after a mutation. Invalidated by dropping the
+    // entry inside the same lock every mutation already takes, so a stale index cannot outlive the
+    // change that made it stale.
+    private readonly Dictionary<TenantId, StubIndex> _indexes = [];
+
     /// <inheritdoc />
     public IReadOnlyList<StubMapping> GetStubs(TenantId tenant)
     {
@@ -36,10 +41,30 @@ public sealed class InMemoryStubStore : IStubStore
     }
 
     /// <inheritdoc />
+    public IReadOnlyList<StubMapping> GetCandidates(TenantId tenant, CanonicalRequest request)
+    {
+        lock (_gate)
+        {
+            if (!_byTenant.TryGetValue(tenant, out var stubs) || stubs.Count == 0)
+            {
+                return [];
+            }
+
+            if (!_indexes.TryGetValue(tenant, out var index))
+            {
+                _indexes[tenant] = index = new StubIndex(stubs);
+            }
+
+            return index.Candidates(request);
+        }
+    }
+
+    /// <inheritdoc />
     public void Put(StubMapping stub)
     {
         lock (_gate)
         {
+            _indexes.Remove(stub.TenantId);
             var stubs = _byTenant.GetOrAdd(stub.TenantId, static _ => []);
             var existing = stubs.FindIndex(s => s.Id == stub.Id);
             if (existing >= 0)
@@ -58,6 +83,7 @@ public sealed class InMemoryStubStore : IStubStore
     {
         lock (_gate)
         {
+            _indexes.Remove(tenant);
             if (_byTenant.TryGetValue(tenant, out var stubs))
             {
                 stubs.RemoveAll(s => s.Id == id);
