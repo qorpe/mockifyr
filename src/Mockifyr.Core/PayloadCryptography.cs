@@ -216,3 +216,24 @@ public sealed class ResponseSigningApplier(IEnumerable<IResponseSigner> signers)
         return response;
     }
 }
+
+/// <summary>
+/// How many keys are currently active per cryptographic capability (#250), for diagnostics.
+/// </summary>
+/// <remarks>
+/// Counts only — key material never crosses this seam, and Core has no idea what a key looks like.
+/// Read through delegates rather than captured as numbers, because with a file-backed key source the
+/// answer changes while the host runs, and a stale count during a rollover would be worse than no
+/// count at all: an operator would conclude the new key had not been picked up.
+/// </remarks>
+public sealed class ActiveKeyReport(Func<int> decryptKeys, Func<int> signKeys)
+{
+    /// <summary>A report for a host with no keys at all.</summary>
+    public static readonly ActiveKeyReport None = new(static () => 0, static () => 0);
+
+    /// <summary>Keys currently accepted for payload decryption and response protection.</summary>
+    public int ActiveDecryptKeys => decryptKeys();
+
+    /// <summary>Keys currently accepted for signature verification and response signing.</summary>
+    public int ActiveSignKeys => signKeys();
+}

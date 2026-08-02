@@ -144,7 +144,8 @@ public static class AdminEndpoints
             IEnumerable<IPayloadProtector> protectors,
             IEnumerable<ISignatureVerifier> verifiers,
             IEnumerable<IResponseSigner> signers,
-            IAuditLog auditLog) =>
+            IAuditLog auditLog,
+            ActiveKeyReport keys) =>
         {
             var tenants = store.GetTenants();
             return Results.Json(new
@@ -164,6 +165,12 @@ public static class AdminEndpoints
                     responseProtection = protectors.Any(),
                     signatureVerification = verifiers.Any(),
                     responseSigning = signers.Any(),
+                    // How many keys are currently active per capability (#250) — never the keys
+                    // themselves. During a rollover this is how an operator confirms the new key
+                    // was picked up without restarting anything, and it is what turns "rotate and
+                    // hope" into "rotate and check".
+                    decryptKeys = keys.ActiveDecryptKeys,
+                    signKeys = keys.ActiveSignKeys,
                 },
                 // Whether this host records administrative changes (#247). An empty trail is
                 // ambiguous on its own — "nothing has changed" and "nobody is recording" look

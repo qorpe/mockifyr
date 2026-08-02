@@ -51,6 +51,13 @@ cryptography:
   decryptKey: ""
   signKey: ""
   existingSecret: ""       # a Secret with keys: decrypt-key, sign-key
+  # Mount the Secret as files and point the host at them instead of passing keys as arguments (#250).
+  # This is what makes rotation work without a restart: updating the Secret rewrites the mounted
+  # file, the host re-reads it, and no key ever appears in the pod's command line. A mounted key
+  # file may hold several keys, newest first, so a rollover is "add the new key, drain, remove the
+  # old" rather than a coordinated restart.
+  mountAsFiles: false
+  reloadSeconds: 10        # how often a mounted key file is re-read
 
 # Retention bounds — the defaults match the host's own.
 limits:

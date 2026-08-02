@@ -11,8 +11,13 @@ namespace Mockifyr.Crypto;
 /// library round-trips against this mock without special-casing anything. Two shapes, chosen by the
 /// stub: named fields (readable envelope, the common case) or the whole body as one token.
 /// </summary>
-public sealed class JweResponseProtector(byte[] key) : IPayloadProtector
+public sealed class JweResponseProtector(IKeySource keys) : IPayloadProtector
 {
+    /// <summary>The single-key form an inline <c>--decrypt-key</c> produces.</summary>
+    public JweResponseProtector(byte[] key) : this(new StaticKeySource(key))
+    {
+    }
+
     /// <summary>The scheme name a stub declares to select this protector.</summary>
     public const string SchemeName = JweFieldDecryptor.SchemeName;
 
@@ -78,7 +83,12 @@ public sealed class JweResponseProtector(byte[] key) : IPayloadProtector
     /// <summary>Builds one JWE compact token per RFC 7516 §5.1, with a fresh nonce every time.</summary>
     private string Encrypt(string plaintext)
     {
-        var header = Base64Url(Encoding.UTF8.GetBytes(ProtectedHeader));
+        // Produced with the newest key (#250); every key in the ring still DEcrypts. That asymmetry
+        // is what lets a rollover be "add the new key, drain, remove the old" instead of a flag day.
+        var primary = keys.Current.Primary
+            ?? throw new InvalidOperationException("No key is active for response protection.");
+        var key = primary.Material;
+        var header = Base64Url(Encoding.UTF8.GetBytes(HeaderFor(primary)));
         // A fresh 96-bit nonce per token: reusing one under the same key would destroy the
         // confidentiality guarantee of GCM entirely.
         var nonce = RandomNumberGenerator.GetBytes(12);
@@ -89,6 +99,16 @@ public sealed class JweResponseProtector(byte[] key) : IPayloadProtector
         aes.Encrypt(nonce, body, ciphertext, tag, Encoding.ASCII.GetBytes(header));
         return $"{header}..{Base64Url(nonce)}.{Base64Url(ciphertext)}.{Base64Url(tag)}";
     }
+
+    /// <summary>
+    /// The protected header, carrying <c>kid</c> only when the operator named the key. An unnamed
+    /// key produces exactly the header it always did, so a host that never adopted key files emits
+    /// byte-identical tokens to before rotation existed.
+    /// </summary>
+    private static string HeaderFor(CryptoKey key) =>
+        key.Id is { Length: > 0 } id
+            ? "{\"alg\":\"dir\",\"enc\":\"A256GCM\",\"kid\":" + System.Text.Json.JsonSerializer.Serialize(id) + "}"
+            : ProtectedHeader;
 
     private static string Base64Url(byte[] value) =>
         Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');

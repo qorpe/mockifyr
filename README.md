@@ -128,6 +128,9 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--audit` | record every administrative change at `/__admin/audit` — principal, tenant, action, target, outcome — and emit each as an `admin.audit` log line |
 | `--audit-limit <n>` | per-tenant audit-trail bound (default 1000, oldest evicted first; `<=0` = unbounded) |
 | `--sign-key <base64>` | 256-bit secret enabling signing: a stub's `"signature"` block requires a validly signed request (unsigned → non-match), and its `"sign"` block adds `Digest` + HMAC headers to the response |
+| `--decrypt-key-file <path>` · `--sign-key-file <path>` | read keys from a file instead of the command line — one key per line, newest first, optionally `id: base64`. Re-read on change, so **rotation needs no restart**: new tokens use the newest key while every key in the file still decrypts and verifies |
+| `--key-reload-seconds <n>` | how often a key file is re-read (default 10) |
+| `--admin-pass-file <path>` | read the admin password from a file, keeping it out of the process listing |
 | `--mask-headers <names>` | keep named header values out of the journal entirely (comma-separated, case-insensitive) — e.g. `Authorization,Cookie,X-Api-Key` |
 | `--mask-body-fields <names>` | keep named JSON body fields out of the journal (any depth, arrays included) — e.g. `pan,cvv,password` |
 | `--journal-limit <n>` | per-tenant request-journal bound (default 1000, oldest evicted first; `<=0` = unbounded). `--max-request-journal-entries` is a kept alias |

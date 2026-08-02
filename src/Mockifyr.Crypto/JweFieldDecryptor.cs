@@ -1,4 +1,3 @@
-using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -12,8 +11,13 @@ namespace Mockifyr.Crypto;
 /// fields of an otherwise readable envelope are protected. Lives at the edge: it holds the key,
 /// Core never does. No external dependency — <c>AesGcm</c> is BCL.
 /// </summary>
-public sealed class JweFieldDecryptor(byte[] key) : IPayloadDecryptor
+public sealed class JweFieldDecryptor(IKeySource keys) : IPayloadDecryptor
 {
+    /// <summary>The single-key form an inline <c>--decrypt-key</c> produces.</summary>
+    public JweFieldDecryptor(byte[] key) : this(new StaticKeySource(key))
+    {
+    }
+
     /// <summary>The scheme name a stub declares to select this decryptor.</summary>
     public const string SchemeName = "jwe-dir-a256gcm";
 
@@ -105,6 +109,24 @@ public sealed class JweFieldDecryptor(byte[] key) : IPayloadDecryptor
             return null;
         }
 
+        // Every active key is tried, newest first (#250). A token encrypted with the key that is on
+        // its way out still reads during a rollover, which is what makes rotation an "add now,
+        // remove later" operation rather than a coordinated restart. Trying a wrong key is not a
+        // guess: AES-GCM's authentication tag fails, so only the key that actually encrypted the
+        // token can produce plaintext.
+        foreach (var candidate in keys.Current.Keys)
+        {
+            if (TryDecryptWith(candidate.Material, parts) is { } plaintext)
+            {
+                return plaintext;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryDecryptWith(byte[] key, string[] parts)
+    {
         try
         {
             // dir: the second part (encrypted key) is empty — the key is shared, not wrapped.
@@ -145,21 +167,9 @@ public sealed class JweFieldDecryptor(byte[] key) : IPayloadDecryptor
     }
 
     /// <summary>
-    /// Reads a 256-bit key from base64 or base64url. Returns null when the value is not a usable
-    /// key, so the host can refuse to start with a clear message rather than silently never
-    /// decrypting anything.
+    /// Reads a 256-bit key from base64 or base64url, or null when the value is not one — kept here
+    /// as the name the host already calls; the parsing itself lives with the key ring (#250) so
+    /// there is one definition of what a key is.
     /// </summary>
-    public static byte[]? ReadKey(string? configured)
-    {
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            return null;
-        }
-
-        var normalized = configured.Trim().Replace('-', '+').Replace('_', '/');
-        normalized += (normalized.Length % 4) switch { 2 => "==", 3 => "=", _ => string.Empty };
-        return Base64.IsValid(normalized) && Convert.TryFromBase64String(normalized, new byte[32], out var written) && written == 32
-            ? Convert.FromBase64String(normalized)
-            : null;
-    }
+    public static byte[]? ReadKey(string? configured) => KeyRing.ReadKey(configured);
 }
