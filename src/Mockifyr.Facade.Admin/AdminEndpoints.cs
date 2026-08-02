@@ -151,7 +151,10 @@ public static class AdminEndpoints
             return Results.Json(new
             {
                 name = "Mockifyr",
-                version = "1.0",
+                // The assembly's informational version, so an operator reading health knows which
+                // build answered. It used to be hard-coded "1.0" — harmless while the product was
+                // 0.x and actively misleading the moment it is not.
+                version = MockifyrVersion.Current,
                 persistence = persistence.ProviderName,
                 tenants = tenants.Count,
                 totalStubs = tenants.Sum(t => store.GetStubs(t).Count),

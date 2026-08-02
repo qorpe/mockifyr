@@ -15,16 +15,16 @@ network, no client — those are the load harness's job, and mixing them in woul
 regression under transport noise.
 
 **Machine:** Apple M5, 10 cores, 24 GB, macOS 26.5.2, .NET 10.0.101, Release, server GC.
-**Store:** 1000 stubs. **Date:** 2026-07-30, after template caching (#266).
+**Store:** 1000 stubs. **Date:** 2026-08-02, after template caching (#266) and stub indexing (#265).
 
 | Case | Mean | Allocated | vs. baseline |
 |------|-----:|----------:|-------------:|
-| `Match` — one stub, method + path | **378 ns** | 1.14 KB | 1.0× |
-| `MatchWithJournal` — the same, journal on | **491 ns** | 1.14 KB | 1.3× |
-| `MatchJsonBody` — structural `equalToJson` | **686 ns** | 1.80 KB | 1.8× |
-| `MatchAndRenderTemplate` — templated response | **1.21 µs** | 4.55 KB | 3.2× |
-| `MatchAmongManyStubs` — 1000 stubs, matching the **last** | **29.1 µs** | 94.8 KB | 77× |
-| `MatchAndRenderLargeBody` — 256 KiB templated body | **262 µs** | 2.49 MB | 693× |
+| `Match` — one stub, method + path | **385 ns** | 1.32 KB | 1.0× |
+| `MatchAmongManyStubs` — 1000 stubs, matching the **last** | **392 ns** | 1.33 KB | 1.0× |
+| `MatchWithJournal` — one stub, journal on | **520 ns** | 1.32 KB | 1.4× |
+| `MatchJsonBody` — structural `equalToJson` | **678 ns** | 1.98 KB | 1.8× |
+| `MatchAndRenderTemplate` — templated response | **1.15 µs** | 4.73 KB | 3.0× |
+| `MatchAndRenderLargeBody` — 256 KiB templated body | **274 µs** | 2.49 MB | 711× |
 
 Before template caching landed, `MatchAndRenderTemplate` was **699 µs / 88.9 KB** — the Handlebars
 template was recompiled on every request. Publishing that number is what got it fixed; the history is
@@ -42,13 +42,17 @@ Reproduce with `dotnet run --project bench/Mockifyr.Benchmarks -c Release -- --f
   in a load test, and rarely worth it otherwise.
 - **Structural JSON matching costs about 300 ns over a plain match.** Parsing a small body is not the
   expensive part of anything.
-- **Matching scales linearly with stub count.** The 32 µs figure is the honest worst case: the request
-  matches the *last* of 1000 stubs, so every one is evaluated. A first-hit request is back at the
-  baseline. Two consequences: keep stub sets per tenant rather than piling every team's stubs into one
-  tenant, and expect the 94.8 KB allocated in that case to be the dominant GC pressure on a busy host
-  with a large store. Indexing candidate stubs by method and path prefix is the obvious optimization
-  and is **not** implemented — tracked in [#265](https://github.com/qorpe/mockifyr/issues/265). This
-  is now the largest cost in the engine.
+- **Matching no longer scales with stub count.** Finding the last of 1000 stubs costs **392 ns** —
+  the same as matching a single one — where before stub indexing ([#265](https://github.com/qorpe/mockifyr/issues/265))
+  it cost 29.1 µs and allocated 94.8 KB. A store of 1000 stubs and a store of one now behave the same
+  for an exactly-addressed request.
+
+  The index buckets stubs by method and literal path; a stub whose URL is a regex, a URI template or a
+  full URL with a query string is offered for **every** request, so narrowing can never hide a stub
+  that could match. The cost of that safety is visible in the baseline: `Match` went from 378 ns /
+  1.14 KB to 385 ns / 1.32 KB — about 2 % slower and 180 bytes heavier on the single-stub case, in
+  exchange for 74× on the case that actually hurt. An unmatched request still scans the whole store,
+  because near-miss diagnostics must consider every stub, not only the ones the index offered.
 - **Templating costs about 830 ns over a static match** — roughly 3× a static stub, not the 2000×
   it was before compiled templates were cached ([#266](https://github.com/qorpe/mockifyr/issues/266)).
   Templating is no longer a reason to reach for a static stub, and per-request helpers
@@ -81,7 +85,7 @@ Starting points, not promises — measure with your own stubs, which is what the
 | Workload | CPU request | Memory request | Notes |
 |----------|------------:|---------------:|-------|
 | A team's static mocks (< 200 stubs, low hundreds of rps) | 100m | 256 Mi | The default Helm values |
-| A shared sandbox (1000+ stubs, templated responses) | 500m–1 | 512 Mi | Cost here is stub-count, not templating; scale on CPU |
+| A shared sandbox (1000+ stubs, templated responses) | 500m–1 | 512 Mi | Neither stub count nor templating dominates any more; scale on request rate |
 | Large payloads (≥ 256 KiB bodies) | 500m | 1 Gi | Allocation, not CPU, is the constraint |
 | Load-test target | 1–2 | 512 Mi | Add `--journal-disabled`; the journal is pure overhead here |
 
@@ -93,8 +97,9 @@ Memory floors to keep in mind, all bounded by design:
 - The **message inbox** (`--message-limit`) and **sandbox collections** (`--resource-limit`) are
   bounded the same way, per tenant and per collection.
 - The **audit trail** (`--audit-limit`) holds small entries; 1000 of them is negligible.
-- **Stubs themselves** are small, but a store of 10 000 is ~10× the per-request matching work in the
-  worst case above.
+- **Stubs themselves** are small, and since #265 a large store no longer costs more per matched
+  request. Stubs whose URL is a pattern rather than a literal path are still evaluated on every
+  request, so a set that is mostly regexes behaves like the old linear scan.
 
 Scale **out**, not up: Mockifyr is stateless apart from its stores, so with a shared persistence
 backend (Postgres or Redis) several replicas serve the same tenants. With in-memory or file-based
@@ -143,3 +148,44 @@ by inspection.
 identical and only makes everything slower, so no unit test can see it. It is an equivalent mutant
 *for correctness* and precisely the thing the benchmark exists to catch: with the branch gone,
 `MatchAndRenderTemplate` returns to ~699 µs, which the CI benchmark job would show.
+
+## Candidate indexing (#265)
+
+The second thing measuring found, and the larger one after templates: matching evaluated **every** stub
+in the tenant. The last of 1000 cost 29.1 µs and allocated 94.8 KB — O(stubs) in both time and
+garbage.
+
+`StubIndex` buckets stubs by HTTP method and literal path. `InMemoryStubStore` caches one index per
+tenant and drops it inside the same lock every mutation already takes, so a stale index cannot outlive
+the change that invalidated it.
+
+| | Before | After |
+|---|-------:|------:|
+| Match the last of 1000 stubs | 29.1 µs | **392 ns** |
+| Allocated | 94.8 KB | **1.33 KB** |
+
+The design constraint was never speed; it was that narrowing must not change which stub wins:
+
+- **Conservative by construction.** A stub is bucketed only when its method *and* path matchers pin
+  exact values, declared by the matchers themselves through `IExactValueMatcher`. Everything else —
+  regex, `urlPathPattern`, URI templates, `ANY` method, a stub with no URL matcher — goes in a bucket
+  consulted on every request. A matcher that forgets to implement the interface costs performance,
+  never correctness.
+- **`url` equality is deliberately NOT indexable**, though `urlPath` equality is. A full-URL matcher
+  pins path *plus query*, which a path-keyed lookup cannot reproduce; keying both the same way would
+  bucket `/orders?status=new` where a request for `/orders` never looks. That is the exact class of
+  bug an index introduces if it is careless, so it has its own test.
+- **Store order is preserved**, because the engine breaks priority ties by insertion order. Returning
+  candidates in a different order would silently change which stub wins.
+- **A miss still scans everything.** Near-miss diagnostics must rank the closest stubs in the whole
+  tenant; ranking only the indexed candidates would report *no* near misses for a request that hit no
+  bucket — precisely when an operator needs them most. The full scan costs what matching always cost,
+  it simply no longer happens on the path that succeeds.
+
+The proof that semantics did not move is the differential suite: 264 oracle-backed tests, unchanged.
+Plus 13 unit tests covering each pattern shape, tenant isolation, index invalidation, and the ordering
+the tie-break depends on.
+
+**Stryker: 8/9.** The survivor is the "no un-indexable stubs" fast path — removing it falls through to
+the general sort and produces the same candidates, so no unit test can see it. Equivalent for
+correctness, and held in place by this benchmark instead.
