@@ -8,6 +8,13 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+## Released
+
+### [v0.23.0](https://github.com/qorpe/mockifyr/releases/tag/v0.23.0) — 2026-08-02
+
+Operations release: the admin audit trail, tenant backup and restore, a published performance
+envelope, and the template-recompilation fix the benchmarks found.
+
 ### Added
 
 - Backup and restore for a whole tenant: `GET /__admin/backup` produces one archive of stubs,
@@ -25,9 +32,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   container scanning. (#244, #245)
 - This changelog, plus [VERSIONING.md](VERSIONING.md), [SUPPORT.md](SUPPORT.md) and
   [CONTRIBUTING.md](CONTRIBUTING.md). (#248)
+- A published performance envelope and sizing guidance, with a BenchmarkDotNet project for the
+  engine and a k6 harness for the HTTP facade. A short benchmark run now guards every pull
+  request. (#249)
+
+### Fixed
+
+- Templated responses recompiled their Handlebars template on **every request**. Compiled templates
+  are now cached, taking a templated response from 699 µs to 1.21 µs — the defect the new benchmarks
+  found on their first run. (#266)
 
 
-## Released
 
 ### [v0.22.0](https://github.com/qorpe/mockifyr/releases/tag/v0.22.0) — 2026-07-30
 
