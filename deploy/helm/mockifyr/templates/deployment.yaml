@@ -45,6 +45,18 @@ spec:
             - {{ .Values.limits.messages | quote }}
             - --resource-limit
             - {{ .Values.limits.resources | quote }}
+            {{- if .Values.cryptography.mountAsFiles }}
+            {{- if or .Values.cryptography.decryptKey .Values.cryptography.existingSecret }}
+            - --decrypt-key-file
+            - /keys/decrypt-key
+            {{- end }}
+            {{- if or .Values.cryptography.signKey .Values.cryptography.existingSecret }}
+            - --sign-key-file
+            - /keys/sign-key
+            {{- end }}
+            - --key-reload-seconds
+            - {{ .Values.cryptography.reloadSeconds | quote }}
+            {{- else }}
             {{- if or .Values.cryptography.decryptKey .Values.cryptography.existingSecret }}
             - --decrypt-key
             - $(MOCKIFYR_DECRYPT_KEY)
@@ -52,6 +64,7 @@ spec:
             {{- if or .Values.cryptography.signKey .Values.cryptography.existingSecret }}
             - --sign-key
             - $(MOCKIFYR_SIGN_KEY)
+            {{- end }}
             {{- end }}
             {{- if .Values.metrics.enabled }}
             - --metrics
@@ -87,14 +100,14 @@ spec:
                   name: {{ include "mockifyr.adminSecretName" . }}
                   key: admin-pass
             {{- end }}
-            {{- if or .Values.cryptography.decryptKey .Values.cryptography.existingSecret }}
+            {{- if and (not .Values.cryptography.mountAsFiles) (or .Values.cryptography.decryptKey .Values.cryptography.existingSecret) }}
             - name: MOCKIFYR_DECRYPT_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "mockifyr.cryptoSecretName" . }}
                   key: decrypt-key
             {{- end }}
-            {{- if or .Values.cryptography.signKey .Values.cryptography.existingSecret }}
+            {{- if and (not .Values.cryptography.mountAsFiles) (or .Values.cryptography.signKey .Values.cryptography.existingSecret) }}
             - name: MOCKIFYR_SIGN_KEY
               valueFrom:
                 secretKeyRef:
@@ -122,7 +135,20 @@ spec:
           volumeMounts:
             - name: work
               mountPath: /work
+            {{- if .Values.cryptography.mountAsFiles }}
+            # Read-only: the host only ever reads keys, and a writable mount would let a compromised
+            # process rewrite the ring it is checked against.
+            - name: keys
+              mountPath: /keys
+              readOnly: true
+            {{- end }}
       volumes:
+        {{- if .Values.cryptography.mountAsFiles }}
+        - name: keys
+          secret:
+            secretName: {{ include "mockifyr.cryptoSecretName" . }}
+            defaultMode: 0400
+        {{- end }}
         - name: work
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:

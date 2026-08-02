@@ -44,6 +44,8 @@ public static class MockifyrServiceCollectionExtensions
         // registration. Registered here rather than only in the host so every composition that maps
         // the admin API — including tests — resolves a working log.
         services.AddSingleton<IAuditLog, NullAuditLog>();
+        // No keys unless the host configures some (#250); MockifyrHost replaces this when it does.
+        services.AddSingleton(ActiveKeyReport.None);
 
         // Captured messages (G18a, ADR 0009): the tenant-scoped, bounded inbox behind /__admin/messages.
         // Facades (SMTP, SMS profiles) write through IMessageSink; behavior decorates the sink, not them.

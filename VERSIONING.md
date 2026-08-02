@@ -81,6 +81,31 @@ tag. Two habits make it uneventful:
 Downgrading is supported through the same backup: the archive format carries a version number, and a
 host refuses an archive written by a newer Mockifyr rather than guessing at its contents.
 
+## Deliberately deferred
+
+Things a reader might reasonably expect and will not find, stated here rather than left to be
+discovered:
+
+### Single sign-on (OIDC) for the dashboard — deferred past 1.0
+
+The dashboard authenticates with HTTP Basic, and the admin API with Basic or per-tenant credentials
+(`--tenant-credential`). There is **no OIDC login and no role mapping**, and there will not be in the
+1.x line unless it is added as a minor release.
+
+The reasoning, so you can judge it rather than take it: Mockifyr holds no production data — it holds
+stubs, captured test traffic and sandbox fixtures. The controls that matter for that are the ones
+already shipped: authentication on the admin surface, per-tenant authorization so one team's
+credential cannot address another's tenant, an audit trail of every change, and key material that
+never reaches a process listing. Adding OIDC would change the dashboard's auth model, the admin API's
+principal model and the audit trail's principal labels at once — a large change whose value is
+organisational (one login, central deprovisioning) rather than a gap in what the product protects.
+
+If central identity is a hard requirement for you, the practical answer today is to put the admin
+surface behind your ingress' own authentication (OAuth2 Proxy, an API gateway, or a service mesh) and
+keep `--admin-user` for machine access. Tracked as
+[#251](https://github.com/qorpe/mockifyr/issues/251); say so on that issue if you need it, because
+demand is what will move it.
+
 ## Supported versions
 
 Mockifyr is developed in the open by a small team. The honest support statement is in

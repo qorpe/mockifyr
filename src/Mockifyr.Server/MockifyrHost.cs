@@ -31,6 +31,94 @@ namespace Mockifyr.Server;
 public static class MockifyrHost
 {
     /// <summary>
+    /// Resolves a cryptographic key source from an inline value or a file (#250).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The file wins when both are given, because reaching for a file is the deliberate act: an
+    /// inline value is usually a leftover from a laptop run, and silently preferring it over a
+    /// mounted Secret would be the wrong surprise.
+    /// </para>
+    /// <para>
+    /// A file source re-reads on change, so rotation needs no restart. An inline value cannot, which
+    /// the startup line says out loud rather than leaving an operator to discover it during a
+    /// rollover. Anything misconfigured turns the capability OFF with a message — never half on,
+    /// which would mean stubs that mysteriously stop matching.
+    /// </para>
+    /// </remarks>
+    private static Crypto.IKeySource? ResolveKeySource(string? inline, string? path, string flag, TimeSpan? reload = null)
+    {
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"mockifyr: {flag}-file '{path}' does not exist — that capability is OFF.");
+                return null;
+            }
+
+            try
+            {
+                var source = new Crypto.FileKeySource(path, reload);
+                if (source.Current.IsEmpty)
+                {
+                    Console.WriteLine($"mockifyr: {flag}-file '{path}' holds no 256-bit base64 key — that capability is OFF.");
+                    return null;
+                }
+
+                Console.WriteLine($"mockifyr: {flag}-file '{path}' loaded; it is re-read on change, so keys rotate without a restart.");
+                return source;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Console.WriteLine($"mockifyr: {flag}-file '{path}' could not be read ({ex.GetType().Name}) — that capability is OFF.");
+                return null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(inline))
+        {
+            return null;
+        }
+
+        if (Crypto.KeyRing.ReadKey(inline) is not { } material)
+        {
+            Console.WriteLine($"mockifyr: {flag} is not a 256-bit base64 key — that capability is OFF.");
+            return null;
+        }
+
+        return new Crypto.StaticKeySource(material);
+    }
+
+    /// <summary>
+    /// Reads a single-line secret from a file, trimmed. Null (with a message) when it cannot be read,
+    /// so a missing file leaves the surface unauthenticated *visibly* rather than silently.
+    /// </summary>
+    private static string? ReadSecretFile(string? path, string flag)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var value = File.ReadAllText(path).Trim();
+            if (value.Length == 0)
+            {
+                Console.WriteLine($"mockifyr: {flag} '{path}' is empty — admin authentication stays OFF.");
+                return null;
+            }
+
+            return value;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.WriteLine($"mockifyr: {flag} '{path}' could not be read ({ex.GetType().Name}) — admin authentication stays OFF.");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// The unauthenticated probe paths (#218, #242): health for humans and the dashboard, live and
     /// ready for the orchestrator. Credentials cannot be attached to a kubelet probe, and a 401
     /// health check restarts pods in a loop.
@@ -244,34 +332,47 @@ public static class MockifyrHost
         // JWE(dir+A256GCM) field decryptor. Key material stops here — Core only ever sees that a
         // scheme was applied. No flag, no decryptor, and stubs declaring `decrypt` simply do not
         // match, which is the honest outcome for a host that was never given the key.
-        var decryptKey = Crypto.JweFieldDecryptor.ReadKey(builder.Configuration["decrypt-key"]);
-        if (builder.Configuration["decrypt-key"] is { Length: > 0 } && decryptKey is null)
+        // How often a key file is re-read (#250). The default suits a Kubernetes Secret update, which
+        // takes up to a minute to propagate anyway; a shorter value is for tests and for deployments
+        // that rotate on a tighter schedule.
+        var keyReload = double.TryParse(builder.Configuration["key-reload-seconds"], out var seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : (TimeSpan?)null;
+
+        var decryptKeys = ResolveKeySource(
+            builder.Configuration["decrypt-key"], builder.Configuration["decrypt-key-file"], "--decrypt-key", keyReload);
+        if (decryptKeys is not null)
         {
-            Console.WriteLine("mockifyr: --decrypt-key is not a 256-bit base64 key — payload decryption is OFF.");
-        }
-        else if (decryptKey is not null)
-        {
-            builder.Services.AddSingleton<IPayloadDecryptor>(new Crypto.JweFieldDecryptor(decryptKey));
+            builder.Services.AddSingleton<IPayloadDecryptor>(new Crypto.JweFieldDecryptor(decryptKeys));
             // The same key protects responses (G20b): a partner that encrypts what it sends also
             // decrypts what it receives, and asking the operator for two keys for one relationship
             // would be ceremony without a security benefit.
-            builder.Services.AddSingleton<IPayloadProtector>(new Crypto.JweResponseProtector(decryptKey));
-            Console.WriteLine($"mockifyr: payload cryptography enabled (scheme {Crypto.JweFieldDecryptor.SchemeName}).");
+            builder.Services.AddSingleton<IPayloadProtector>(new Crypto.JweResponseProtector(decryptKeys));
+            builder.Services.AddKeyedSingleton("decrypt", decryptKeys);
+            Console.WriteLine($"mockifyr: payload cryptography enabled (scheme {Crypto.JweFieldDecryptor.SchemeName}, "
+                + $"{decryptKeys.Current.Keys.Count} active key(s)).");
         }
 
         // Request/response signing (G20c, ADR 0012): --sign-key <base64 secret> registers the
         // HMAC-SHA256 verifier and signer. A separate key from --decrypt-key on purpose: signing
         // secrets and encryption keys are managed separately in every scheme that uses both.
-        var signKey = Crypto.JweFieldDecryptor.ReadKey(builder.Configuration["sign-key"]);
-        if (builder.Configuration["sign-key"] is { Length: > 0 } && signKey is null)
+        var signKeys = ResolveKeySource(
+            builder.Configuration["sign-key"], builder.Configuration["sign-key-file"], "--sign-key", keyReload);
+        if (signKeys is not null)
         {
-            Console.WriteLine("mockifyr: --sign-key is not a 256-bit base64 key — signing is OFF.");
+            builder.Services.AddSingleton<ISignatureVerifier>(new Crypto.HmacSignatureVerifier(signKeys));
+            builder.Services.AddSingleton<IResponseSigner>(new Crypto.HmacResponseSigner(signKeys));
+            builder.Services.AddKeyedSingleton("sign", signKeys);
+            Console.WriteLine($"mockifyr: request/response signing enabled (scheme {Crypto.HmacSignatureVerifier.SchemeName}, "
+                + $"{signKeys.Current.Keys.Count} active key(s)).");
         }
-        else if (signKey is not null)
+
+        // What /__admin/health reports about key rotation (#250): counts, read live, never material.
+        if (decryptKeys is not null || signKeys is not null)
         {
-            builder.Services.AddSingleton<ISignatureVerifier>(new Crypto.HmacSignatureVerifier(signKey));
-            builder.Services.AddSingleton<IResponseSigner>(new Crypto.HmacResponseSigner(signKey));
-            Console.WriteLine($"mockifyr: request/response signing enabled (scheme {Crypto.HmacSignatureVerifier.SchemeName}).");
+            builder.Services.AddSingleton(new ActiveKeyReport(
+                () => decryptKeys?.Current.Keys.Count ?? 0,
+                () => signKeys?.Current.Keys.Count ?? 0));
         }
 
         // Journal masking (#227): --mask-headers / --mask-body-fields keep named values out of the
@@ -514,7 +615,12 @@ public static class MockifyrHost
         // surface (/__admin/*). The mock-serving surface and the dashboard static files stay open — the
         // dashboard loads and shows its own login screen, then sends the credentials on each admin call.
         var adminUser = builder.Configuration["admin-user"];
-        var adminPass = builder.Configuration["admin-pass"];
+        // --admin-pass-file keeps the password out of the process listing and out of shell history
+        // (#250): on a shared host, `ps` is readable by anyone, and a mounted Secret is the whole
+        // point of running in Kubernetes. The inline flag still works and wins when both are given,
+        // so nothing that worked before changes.
+        var adminPass = builder.Configuration["admin-pass"]
+            ?? ReadSecretFile(builder.Configuration["admin-pass-file"], "--admin-pass-file");
         var adminAuthenticated = !string.IsNullOrEmpty(adminUser) && !string.IsNullOrEmpty(adminPass);
 
         // An unauthenticated admin surface is a deliberate default (the documented quick start relies

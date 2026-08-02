@@ -264,7 +264,12 @@ metrics, a credential-free Prometheus scrape at `/__admin/metrics`, JSON logs, d
 label cardinality — #246); and the admin audit trail (`--audit`: every admin change recorded with
 principal/tenant/action/target/outcome at `/__admin/audit`, on the dashboard, and as an `admin.audit`
 log line for a SIEM — #247). Remaining: documentation and support policy (#248), benchmarks (#249),
-and — scoped on demand — key sources and rotation (#250) plus OIDC (#251). The measured performance
+Key sources and rotation (#250) are done: `--decrypt-key-file`/`--sign-key-file`/`--admin-pass-file`,
+a key **ring** (produce with the newest, accept every active key) re-read on change so rotation needs
+no restart, an `IKeySource` seam for Vault/KMS, and a Helm mount mode that keeps keys out of the
+process listing. **OIDC (#251) is explicitly deferred past 1.0**, with the reasoning written down in
+`VERSIONING.md` under "Deliberately deferred" — the epic allows deliver-or-defer, and this is the
+defer, recorded rather than silent. The measured performance
 envelope and sizing guidance are in `docs/parity/performance.md`, with the harnesses in `bench/`
 (BenchmarkDotNet for the engine, k6 for the transport); measuring immediately paid for itself: #266 (templates
 were recompiled on every request) is fixed — a templated response went from 699 µs to 1.21 µs — and
@@ -273,4 +278,4 @@ were recompiled on every request) is fixed — a templated response went from 69
 `CONTRIBUTING.md`) are done.
 
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 712 tests green across the four suites.
+(0 warnings); 747 tests green across the four suites.

@@ -194,3 +194,67 @@ off; each key switches on exactly the pair it enables, and both keys light all f
 verification against a live host with both keys — the Settings card showing four ✓ and a seeded
 encrypted+signed stub carrying both icons while a plain stub carries none. UI `tsc`, lint and build
 clean; six locales.
+
+## Key sources and rotation (#250, enterprise readiness)
+
+Keys arrived as `--decrypt-key`/`--sign-key` values: fine for a laptop, acceptable with a Secret-fed
+environment variable, and not what a regulated deployment expects. `--decrypt-key-file`,
+`--sign-key-file` and `--admin-pass-file` read them from disk instead, and a key file holds a **ring**
+rather than a single key.
+
+The ring is the whole design. New tokens and signatures are produced with the **newest** key; every
+key in the file is accepted on the way in. That asymmetry is what turns rotation into "add the new
+key, let traffic drain, remove the old one" instead of a flag day where every client has to switch at
+one instant. Removing the line is what actually retires a key — a wire test pins that a signature from
+a retired key stops verifying, because otherwise a ring would only ever add trust and never withdraw
+it.
+
+File format: one key per line, newest first, optionally `id: base64`. The id splits on the **last**
+colon, so a namespaced id like `vault:prod:2026` — the shape a secret manager hands out — survives
+intact, which is unambiguous because base64 never contains a colon.
+
+Decisions worth remembering:
+
+- **Poll the modification time; do not watch for filesystem events.** The deployment that matters most
+  does not produce them: Kubernetes updates a mounted Secret by swapping a symlink, which a
+  `FileSystemWatcher` on the visible path routinely misses. Reading the timestamp follows the symlink.
+  The check is rate-limited (`--key-reload-seconds`, default 10) so a busy host stats the file once per
+  interval, not once per request, and an unchanged file is not re-parsed at all — asserted by identity,
+  not by inspection.
+- **A file that is unreadable, deleted or momentarily empty keeps the last good ring.** Truncate-then-write
+  is how plenty of tools update a file; taking the host's keys away in the gap would turn a routine
+  rotation into an outage.
+- **A malformed line is skipped, not fatal** — a key file is edited during a rollover, often by a
+  script, and refusing to start over one typo turns a slip into downtime. A bad line can never become
+  a usable key (it does not parse to 32 bytes), and the count of keys actually loaded is printed at
+  startup and reported on `/__admin/health`, so a silently skipped line is visible.
+- **A commented-out key is not active.** Obvious, and precisely the sort of thing that is wrong in
+  real implementations: commenting a line out is how an operator withdraws a key, so a `#` line that
+  still parsed would leave a key they believe they retired decrypting traffic. Pinned by a test that
+  a mutation-testing survivor asked for.
+- **`kid` appears only when the key is named.** An unnamed key emits exactly the header it always did,
+  so a host that never adopted key files produces byte-identical tokens to before rotation existed.
+- **Health reports counts, never material.** `cryptography.decryptKeys` / `signKeys` are how an
+  operator confirms a rollover landed without restarting anything — the difference between "rotate and
+  hope" and "rotate and check". A wire test asserts the key text appears in neither health nor the
+  journal.
+- **The Helm chart can mount the Secret as files** (`cryptography.mountAsFiles`), read-only, mode 0400,
+  with no key in the container's arguments or environment — verified by four assertions in
+  `verify-chart.py`, because that posture regresses silently in a template edit.
+
+`IKeySource` is the seam a Vault or KMS integration implements without Mockifyr taking a dependency on
+either: one property returning the current ring, read on every use.
+
+Validation: 28 unit tests (ring parsing, id rules, file reload semantics, rotation, retirement) plus
+7 wire tests on a real host (key files arm the capabilities, a live rotation is picked up, a retired
+key stops working, any active signing key verifies, key material reaches neither health nor the
+journal, an admin password file works with a trailing newline, a missing file leaves the capability
+off rather than half on). **Stryker: 100 %** (41/41). Three survivors were worth the tests they
+produced: a commented-out key still being active, a custom reload interval being ignored in favour of
+the default, and an unchanged file being re-parsed on every poll. A fourth was a base64 padding branch
+no valid key can reach — deleted rather than documented, because an untestable branch is worse than a
+shorter road to the same answer.
+
+Deferred: no built-in Vault/KMS client (the seam is the extension point); no scheduled or automatic
+key generation; the admin password file is read at startup rather than watched, since rotating it
+means changing what clients send anyway.

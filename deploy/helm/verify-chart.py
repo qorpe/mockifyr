@@ -82,6 +82,16 @@ def main() -> int:
     check("audit flag appears when enabled", "--audit" in with_audit)
     check("audit trail carries its bound", '"250"' in with_audit)
 
+    # Key files (#250): when mounted, no key may reach the container's arguments, and the mount must
+    # be read-only — the whole point of the file source is that keys stay out of the process listing
+    # and can be rotated underneath a running host.
+    mounted = render("cryptography.decryptKey=k1", "cryptography.mountAsFiles=true").stdout
+    check("mounted keys are passed as a file path", "--decrypt-key-file" in mounted)
+    check("mounted keys are not passed as an argument", "--decrypt-key\n" not in mounted)
+    check("mounted keys are not injected as an env var", "MOCKIFYR_DECRYPT_KEY" not in mounted)
+    check("the key mount is read-only", "readOnly: true" in mounted)
+    check("env-var mode is still the default", "MOCKIFYR_DECRYPT_KEY" in with_keys)
+
     # Every optional resource renders when asked for.
     everything = render(
         "persistence.enabled=true", "ingress.enabled=true", "route.enabled=true",

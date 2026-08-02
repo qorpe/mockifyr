@@ -29,8 +29,13 @@ internal static class HmacConventions
 /// are required — checking only the signature would accept a valid signature over someone else's
 /// digest, and checking only the digest would accept an unsigned request.
 /// </summary>
-public sealed class HmacSignatureVerifier(byte[] key) : ISignatureVerifier
+public sealed class HmacSignatureVerifier(IKeySource keys) : ISignatureVerifier
 {
+    /// <summary>The single-key form an inline <c>--sign-key</c> produces.</summary>
+    public HmacSignatureVerifier(byte[] key) : this(new StaticKeySource(key))
+    {
+    }
+
     /// <summary>The scheme name a stub declares to select this verifier.</summary>
     public const string SchemeName = HmacConventions.Scheme;
 
@@ -54,7 +59,17 @@ public sealed class HmacSignatureVerifier(byte[] key) : ISignatureVerifier
             return false;
         }
 
-        return FixedTimeEquals(signature, HmacConventions.Sign(key, digest));
+        // Accepted if ANY active key produced it (#250). A partner still signing with the key on
+        // its way out keeps working through a rollover; the comparison stays constant-time per key,
+        // and every key is checked rather than short-circuiting, so the number of comparisons does
+        // not leak which key matched.
+        var accepted = false;
+        foreach (var candidate in keys.Current.Keys)
+        {
+            accepted |= FixedTimeEquals(signature, HmacConventions.Sign(candidate.Material, digest));
+        }
+
+        return accepted;
     }
 
     private static string? Single(CanonicalRequest request, string header) =>
@@ -69,8 +84,13 @@ public sealed class HmacSignatureVerifier(byte[] key) : ISignatureVerifier
 /// Signs a served response (G20c): adds the digest of the body that goes on the wire and the HMAC of
 /// that digest, so a client that verifies what it receives is satisfied by the mock.
 /// </summary>
-public sealed class HmacResponseSigner(byte[] key) : IResponseSigner
+public sealed class HmacResponseSigner(IKeySource keys) : IResponseSigner
 {
+    /// <summary>The single-key form an inline <c>--sign-key</c> produces.</summary>
+    public HmacResponseSigner(byte[] key) : this(new StaticKeySource(key))
+    {
+    }
+
     /// <summary>The scheme name a stub declares to select this signer.</summary>
     public const string SchemeName = HmacConventions.Scheme;
 
@@ -80,6 +100,9 @@ public sealed class HmacResponseSigner(byte[] key) : IResponseSigner
     /// <inheritdoc />
     public CanonicalResponse Sign(CanonicalResponse response, ResponseSignature signature)
     {
+        // Signed with the newest key (#250), while verification above accepts any active one.
+        var key = keys.Current.Primary?.Material
+            ?? throw new InvalidOperationException("No key is active for response signing.");
         var digest = HmacConventions.Digest(response.Body);
         var pairs = response.Headers
             .SelectMany(group => group.Select(value => new KeyValuePair<string, string>(group.Key, value)))
