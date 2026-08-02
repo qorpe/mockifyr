@@ -78,9 +78,13 @@ jobs:
       - name: Sign the image
         run: cosign sign --yes "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
 
+      # A block scalar, not a folded plain one: YAML joins a plain multi-line value with a space and
+      # keeps the trailing backslash literally, which made the shell see `\ ` and pass a reference
+      # that began with a space.
       - name: Attest the SBOM
-        run: cosign attest --yes --predicate mockifyr-sbom.cdx.json --type cyclonedx \
-             ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign attest --yes --predicate mockifyr-sbom.cdx.json --type cyclonedx \
+            "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
 
       # Scan what was actually published, not a local build: a HIGH/CRITICAL finding must be visible
       # in the release run rather than discovered by the customer's scanner.
