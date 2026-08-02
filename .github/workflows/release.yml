@@ -34,11 +34,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # `latest` is not listed: metadata-action adds it automatically for a semver tag
+          # (flavor latest=auto), and naming it explicitly as well produced a duplicate.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # `latest` is added automatically for a semver tag (flavor latest=auto); naming it
-            # explicitly as well produced a duplicate in the tag list.
 
       # Multi-arch via cross-compilation (the Dockerfile builds on $BUILDPLATFORM and targets
       # $TARGETARCH), so arm64 is produced without slow QEMU emulation of the SDK build.
