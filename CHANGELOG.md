@@ -8,14 +8,16 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Added
+## Released
+
+### [v1.4.0](https://github.com/qorpe/mockifyr/releases/tag/v1.4.0) — 2026-08-03
+
+#### Added
 
 - OIDC on the admin API and the dashboard (`--oidc-authority` and friends): bearer tokens validated
   against the issuer's published keys, an optional claim that scopes an identity to one tenant, an
   optional required role, and dashboard sign-in via authorization code + PKCE. Basic credentials keep
   working alongside it. The audit trail records `oidc:<user>`, never the token. (#251)
-
-## Released
 
 ### [v1.3.0](https://github.com/qorpe/mockifyr/releases/tag/v1.3.0) — 2026-08-03
 
