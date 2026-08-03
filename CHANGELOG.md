@@ -8,6 +8,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- Recording is tenant-scoped. Two tenants can record at once against their own upstreams; one
+  tenant's session no longer discards another's captures or proxies their traffic.
+- `math` supports `%`, which the reference engine has always supported.
+
+### Fixed
+
+- `math` integer division rounded half *up* instead of half *away from zero*, so `-9/2` answered
+  `-4` where the reference engine answers `-5`. Positive operands were unaffected.
+
 ## Released
 
 ### [v1.2.0](https://github.com/qorpe/mockifyr/releases/tag/v1.2.0) — 2026-08-03

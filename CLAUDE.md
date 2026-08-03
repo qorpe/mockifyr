@@ -283,9 +283,13 @@ now means a major version. The last silent gaps became loud first — a mapping 
 a non-`uniform` `delayDistribution` is imported *and reported*, on the admin API and at startup, since
 a documented gap you can only discover from behaviour is not really documented.
 
-Two G19 deferrals are closed since 1.0: `bodyFileName` (file-backed response bodies, oracle-verified)
-and **durable sandbox resources** — documents seeded into a sandbox now survive a restart on every
-persistence backend, with deletes and resets persisting too.
+The deferred edges worth doing are closed since 1.0: `bodyFileName` (file-backed response bodies,
+oracle-verified), **durable sandbox resources** (seeded documents survive a restart on every
+persistence backend, deletes and resets included), and **tenant-scoped recording** (a global session
+used to proxy every tenant's traffic to one target). Probing the oracle for the "missing" arithmetic
+helpers found the documentation had it backwards — the reference engine rejects `add`/`subtract`/etc.
+too — and turned up two real `math` defects instead: `%` was rejected though the oracle supports it,
+and integer division rounded the wrong way for negatives.
 
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 827 tests green across the four suites.
+(0 warnings); 848 tests green across the four suites.

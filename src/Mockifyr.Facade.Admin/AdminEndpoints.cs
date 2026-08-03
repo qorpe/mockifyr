@@ -750,16 +750,20 @@ public static class AdminEndpoints
                 return Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
             }
 
-            session.Start(target);
+            session.Start(TenantOf(request), target);
             return Results.Ok();
         });
 
-        admin.MapGet("/recordings/status", (RecordingSession session) =>
-            Results.Json(new { status = session.TargetBaseUrl is null ? "Stopped" : "Recording" }));
+        // Every recording route is tenant-scoped: one team's session must be invisible to another,
+        // and stopping a recording must not stop someone else's.
+        admin.MapGet("/recordings/status", (HttpRequest request, RecordingSession session) =>
+            Results.Json(new { status = session.TargetBaseUrl(TenantOf(request)) is null ? "Stopped" : "Recording" }));
 
-        admin.MapPost("/recordings/snapshot", (RecordingSession session) => Mappings(session.Snapshot()));
+        admin.MapPost("/recordings/snapshot", (HttpRequest request, RecordingSession session) =>
+            Mappings(session.Snapshot(TenantOf(request))));
 
-        admin.MapPost("/recordings/stop", (RecordingSession session) => Mappings(session.Stop()));
+        admin.MapPost("/recordings/stop", (HttpRequest request, RecordingSession session) =>
+            Mappings(session.Stop(TenantOf(request))));
 
         // Git sync (ADR 0007) — host-level, not tenant-scoped: the host has one root-dir working
         // copy. Status always answers (configured=false when the flag is absent); push/pull refuse

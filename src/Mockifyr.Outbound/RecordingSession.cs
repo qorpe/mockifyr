@@ -5,9 +5,16 @@ using Mockifyr.Core;
 namespace Mockifyr.Outbound;
 
 /// <summary>
-/// The state of a live recording (G12d): while active, the mock-serving facade proxies requests to
-/// <see cref="TargetBaseUrl"/> and records each exchange here. Shared as a singleton between the
-/// admin endpoints (start/stop/snapshot) and the mock-serving fallback. Thread-safe.
+/// The state of live recordings (G12d): while a tenant is recording, the mock-serving facade proxies
+/// that tenant's requests to its target and records each exchange here. Shared as a singleton between
+/// the admin endpoints (start/stop/snapshot) and the mock-serving fallback. Thread-safe.
+/// <para>
+/// State is per tenant. It used to be one global session, which meant a shared host could only ever
+/// record for one team at a time — and worse, silently: starting a second recording discarded the
+/// first team's captures, and every tenant's traffic was proxied to whichever target was set last.
+/// Every entry point therefore takes an explicit <see cref="TenantId"/>, so forgetting to scope one
+/// is a compile error rather than a cross-tenant leak (CLAUDE.md §2.6).
+/// </para>
 /// <para>
 /// Stub generation happens at snapshot/stop time, because a repeat of the same request changes what
 /// earlier captures mean: the oracle's recorder does not deduplicate repeats — it chains them into a
@@ -20,77 +27,103 @@ public sealed class RecordingSession
 {
     private sealed record Exchange(string Key, CanonicalRequest Request, CanonicalResponse Response);
 
-    private readonly Lock _gate = new();
-    private readonly List<Exchange> _exchanges = [];
-    private string? _target;
-
-    /// <summary>The upstream base URL to proxy to while recording, or null when not recording.</summary>
-    public string? TargetBaseUrl
+    private sealed class TenantState
     {
-        get
-        {
-            lock (_gate)
-            {
-                return _target;
-            }
-        }
+        public List<Exchange> Exchanges { get; } = [];
+
+        public string? Target { get; set; }
     }
 
-    /// <summary>Begins recording against a target, discarding any prior capture.</summary>
-    public void Start(string targetBaseUrl)
+    private readonly Lock _gate = new();
+    private readonly Dictionary<TenantId, TenantState> _byTenant = [];
+
+    /// <summary>The upstream base URL this tenant is recording against, or null when it is not.</summary>
+    public string? TargetBaseUrl(TenantId tenant)
     {
         lock (_gate)
         {
-            _target = targetBaseUrl;
-            _exchanges.Clear();
+            return _byTenant.TryGetValue(tenant, out var state) ? state.Target : null;
+        }
+    }
+
+    /// <summary>Begins recording for a tenant against a target, discarding that tenant's prior capture.</summary>
+    public void Start(TenantId tenant, string targetBaseUrl)
+    {
+        lock (_gate)
+        {
+            // Only this tenant's captures are discarded. A team starting a recording must not throw
+            // away another team's, which is exactly what a single global session did.
+            var state = StateFor(tenant);
+            state.Target = targetBaseUrl;
+            state.Exchanges.Clear();
         }
     }
 
     /// <summary>Records one proxied exchange (the response already decoded for stub generation).</summary>
-    public void Record(CanonicalRequest request, CanonicalResponse response)
+    public void Record(TenantId tenant, CanonicalRequest request, CanonicalResponse response)
     {
         // Two captures repeat each other when method, URL, and request body all match — the same
         // identity the generated request pattern matches on, so chained stubs stay distinguishable.
         var key = $"{request.Method} {request.Url}\n{Convert.ToBase64String(request.Body)}";
         lock (_gate)
         {
-            _exchanges.Add(new Exchange(key, request, response));
+            StateFor(tenant).Exchanges.Add(new Exchange(key, request, response));
         }
     }
 
-    /// <summary>Returns the stubs generated from the captures so far without stopping.</summary>
-    public IReadOnlyList<string> Snapshot()
+    /// <summary>Returns the stubs generated from this tenant's captures so far, without stopping.</summary>
+    public IReadOnlyList<string> Snapshot(TenantId tenant)
     {
         lock (_gate)
         {
-            return Generate();
+            return Generate(tenant);
         }
     }
 
-    /// <summary>Ends recording and returns the generated stubs.</summary>
-    public IReadOnlyList<string> Stop()
+    /// <summary>Ends this tenant's recording and returns its generated stubs.</summary>
+    public IReadOnlyList<string> Stop(TenantId tenant)
     {
         lock (_gate)
         {
-            var captured = Generate();
-            _target = null;
-            _exchanges.Clear();
+            var captured = Generate(tenant);
+            if (_byTenant.TryGetValue(tenant, out var state))
+            {
+                state.Target = null;
+                state.Exchanges.Clear();
+            }
+
             return captured;
         }
     }
 
-    private List<string> Generate()
+    private TenantState StateFor(TenantId tenant)
     {
+        if (!_byTenant.TryGetValue(tenant, out var state))
+        {
+            _byTenant[tenant] = state = new TenantState();
+        }
+
+        return state;
+    }
+
+    private List<string> Generate(TenantId tenant)
+    {
+        if (!_byTenant.TryGetValue(tenant, out var state))
+        {
+            return [];
+        }
+
+        var exchanges = state.Exchanges;
         var totals = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var exchange in _exchanges)
+        foreach (var exchange in exchanges)
         {
             totals[exchange.Key] = totals.GetValueOrDefault(exchange.Key) + 1;
         }
 
-        var stubs = new List<string>(_exchanges.Count);
+        var stubs = new List<string>(exchanges.Count);
         var scenarioNames = new Dictionary<string, string>(StringComparer.Ordinal);
         var positions = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var exchange in _exchanges)
+        foreach (var exchange in exchanges)
         {
             if (totals[exchange.Key] == 1)
             {

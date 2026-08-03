@@ -377,3 +377,26 @@ text, not outcome), and `File.Exists(...) ? read : null` (without the check a mi
 already turns into the same `null`). Each changes cost or log output, none changes what is served.
 
 Still deferred: `__files` extraction during recording, and `bodyFileName` in recorded stubs.
+
+## The `math` helper — two corrections found by probing (post-1.0)
+
+The limitations page listed `add`, `subtract`, `multiply`, `divide`, `round` and `abs` as helpers
+Mockifyr lacks. Probing the oracle showed it **rejects every one of them** too (500) — so that was
+never a gap, and implementing them would have been a divergence rather than parity. The page said the
+opposite of the truth; it now says what was measured.
+
+The same probe found two real defects, both in `math`:
+
+- **`%` is supported by the oracle** (`{{math 7 '%' 2}}` → `1`), and Mockifyr rejected it — with a
+  code comment asserting the oracle did not support it. It does. Implemented, with the sign following
+  the dividend (`-7 % 2` → `-1`), which is what both runtimes do.
+- **Integer division rounds half away from zero.** Mockifyr used `Floor(x + 0.5)`, which agrees for
+  every positive operand and is wrong for every negative half: `-9/2` answered `-4` where the oracle
+  answers `-5`. The differential suite had no negative-division case, which is why this survived from
+  G2 to 1.1.
+
+Both are now pinned by 16 differential cases covering positives, negatives, halves, and decimal
+operands (a decimal operand does not round at all).
+
+Stated divergence: division or modulo by zero makes the oracle answer **500**; Mockifyr renders an
+empty value instead, so a template mistake cannot take down the request path.

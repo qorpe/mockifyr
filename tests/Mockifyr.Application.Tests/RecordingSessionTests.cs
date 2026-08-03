@@ -27,7 +27,7 @@ public sealed class RecordingSessionTests
     private static RecordingSession Recording()
     {
         var session = new RecordingSession();
-        session.Start("http://upstream.example");
+        session.Start(TenantId.Default, "http://upstream.example");
         return session;
     }
 
@@ -43,9 +43,9 @@ public sealed class RecordingSessionTests
     public void A_single_capture_stays_scenario_free()
     {
         var session = Recording();
-        session.Record(Request(), Response("one"));
+        session.Record(TenantId.Default, Request(), Response("one"));
 
-        var stub = Assert.Single(session.Stop());
+        var stub = Assert.Single(session.Stop(TenantId.Default));
         Assert.Equal((null, null, null, "one"), Fields(stub));
     }
 
@@ -53,11 +53,11 @@ public sealed class RecordingSessionTests
     public void Repeats_chain_started_to_next_and_the_last_does_not_advance()
     {
         var session = Recording();
-        session.Record(Request(), Response("first"));
-        session.Record(Request(), Response("second"));
-        session.Record(Request(), Response("third"));
+        session.Record(TenantId.Default, Request(), Response("first"));
+        session.Record(TenantId.Default, Request(), Response("second"));
+        session.Record(TenantId.Default, Request(), Response("third"));
 
-        var stubs = session.Stop().Select(Fields).ToList();
+        var stubs = session.Stop(TenantId.Default).Select(Fields).ToList();
 
         Assert.Equal(3, stubs.Count);
         var scenario = stubs[0].Scenario;
@@ -74,12 +74,12 @@ public sealed class RecordingSessionTests
     public void Each_repeated_request_gets_its_own_numbered_scenario()
     {
         var session = Recording();
-        session.Record(Request(url: "/a"), Response("a1"));
-        session.Record(Request(url: "/b?x=1"), Response("b1"));
-        session.Record(Request(url: "/a"), Response("a2"));
-        session.Record(Request(url: "/b?x=1"), Response("b2"));
+        session.Record(TenantId.Default, Request(url: "/a"), Response("a1"));
+        session.Record(TenantId.Default, Request(url: "/b?x=1"), Response("b1"));
+        session.Record(TenantId.Default, Request(url: "/a"), Response("a2"));
+        session.Record(TenantId.Default, Request(url: "/b?x=1"), Response("b2"));
 
-        var scenarios = session.Stop().Select(Fields).Select(f => f.Scenario).ToList();
+        var scenarios = session.Stop(TenantId.Default).Select(Fields).Select(f => f.Scenario).ToList();
 
         Assert.Equal(["scenario-1-a", "scenario-2-b-x-1", "scenario-1-a", "scenario-2-b-x-1"], scenarios);
     }
@@ -88,27 +88,27 @@ public sealed class RecordingSessionTests
     public void Identity_is_method_url_and_body_together()
     {
         var session = Recording();
-        session.Record(Request(method: "POST", url: "/same", body: "{\"a\":1}"), Response("one"));
-        session.Record(Request(method: "POST", url: "/same", body: "{\"a\":2}"), Response("two"));
-        session.Record(Request(method: "PUT", url: "/same", body: "{\"a\":1}"), Response("three"));
+        session.Record(TenantId.Default, Request(method: "POST", url: "/same", body: "{\"a\":1}"), Response("one"));
+        session.Record(TenantId.Default, Request(method: "POST", url: "/same", body: "{\"a\":2}"), Response("two"));
+        session.Record(TenantId.Default, Request(method: "PUT", url: "/same", body: "{\"a\":1}"), Response("three"));
 
         // Different bodies / methods are different exchanges, not repeats — no scenario is invented.
-        Assert.All(session.Stop().Select(Fields), s => Assert.Null(s.Scenario));
+        Assert.All(session.Stop(TenantId.Default).Select(Fields), s => Assert.Null(s.Scenario));
     }
 
     [Fact]
     public void Snapshot_regenerates_and_the_chain_grows_with_later_repeats()
     {
         var session = Recording();
-        session.Record(Request(), Response("first"));
-        session.Record(Request(), Response("second"));
+        session.Record(TenantId.Default, Request(), Response("first"));
+        session.Record(TenantId.Default, Request(), Response("second"));
 
-        var mid = session.Snapshot().Select(Fields).ToList();
+        var mid = session.Snapshot(TenantId.Default).Select(Fields).ToList();
         Assert.Equal(2, mid.Count);
         Assert.Null(mid[1].Next);
 
-        session.Record(Request(), Response("third"));
-        var final = session.Stop().Select(Fields).ToList();
+        session.Record(TenantId.Default, Request(), Response("third"));
+        var final = session.Stop(TenantId.Default).Select(Fields).ToList();
 
         // The former tail now advances to a -3 state; regeneration keeps the numbering consistent.
         Assert.Equal(3, final.Count);
@@ -120,26 +120,26 @@ public sealed class RecordingSessionTests
     public void Stop_clears_the_session_and_start_discards_prior_captures()
     {
         var session = Recording();
-        session.Record(Request(), Response("one"));
+        session.Record(TenantId.Default, Request(), Response("one"));
 
-        Assert.Single(session.Stop());
-        Assert.Null(session.TargetBaseUrl);
-        Assert.Empty(session.Stop());
+        Assert.Single(session.Stop(TenantId.Default));
+        Assert.Null(session.TargetBaseUrl(TenantId.Default));
+        Assert.Empty(session.Stop(TenantId.Default));
 
-        session.Start("http://upstream.example");
-        Assert.Equal("http://upstream.example", session.TargetBaseUrl);
-        Assert.Empty(session.Snapshot());
+        session.Start(TenantId.Default, "http://upstream.example");
+        Assert.Equal("http://upstream.example", session.TargetBaseUrl(TenantId.Default));
+        Assert.Empty(session.Snapshot(TenantId.Default));
     }
 
     [Fact]
     public void Restarting_without_stopping_discards_the_previous_session_captures()
     {
         var session = Recording();
-        session.Record(Request(), Response("stale"));
+        session.Record(TenantId.Default, Request(), Response("stale"));
 
         // A second start (no stop in between) begins a FRESH session — the stale capture must not
         // leak into it, or the first snapshot would report another target's traffic.
-        session.Start("http://other.example");
-        Assert.Empty(session.Snapshot());
+        session.Start(TenantId.Default, "http://other.example");
+        Assert.Empty(session.Snapshot(TenantId.Default));
     }
 }
