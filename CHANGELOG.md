@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Fixed
+## Released
+
+### [v1.5.0](https://github.com/qorpe/mockifyr/releases/tag/v1.5.0) — 2026-08-03
+
+#### Fixed
 
 - Environment keys and sandbox documents now travel on the change feed, like stubs. With several
   replicas behind one PostgreSQL or Redis and `--change-feed`, a key's active value changed on one
@@ -18,8 +22,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   identity, so a host skips its own — previously a reload triggered by a host's own change could read
   the backend before its next write landed and hand an operator their change back at the previous
   version.
-
-## Released
 
 ### [v1.4.0](https://github.com/qorpe/mockifyr/releases/tag/v1.4.0) — 2026-08-03
 
