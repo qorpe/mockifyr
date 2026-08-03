@@ -332,3 +332,48 @@ type='…'` silently fell back to defaults).
 - **Placement:** the flag configures `TemplatingResponseRenderer(globalTemplating: true)` at the
   host edge; the engine and the per-stub semantics are untouched.
 - **Regression case:** `G2iGlobalTemplatingTests`.
+
+## `bodyFileName` — file-backed response bodies (post-1.0)
+
+The longest-standing gap in the response surface, and the one that blocked migrating an existing
+mapping set wholesale. A stub may now name a file instead of inlining its body; the host serves it
+from `<root-dir>/__files`.
+
+The design questions were answered by the oracle rather than by reading anyone's documentation — the
+harness maps files into the container's `__files` and hands Mockifyr the same content, so
+`bodyFileName` is diffable like any other behaviour:
+
+- **A file-backed body is templated when `response-template` is declared, and not otherwise.** The
+  transformer applies to what the stub serves, not to where the bytes came from.
+- **An inline `body` wins over `bodyFileName`** when a stub carries both.
+- **A missing file is a 500, not an empty body.** This one changed the implementation: the first cut
+  degraded to an empty body, the oracle answered 500, and the oracle is right — an empty 200 reads as
+  a matching problem when it is a misconfigured deployment. It is exactly the silent-failure shape 1.0
+  set out to remove. Mockifyr's 500 names the missing file; the oracle's HTML error page is its own
+  presentation, not dialect, so the **status** is what is compared.
+
+Design notes:
+
+- **Core does no I/O.** `ResponseDefinition.BodyFileName` is a name and `IResponseBodyFiles` is a seam;
+  the host binds it to a directory, a library embedding could bind it to anything, and without a
+  `--root-dir` there is no store — which is why the import warning for this field existed before and
+  is gone now.
+- **Resolved per request**, so editing a fixture changes the next response with no reload. That is the
+  reference behaviour and what anyone iterating on a body expects.
+- **The name is treated as hostile.** It comes from a stub, and a stub can be authored by anyone who
+  can reach the admin API. The resolved path must sit inside the root or nothing is served: `../`,
+  `nested/../../`, absolute paths, and the sibling-directory-sharing-a-prefix trick (`/data-evil`
+  passing a naive `StartsWith("/data")`) each have their own test. Without that check a mock host is
+  an arbitrary file-disclosure endpoint.
+
+Validation: 5 differential tests against the oracle (plain, templated, un-templated, precedence,
+missing-file) plus 13 unit tests on the store, most of them names trying to escape it.
+
+**Stryker: 12/17.** The five survivors are behaviour-equivalent and are documented rather than chased:
+the empty-name early-out (the boundary check refuses it anyway — the guard exists so an empty name
+does not log a traversal refusal), the `Console.WriteLine` refusal notice and its message string (log
+text, not outcome), and `File.Exists(...) ? read : null` (without the check a missing file throws
+`FileNotFoundException` and a directory throws `UnauthorizedAccessException`, both of which the catch
+already turns into the same `null`). Each changes cost or log output, none changes what is served.
+
+Still deferred: `__files` extraction during recording, and `bodyFileName` in recorded stubs.

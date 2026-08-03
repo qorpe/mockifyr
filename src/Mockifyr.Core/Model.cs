@@ -259,6 +259,14 @@ public sealed record ResponseDefinition
     /// <summary>Inline response body, when present.</summary>
     public byte[]? Body { get; init; }
 
+    /// <summary>
+    /// A response body loaded from the host's file store instead of being inlined — the dialect's
+    /// <c>bodyFileName</c>. Resolved at serve time through <see cref="IResponseBodyFiles"/>, so editing
+    /// the file changes what is served without touching the stub; Core never touches a filesystem.
+    /// Null on every stub that inlines its body, which is the default path.
+    /// </summary>
+    public string? BodyFileName { get; init; }
+
     /// <summary>Names of the response transformers to apply (e.g. <c>response-template</c>).</summary>
     public required IReadOnlyList<string> Transformers { get; init; }
 

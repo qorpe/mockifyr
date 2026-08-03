@@ -284,4 +284,4 @@ a non-`uniform` `delayDistribution` is imported *and reported*, on the admin API
 a documented gap you can only discover from behaviour is not really documented.
 
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 781 tests green across the four suites.
+(0 warnings); 800 tests green across the four suites.

@@ -13,8 +13,14 @@ namespace Mockifyr.Differential.Harness;
 /// </summary>
 public sealed class MockifyrUnderTest
 {
-    private readonly MockifyrServer _server = new();
+    private readonly MockifyrServer _server;
     private readonly ProxyResponder _proxy = new();
+
+    /// <summary>
+    /// Composes the Mockifyr side. <paramref name="bodyFiles"/> gives it the same <c>__files</c>
+    /// content the oracle container was handed, so `bodyFileName` responses can be diffed.
+    /// </summary>
+    public MockifyrUnderTest(IResponseBodyFiles? bodyFiles = null) => _server = new MockifyrServer(bodyFiles: bodyFiles);
 
     /// <summary>Imports the same WireMock JSON the oracle receives.</summary>
     public void ImportMappingJson(string wireMockJson) => _server.ImportMappingJson(wireMockJson);

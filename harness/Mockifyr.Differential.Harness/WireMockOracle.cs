@@ -25,8 +25,29 @@ public sealed class WireMockOracle : IAsyncDisposable
     /// Builds the oracle. <paramref name="extraCommandArgs"/> append to the standalone command line
     /// (e.g. <c>--global-response-templating</c>), so host-flag behaviors can be diffed too.
     /// </summary>
-    public WireMockOracle(params string[] extraCommandArgs) =>
-        _container = new ContainerBuilder(Image)
+    public WireMockOracle(params string[] extraCommandArgs)
+        : this(bodyFiles: null, extraCommandArgs)
+    {
+    }
+
+    /// <summary>
+    /// Builds the oracle with files placed in its <c>__files</c> directory, so <c>bodyFileName</c>
+    /// responses can be diffed: both engines are handed the same stub AND the same file, and the
+    /// answers are compared like any other behaviour.
+    /// </summary>
+    public WireMockOracle(IReadOnlyDictionary<string, string>? bodyFiles, params string[] extraCommandArgs) =>
+        _container = bodyFiles is null or { Count: 0 }
+            ? BuildContainer(extraCommandArgs)
+            : bodyFiles.Aggregate(
+                BuilderFor(extraCommandArgs),
+                (builder, file) => builder.WithResourceMapping(
+                    Encoding.UTF8.GetBytes(file.Value), $"/home/wiremock/__files/{file.Key}"))
+                .Build();
+
+    private static IContainer BuildContainer(string[] extraCommandArgs) => BuilderFor(extraCommandArgs).Build();
+
+    private static ContainerBuilder BuilderFor(string[] extraCommandArgs) =>
+        new ContainerBuilder(Image)
             .WithPortBinding(WireMockPort, assignRandomHostPort: true)
             .WithPortBinding(WireMockHttpsPort, assignRandomHostPort: true)
             // Enable the HTTPS listener too (G11a); WireMock serves it with its default self-signed cert.
@@ -35,8 +56,7 @@ public sealed class WireMockOracle : IAsyncDisposable
             // Linux CI, where — unlike Docker Desktop — it is not resolvable by default.
             .WithExtraHost("host.docker.internal", "host-gateway")
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r.ForPort(WireMockPort).ForPath("/__admin/mappings")))
-            .Build();
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(WireMockPort).ForPath("/__admin/mappings")));
 
     private HttpClient? _client;
     private HttpClient? _httpsClient;

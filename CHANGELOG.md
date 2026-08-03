@@ -8,6 +8,13 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- `bodyFileName`: a response body can be a file under `<root-dir>/__files` instead of an inline
+  string. Templated when `response-template` is declared, inline `body` wins when a stub has both,
+  and a missing file answers **500** naming the file — all three verified against the reference
+  engine. File names are resolved inside the store only; a name that escapes it is refused.
+
 ## Released
 
 ### [v1.0.0](https://github.com/qorpe/mockifyr/releases/tag/v1.0.0) — 2026-08-03

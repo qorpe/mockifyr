@@ -92,14 +92,6 @@ public static class UnsupportedFieldWarnings
             return;
         }
 
-        if (response.TryGetProperty("bodyFileName", out var bodyFile) && bodyFile.ValueKind == JsonValueKind.String)
-        {
-            warnings.Add((
-                "bodyFileName",
-                "'bodyFileName' is not implemented — such a stub matches and returns its status with an "
-                + "EMPTY body. Inline the body with 'body' or 'jsonBody' instead."));
-        }
-
         if (response.TryGetProperty("delayDistribution", out var distribution) &&
             distribution.ValueKind == JsonValueKind.Object &&
             distribution.TryGetProperty("type", out var type) &&

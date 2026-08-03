@@ -200,6 +200,12 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IMappingsLoader>(sp =>
                 new DirectoryMappingsLoader(mappingsDir, sp.GetRequiredService<IMatcherRegistry>()));
 
+            // Response bodies held as files, by the same convention as the mapping sets this dialect
+            // comes from: <root-dir>/__files. Registered only with a root-dir — without one there is
+            // no directory a `bodyFileName` could sensibly mean, and the import warning says so.
+            builder.Services.AddSingleton<IResponseBodyFiles>(
+                new DirectoryResponseBodyFiles(Path.Combine(rootDir, "__files")));
+
             // A root-dir also makes stub mutations durable (G16a): they persist to the same mappings
             // directory the loader reads on startup. Registered last so it wins over the no-op default.
             builder.Services.AddSingleton<IStubPersistence>(new FileSystemStubPersistence(mappingsDir));
