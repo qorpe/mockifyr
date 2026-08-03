@@ -146,7 +146,8 @@ public static class AdminEndpoints
             IEnumerable<ISignatureVerifier> verifiers,
             IEnumerable<IResponseSigner> signers,
             IAuditLog auditLog,
-            ActiveKeyReport keys) =>
+            ActiveKeyReport keys,
+            AdminAuthDescriptor auth) =>
         {
             var tenants = store.GetTenants();
             return Results.Json(new
@@ -180,6 +181,10 @@ public static class AdminEndpoints
                 // ambiguous on its own — "nothing has changed" and "nobody is recording" look
                 // identical — so the dashboard needs to be told which it is.
                 audit = auditLog is not NullAuditLog,
+                // How to sign in (#251). Necessarily unauthenticated: a login screen cannot
+                // authenticate before it knows where to send the user. Only the public parameters of
+                // a public OIDC client — the authority and the client id — never a secret.
+                auth = new { mode = auth.Mode, authority = auth.Authority, clientId = auth.ClientId },
             });
         });
 

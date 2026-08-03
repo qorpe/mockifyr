@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { Lock } from 'lucide-react'
-import { verifyAdminAuth } from '@/lib/api'
+import { fetchHealth, verifyAdminAuth } from '@/lib/api'
+import { beginLogin, completeLoginIfRedirected } from '@/lib/oidc'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/field'
 
@@ -22,11 +23,48 @@ export function LoginGate() {
   const [error, setError] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  const signIn = async () => {
+    if (!oidc) return
+    setBusy(true)
+    setOidcError(null)
+    try {
+      await beginLogin(oidc)
+    } catch (e) {
+      // A provider that cannot be reached must say so here, not leave a dead button.
+      setOidcError((e as Error).message)
+      setBusy(false)
+    }
+  }
+
+  // How this host wants people to sign in. Read once, unauthenticated — a login screen cannot
+  // authenticate before it knows where to send the user (#251).
+  const [oidc, setOidc] = useState<{ authority: string; clientId: string } | null>(null)
+  const [oidcError, setOidcError] = useState<string | null>(null)
+
   useEffect(() => {
     const show = () => setOpen(true)
     window.addEventListener('mockifyr-auth-required', show)
     return () => window.removeEventListener('mockifyr-auth-required', show)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchHealth('default').then(async ({ health }) => {
+      const auth = health.auth
+      if (cancelled || auth?.mode !== 'oidc' || !auth.authority || !auth.clientId) return
+      const config = { authority: auth.authority, clientId: auth.clientId }
+      setOidc(config)
+      // Coming back from the provider with ?code=: finish the exchange and refetch everything, so the
+      // user lands where they were rather than on a login screen they already passed.
+      if (await completeLoginIfRedirected(config)) {
+        setOpen(false)
+        void queryClient.invalidateQueries()
+      }
+    }).catch(() => {
+      // An unreachable host is not a sign-in problem; the regular fetch path will surface it.
+    })
+    return () => { cancelled = true }
+  }, [queryClient])
 
   if (!open) return null
 
@@ -58,6 +96,23 @@ export function LoginGate() {
           <h1 className="text-lg font-semibold">{t('login.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('login.subtitle')}</p>
         </div>
+        {oidc ? (
+          // The host authenticates people through an identity provider, so there is nothing to type
+          // here — asking for a username would be asking for the wrong credential.
+          <div className="space-y-3">
+            <Button
+              type="button"
+              variant="primary"
+              className="w-full"
+              disabled={busy}
+              onClick={() => void signIn()}
+            >
+              {busy ? t('login.redirecting') : t('login.signInWithProvider')}
+            </Button>
+            {oidcError && <p className="text-sm text-danger">{oidcError}</p>}
+            <p className="text-center text-xs text-muted-foreground">{t('login.providerHint')}</p>
+          </div>
+        ) : (
         <div className="space-y-3">
           <div>
             <Label htmlFor="login-user">{t('login.username')}</Label>
@@ -84,6 +139,7 @@ export function LoginGate() {
             {busy ? t('login.signingIn') : t('login.signIn')}
           </Button>
         </div>
+        )}
       </form>
     </div>
   )
