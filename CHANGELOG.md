@@ -8,6 +8,12 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- Sandbox resources are durable. With any persistence backend (file system, LiteDB, PostgreSQL,
+  Redis) documents seeded into a sandbox survive a restart, and deletes and resets survive it too.
+  In-memory hosts are unchanged.
+
 ## Released
 
 ### [v1.1.0](https://github.com/qorpe/mockifyr/releases/tag/v1.1.0) — 2026-08-03

@@ -214,3 +214,44 @@ public interface IRequestFilter : IExtension
     /// <summary>The filter name.</summary>
     string Name { get; }
 }
+
+/// <summary>
+/// Persists sandbox resource documents (G19a) so they survive a restart, mirroring
+/// <see cref="IStubPersistence"/> and <see cref="IEnvironmentPersistence"/>.
+/// </summary>
+/// <remarks>
+/// Resources were in-memory only, which sat badly with calling this an integration sandbox: a partner
+/// seeds their fixtures, the pod restarts, and their data is gone. Backup and restore covered the
+/// deliberate case; this covers the one nobody plans for.
+/// </remarks>
+public interface IResourcePersistence : IExtension
+{
+    /// <summary>Persists one document (create or replace).</summary>
+    void Save(TenantId tenant, ResourceDocument document);
+
+    /// <summary>Removes one persisted document.</summary>
+    void Remove(TenantId tenant, string collection, string id);
+
+    /// <summary>Removes a whole collection, or — with a null collection — everything the tenant owns.</summary>
+    void Clear(TenantId tenant, string? collection);
+}
+
+/// <summary>The default: nothing survives a restart.</summary>
+public sealed class NullResourcePersistence : IResourcePersistence
+{
+    /// <inheritdoc />
+    public void Save(TenantId tenant, ResourceDocument document) { }
+
+    /// <inheritdoc />
+    public void Remove(TenantId tenant, string collection, string id) { }
+
+    /// <inheritdoc />
+    public void Clear(TenantId tenant, string? collection) { }
+}
+
+/// <summary>Reads persisted resources back at startup, the counterpart of <see cref="IResourcePersistence"/>.</summary>
+public interface IResourcesLoader : IExtension
+{
+    /// <summary>Every persisted document, grouped by the tenant that owns it.</summary>
+    IReadOnlyDictionary<TenantId, IReadOnlyList<ResourceDocument>> LoadAll();
+}

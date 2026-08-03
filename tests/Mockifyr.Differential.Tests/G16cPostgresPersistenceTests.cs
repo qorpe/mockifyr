@@ -42,6 +42,39 @@ public sealed class G16cPostgresPersistenceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SandboxResources_SurviveRestart()
+    {
+        var connectionString = _postgres.GetConnectionString();;
+
+        await using (var hostA = await StartHostAsync(connectionString))
+        {
+            using var client = Client(hostA);
+            using var body = new StringContent("""{"total":10}""", Encoding.UTF8, "application/json");
+            using var put = await client.PutAsync("/__admin/resources/orders/A-1", body);
+            Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+
+            using var gone = await client.DeleteAsync("/__admin/resources/orders/A-1");
+            Assert.Equal(HttpStatusCode.OK, gone.StatusCode);
+
+            using var kept = new StringContent("""{"total":20}""", Encoding.UTF8, "application/json");
+            using var second = await client.PutAsync("/__admin/resources/orders/A-2", kept);
+            Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        }
+
+        // A fresh host against the same backend: what a partner seeded is still there, and what they
+        // deleted stays deleted — persisting creates but not deletes is the classic half-fix.
+        await using var hostB = await StartHostAsync(connectionString);
+        using var clientB = Client(hostB);
+
+        using var deleted = await clientB.GetAsync("/__admin/resources/orders/A-1");
+        Assert.Equal(HttpStatusCode.NotFound, deleted.StatusCode);
+
+        using var alive = await clientB.GetAsync("/__admin/resources/orders/A-2");
+        Assert.Equal(HttpStatusCode.OK, alive.StatusCode);
+        Assert.Contains("\"total\"", await alive.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task CreatedStub_SurvivesRestart_AndMatchesOracle()
     {
         var connectionString = _postgres.GetConnectionString();

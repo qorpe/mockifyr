@@ -283,5 +283,9 @@ now means a major version. The last silent gaps became loud first — a mapping 
 a non-`uniform` `delayDistribution` is imported *and reported*, on the admin API and at startup, since
 a documented gap you can only discover from behaviour is not really documented.
 
+Two G19 deferrals are closed since 1.0: `bodyFileName` (file-backed response bodies, oracle-verified)
+and **durable sandbox resources** — documents seeded into a sandbox now survive a restart on every
+persistence backend, with deletes and resets persisting too.
+
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 800 tests green across the four suites.
+(0 warnings); 827 tests green across the four suites.
