@@ -278,5 +278,10 @@ were recompiled on every request) is fixed — a templated response went from 69
 (#252) and the policy documents (#248 — `CHANGELOG.md`, `VERSIONING.md`, `SUPPORT.md`,
 `CONTRIBUTING.md`) are done.
 
+**1.0 (2026-08-03)** makes the compatibility promises in `VERSIONING.md` binding: a breaking change
+now means a major version. The last silent gaps became loud first — a mapping using `bodyFileName` or
+a non-`uniform` `delayDistribution` is imported *and reported*, on the admin API and at startup, since
+a documented gap you can only discover from behaviour is not really documented.
+
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 760 tests green across the four suites.
+(0 warnings); 781 tests green across the four suites.

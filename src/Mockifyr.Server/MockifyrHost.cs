@@ -854,12 +854,25 @@ public static class MockifyrHost
     private static void ApplyStartupMappings(WebApplication app)
     {
         var store = app.Services.GetRequiredService<IStubStore>();
+        var warnings = new HashSet<string>(StringComparer.Ordinal);
         foreach (var loader in app.Services.GetServices<IMappingsLoader>())
         {
             foreach (var stub in loader.Load(TenantId.Default))
             {
                 store.Put(stub);
+                if (stub.Source is { } source)
+                {
+                    warnings.UnionWith(Adapters.MappingJson.UnsupportedFieldWarnings.For(source));
+                }
             }
+        }
+
+        // Mappings loaded from disk never pass through the admin API, so this is the only place an
+        // operator would hear about a field the engine accepts but does not act on. Saying nothing is
+        // how a `bodyFileName` stub becomes an afternoon of debugging an empty body.
+        foreach (var warning in warnings)
+        {
+            Console.WriteLine($"mockifyr: {warning}");
         }
     }
 }

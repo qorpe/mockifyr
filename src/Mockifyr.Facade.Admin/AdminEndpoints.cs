@@ -3,6 +3,7 @@ using Mediant.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Mockifyr.Adapters.MappingJson;
 using Mockifyr.Application;
 using Mockifyr.Core;
 using Mockifyr.Outbound;
@@ -204,10 +205,24 @@ public static class AdminEndpoints
 
         admin.MapPost("/mappings", async (HttpRequest request, ISender sender) =>
         {
-            var result = await sender.Send(new CreateStubCommand(await ReadBody(request), TenantOf(request)));
-            return result.IsSuccess
+            var body = await ReadBody(request);
+            var result = await sender.Send(new CreateStubCommand(body, TenantOf(request)));
+            if (!result.IsSuccess)
+            {
+                return Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
+            }
+
+            // Fields this engine accepts but does not act on are reported rather than ignored. The
+            // stub is still created — refusing it would break importing a mapping set written for the
+            // reference engine, which is the point of accepting the dialect. The goal is to be loud,
+            // not strict: a `bodyFileName` stub used to match and return an empty body, which reads
+            // as a matching bug and is not one.
+            var warnings = UnsupportedFieldWarnings.For(body);
+            return warnings.Count == 0
                 ? Results.Json(new { id = result.Value, uuid = result.Value }, statusCode: StatusCodes.Status201Created)
-                : Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
+                : Results.Json(
+                    new { id = result.Value, uuid = result.Value, warnings },
+                    statusCode: StatusCodes.Status201Created);
         });
 
         admin.MapGet("/mappings/{id:guid}", async (Guid id, HttpRequest request, ISender sender) =>
@@ -232,10 +247,17 @@ public static class AdminEndpoints
 
         admin.MapPost("/mappings/import", async (HttpRequest request, ISender sender) =>
         {
-            var result = await sender.Send(new ImportMappingsCommand(await ReadBody(request), TenantOf(request)));
-            return result.IsSuccess
-                ? Results.Ok()
-                : Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
+            var body = await ReadBody(request);
+            var result = await sender.Send(new ImportMappingsCommand(body, TenantOf(request)));
+            if (!result.IsSuccess)
+            {
+                return Results.StatusCode(StatusCodes.Status422UnprocessableEntity);
+            }
+
+            // A bundle is where deferred fields hide best — nobody reads 200 stubs. Warnings are
+            // de-duplicated, so the same gap across the whole bundle is reported as one fact.
+            var warnings = UnsupportedFieldWarnings.For(body);
+            return warnings.Count == 0 ? Results.Ok() : Results.Json(new { warnings });
         });
 
         admin.MapPost("/mappings/reset", async (HttpRequest request, ISender sender) =>

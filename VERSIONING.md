@@ -11,9 +11,9 @@ actually promises, so you can answer "will this upgrade break me?" without readi
 | New capability, or a change that only adds a way to do something | **minor** |
 | A fix that makes existing behavior match its documentation | **patch** |
 
-While Mockifyr is on **0.x**, the minor number carries what would otherwise be a major: `0.21 → 0.22`
-may contain a breaking change, and the release notes say so at the top when it does. From **1.0**
-onwards the table above applies literally.
+Since **1.0** that table applies literally: a breaking change means a major version, and there will not
+be one inside the 1.x line. Before 1.0 the minor number carried what would otherwise be a major, so
+`0.21 → 0.22` could break you; that is over.
 
 ## The four surfaces, and what "breaking" means for each
 
