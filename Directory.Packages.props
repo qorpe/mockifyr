@@ -6,14 +6,14 @@
 
   <ItemGroup>
     <!-- CQRS mediator (management path only — see docs/decisions/0005) -->
-    <PackageVersion Include="Mediant" Version="1.1.0" />
+    <PackageVersion Include="Mediant" Version="1.4.1" />
     <!-- JSONPath: Newtonsoft's dialect is the closest .NET proxy for WireMock's Jayway JsonPath
          (accepts `[?(@.x=='y')]`-style filters). Used only inside Mockifyr.Matching. -->
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- JSON Schema validation for matchesJsonSchema (G1h). json-everything's JsonSchema.Net is the
          MIT-licensed .NET validator with Draft 6/7/2019-09/2020-12 support. Used only inside
          Mockifyr.Matching. -->
-    <PackageVersion Include="JsonSchema.Net" Version="9.2.2" />
+    <PackageVersion Include="JsonSchema.Net" Version="9.4.0" />
     <!-- GraphQL query normalization for the GraphQL matcher (G14). GraphQL-Parser is graphql-dotnet's
          lexer/parser/printer; used only inside Mockifyr.Matching. -->
     <PackageVersion Include="GraphQL-Parser" Version="9.5.1" />
@@ -25,12 +25,12 @@
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <!-- OpenAPI import (G19c, ADR 0011). Microsoft.OpenApi.Readers parses 3.0/3.1 (JSON + YAML);
          MIT-licensed, used only inside Mockifyr.Adapters.OpenApi — never referenced by Core. -->
-    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.23" />
+    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.29" />
     <!-- gRPC facade (G13). Google.Protobuf drives generic protobuf <-> JSON via the descriptor;
          Grpc.AspNetCore hosts the gRPC endpoint. Used only inside Mockifyr.Facade.Grpc. -->
     <PackageVersion Include="Google.Protobuf" Version="3.35.1" />
     <PackageVersion Include="Grpc.AspNetCore" Version="2.80.0" />
-    <PackageVersion Include="Grpc.Tools" Version="2.81.1" />
+    <PackageVersion Include="Grpc.Tools" Version="2.83.0" />
     <!-- SMTP capture facade (G18b, ADR 0009). MimeKit parses the DATA payload into a MessageEnvelope;
          MIT-licensed, used only inside Mockifyr.Facade.Smtp — Core never sees MIME. -->
     <PackageVersion Include="MimeKit" Version="4.17.0" />
@@ -51,20 +51,20 @@
   </ItemGroup>
 
   <ItemGroup Label="Testing / harness">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <!-- FakeTimeProvider: lets the key-rotation tests advance time instead of sleeping (#250). -->
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
-    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <!-- Differential harness: runs the real Java WireMock oracle in a container. -->
-    <PackageVersion Include="Testcontainers" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers" Version="4.13.0" />
     <!-- In-memory test host for the admin HTTP facade differential (G7b). -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
     <!-- Real PostgreSQL container for the persistence differential (G16c). -->
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
     <!-- Real Redis container for the persistence differential (G16d). -->
-    <PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.13.0" />
     <!-- gRPC client to drive the G13 differential against both sides. -->
     <PackageVersion Include="Grpc.Net.Client" Version="2.80.0" />
 
