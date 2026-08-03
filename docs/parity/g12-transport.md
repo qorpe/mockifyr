@@ -183,3 +183,27 @@ behaviors deferred throughout the roadmap are finally implemented and validated.
 - **Regression cases:** `G12fStandaloneHostTests.DirectoryMappingsLoader_ReadsSingleStubsAndBundles_InFilenameOrder`,
   `G12fStandaloneHostTests.DirectoryMappingsLoader_MissingDirectory_ReturnsEmpty`,
   `G12fStandaloneHostTests.Host_LoadsRootDirMappings_AndServesThemOverHttp`.
+
+## Tenant-scoped recording (post-1.0)
+
+Recording was one global session, listed as a known limitation. On a shared host that was worse than
+it sounds, in both directions: starting a recording discarded whatever another team had captured, and
+while any session was live **every** tenant's traffic was proxied to that one target — a tenant that
+never asked for anything had its requests sent to someone else's upstream.
+
+Every entry point on `RecordingSession` now takes an explicit `TenantId`, so forgetting to scope one
+is a compile error rather than a cross-tenant leak (CLAUDE.md §2.6). The compiler found all six call
+sites.
+
+One ordering change mattered as much as the state split: the record-mode check used to run **before**
+tenant resolution. It now runs after, so recording follows the same chain everything else does — API
+key, then header, then default. Checking earlier is what made a global session capture other tenants'
+requests in the first place.
+
+Validated by 5 wire tests on a real host with two upstreams: a recording tenant is proxied while a
+non-recording one still gets its own stubs, status is per tenant, two tenants record simultaneously
+against their own upstreams and each captures only its own exchange, one tenant's stop leaves the
+other recording, and a snapshot shows only the asking tenant's captures.
+
+Still deferred: record `filters`, `allowNonProxied`, `__files` extraction, transformers on generated
+stubs.

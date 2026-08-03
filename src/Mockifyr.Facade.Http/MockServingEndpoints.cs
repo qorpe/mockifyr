@@ -53,20 +53,6 @@ public static class MockServingEndpoints
     {
         var request = await BuildRequestAsync(context);
 
-        // Record mode (G12d): while a session is live, every incoming request is proxied to the target
-        // upstream, a stub is generated from the exchange and captured, and the upstream's
-        // response is returned to the caller — this is Mockifyr's record-through-proxy behavior
-        // (G12d, verified by the differential suite).
-        var recording = context.RequestServices.GetRequiredService<RecordingSession>();
-        if (recording.TargetBaseUrl is { } target)
-        {
-            var recorder = context.RequestServices.GetRequiredService<StubRecorder>();
-            var exchange = await recorder.RecordAsync(target, request, context.RequestAborted);
-            recording.Record(request, exchange.StubResponse);
-            await WriteUpstreamAsync(context, exchange.CapturedResponse);
-            return;
-        }
-
         var engine = context.RequestServices.GetRequiredService<StubEngine>();
 
         // Sandbox access (G19d, ADR 0011): with --sandbox-auth, a presented API key resolves the
@@ -112,6 +98,25 @@ public static class MockServingEndpoints
             ?? (context.Request.Headers.TryGetValue(TenantHeader, out var t) && !string.IsNullOrEmpty(t)
                 ? new TenantId(t!)
                 : TenantId.Default);
+
+        // Record mode (G12d): while THIS TENANT has a session live, its requests are proxied to that
+        // tenant's target, a stub is generated from the exchange and captured, and the upstream's
+        // response is returned to the caller — Mockifyr's record-through-proxy behavior (verified by
+        // the differential suite).
+        //
+        // Deliberately after tenant resolution: recording follows the same chain everything else does
+        // (API key, then header, then default). Checking it earlier — as this did while the session
+        // was global — meant one team's recording proxied every other tenant's traffic to their
+        // upstream.
+        var recording = context.RequestServices.GetRequiredService<RecordingSession>();
+        if (recording.TargetBaseUrl(tenant) is { } target)
+        {
+            var recorder = context.RequestServices.GetRequiredService<StubRecorder>();
+            var exchange = await recorder.RecordAsync(target, request, context.RequestAborted);
+            recording.Record(tenant, request, exchange.StubResponse);
+            await WriteUpstreamAsync(context, exchange.CapturedResponse);
+            return;
+        }
 
         var resolution = engine.Handle(tenant, request);
 

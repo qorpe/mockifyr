@@ -224,6 +224,13 @@ internal static class FormatHelpers
         var (right, rightInt) = Number(arguments, 2);
         var bothInt = leftInt && rightInt;
 
+        // Division and modulo by zero: the oracle answers 500. Rendering an empty value instead keeps a
+        // template mistake from taking down the request path — a stated divergence, not an oversight.
+        if (right == 0 && op is "/" or "%")
+        {
+            return string.Empty;
+        }
+
         double result;
         switch (op)
         {
@@ -231,10 +238,20 @@ internal static class FormatHelpers
             case "-": result = left - right; break;
             case "*": result = left * right; break;
             case "/":
-                // Integer division rounds the true quotient (half up, like Java's Math.round).
-                result = bothInt ? System.Math.Floor((left / right) + 0.5) : left / right;
+                // Integer division rounds the true quotient half AWAY FROM ZERO, which is what the
+                // oracle does: -9/2 is -5, not -4. This used to be Floor(x + 0.5), which agrees for
+                // positive operands and is wrong for every negative half — the case the differential
+                // suite had no example of until one was added.
+                result = bothInt
+                    ? System.Math.Round(left / right, MidpointRounding.AwayFromZero)
+                    : left / right;
                 break;
-            default: return string.Empty; // '%' and '^' are unsupported by the oracle.
+            case "%":
+                // Supported by the oracle, contrary to what this code used to claim. The sign follows
+                // the dividend (-7 % 2 is -1), which is what both C# and Java do.
+                result = left % right;
+                break;
+            default: return string.Empty; // '^' really is rejected by the oracle.
         }
 
         return bothInt
