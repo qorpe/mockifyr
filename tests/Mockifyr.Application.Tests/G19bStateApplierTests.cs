@@ -178,9 +178,11 @@ public sealed class G19bStateApplierTests
 
         public IReadOnlyList<ResourceCollectionInfo> GetCollections(TenantId tenant) => [];
         public IReadOnlyList<ResourceDocument> List(TenantId tenant, string collection) => [];
+        public IReadOnlyCollection<TenantId> GetTenants() => [];
         public ResourceDocument? Get(TenantId tenant, string collection, string id) { GetCalls++; return null; }
         public ResourceDocument Put(TenantId tenant, string collection, string id, string body) =>
             new(id, collection, body, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 1);
+        public void Restore(TenantId tenant, ResourceDocument document) { }
         public bool Delete(TenantId tenant, string collection, string id) => false;
         public void Reset(TenantId tenant, string collection) { }
         public void ResetAll(TenantId tenant) { }

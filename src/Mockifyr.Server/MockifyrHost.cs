@@ -557,23 +557,26 @@ public static class MockifyrHost
         var postgres = builder.Configuration["postgres"];
         if (!string.IsNullOrWhiteSpace(postgres))
         {
-            builder.Services.AddSingleton<IStubPersistence>(new PostgresStubPersistence(postgres));
+            builder.Services.AddSingleton<IStubPersistence>(sp =>
+                new PostgresStubPersistence(postgres, sp.GetRequiredService<ChangeFeedIdentity>()));
             builder.Services.AddSingleton<IMappingsLoader>(sp =>
                 new PostgresMappingsLoader(postgres, sp.GetRequiredService<IMatcherRegistry>()));
-            builder.Services.AddSingleton<IEnvironmentPersistence>(new PostgresEnvironmentPersistence(postgres));
+            builder.Services.AddSingleton<IEnvironmentPersistence>(sp =>
+                new PostgresEnvironmentPersistence(postgres, sp.GetRequiredService<ChangeFeedIdentity>()));
             builder.Services.AddSingleton<IEnvironmentsLoader>(new PostgresEnvironmentsLoader(postgres));
-            builder.Services.AddSingleton<IResourcePersistence>(new PostgresResourcePersistence(postgres));
+            builder.Services.AddSingleton<IResourcePersistence>(sp =>
+                new PostgresResourcePersistence(postgres, sp.GetRequiredService<ChangeFeedIdentity>()));
             builder.Services.AddSingleton<IResourcesLoader>(new PostgresResourcesLoader(postgres));
             builder.Services.AddSingleton<IApiKeyPersistence>(new PostgresApiKeyPersistence(postgres));
 
             // Change-feed reload (G16f): opt-in multi-instance coherence via Postgres LISTEN/NOTIFY —
             // the same seam as Redis (G16e). Each host listens for change announcements and reconciles
-            // its in-memory store, so a mutation on one instance is reflected by the others live.
+            // its in-memory state — stubs, environment keys and sandbox documents (#279) — so a mutation
+            // on one instance is reflected by the others live.
             if (builder.Configuration.GetValue<bool>("change-feed"))
             {
                 builder.Services.AddSingleton<IHostedService>(sp =>
-                    new PostgresChangeFeedReloader(
-                        postgres, sp.GetRequiredService<IStubStore>(), sp.GetServices<IMappingsLoader>()));
+                    new PostgresChangeFeedReloader(postgres, sp.GetRequiredService<ChangeFeedTargets>()));
             }
         }
 
@@ -585,23 +588,30 @@ public static class MockifyrHost
             builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(
                 _ => StackExchange.Redis.ConnectionMultiplexer.Connect(redis));
             builder.Services.AddSingleton<IStubPersistence>(sp =>
-                new RedisStubPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+                new RedisStubPersistence(
+                    sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ChangeFeedIdentity>()));
             builder.Services.AddSingleton<IMappingsLoader>(sp =>
                 new RedisMappingsLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(), sp.GetRequiredService<IMatcherRegistry>()));
             builder.Services.AddSingleton<IEnvironmentPersistence>(sp =>
-                new RedisEnvironmentPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+                new RedisEnvironmentPersistence(
+                    sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ChangeFeedIdentity>()));
             builder.Services.AddSingleton<IEnvironmentsLoader>(sp =>
                 new RedisEnvironmentsLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
             builder.Services.AddSingleton<IResourcePersistence>(sp =>
-                new RedisResourcePersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+                new RedisResourcePersistence(
+                    sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ChangeFeedIdentity>()));
             builder.Services.AddSingleton<IResourcesLoader>(sp =>
                 new RedisResourcesLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
             builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
                 new RedisApiKeyPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
 
             // Change-feed reload (G16e): opt-in multi-instance coherence. Each host subscribes to Redis
-            // change announcements and reloads its in-memory store, so a mutation on one instance is
-            // reflected by the others without a restart.
+            // change announcements and reloads its in-memory state — stubs, environment keys and sandbox
+            // documents (#279) — so a mutation on one instance is reflected by the others without a
+            // restart.
             if (builder.Configuration.GetValue<bool>("change-feed"))
             {
                 builder.Services.AddHostedService<RedisChangeFeedReloader>();

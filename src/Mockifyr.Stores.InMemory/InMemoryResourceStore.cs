@@ -49,6 +49,17 @@ public sealed class InMemoryResourceStore(
     }
 
     /// <inheritdoc />
+    public IReadOnlyCollection<TenantId> GetTenants()
+    {
+        lock (_gate)
+        {
+            // Only tenants that still hold a document: Reset leaves an empty collection behind, and a
+            // tenant reduced to those is gone as far as a reload is concerned.
+            return [.. _byTenant.Where(pair => pair.Value.Any(c => c.Value.Count > 0)).Select(pair => pair.Key)];
+        }
+    }
+
+    /// <inheritdoc />
     public ResourceDocument? Get(TenantId tenant, string collection, string id)
     {
         lock (_gate)
@@ -85,6 +96,33 @@ public sealed class InMemoryResourceStore(
             }
 
             return created;
+        }
+    }
+
+    /// <inheritdoc />
+    public void Restore(TenantId tenant, ResourceDocument document)
+    {
+        lock (_gate)
+        {
+            var collections = _byTenant.TryGetValue(tenant, out var existing) ? existing : _byTenant[tenant] = [];
+            var documents = collections.TryGetValue(document.Collection, out var list)
+                ? list
+                : collections[document.Collection] = [];
+
+            // Timestamps and version come from the document, not the clock: this is another instance's
+            // write being mirrored, not a write happening here.
+            var index = documents.FindIndex(d => string.Equals(d.Id, document.Id, StringComparison.Ordinal));
+            if (index >= 0)
+            {
+                documents[index] = document;
+                return;
+            }
+
+            documents.Add(document);
+            if (documents.Count > Capacity)
+            {
+                documents.RemoveAt(0);
+            }
         }
     }
 

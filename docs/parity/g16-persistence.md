@@ -157,6 +157,58 @@ the same seam.
   seam, which is how a tenant-aware peer would.) Coherence infrastructure, so no oracle.
 - **Regression case:** `G16gMultiTenantReloadTests.Reload_Reconciles_All_Tenants_Independently`.
 
+## Environments and sandbox resources on the change feed (#279)
+
+- **Group / item:** post-1.0 — the half of the feed that was missing. Self-tested against both shared
+  backends; coherence is infrastructure, so no oracle applies.
+- **The gap.** The feed carried *stubs only*. Environment keys (G17) and sandbox documents (G19a) were
+  persisted to the same shared backend and reloaded at startup, but never propagated: a second replica
+  kept serving the old value until it restarted. The deployment guidance recommends scaling out behind
+  one Postgres or Redis, so this was reachable by following our own advice — and it presents as
+  non-deterministic traffic, since an operator flipping a key sees the change honoured by some replicas
+  and not others.
+- **What was actually missing was the announcement, not the reconcile.** Extending `ChangeFeedReconciler`
+  was the easy half. `PostgresEnvironmentPersistence`, `PostgresResourcePersistence` and their Redis
+  counterparts emitted **nothing** on write — only the stub providers announced. The announcement now
+  lives in one place (`ChangeFeedAnnouncement`) rather than on the stub classes, because it stopped being
+  about stubs; all three kinds share one channel, since a change to any of them is rare next to the
+  request traffic it affects and three channels would buy precision nobody is measuring.
+- **Reload restores, it does not re-write.** Replaying another instance's document through
+  `IResourceStore.Put` would advance its version and stamp a local `UpdatedAt`, so the same document
+  would report **different versions on two replicas of one backend** — a difference a client can read.
+  Hence `IResourceStore.Restore`, which writes a document exactly as persisted, alongside `GetTenants()`
+  so a tenant emptied elsewhere can be pruned (`IEnvironmentStore` already had `GetTenants` from G16g).
+  The per-collection bound still applies to a restore: a document arriving over the feed is still a
+  document arriving.
+- **A host must ignore its own announcements — found by testing, not by reasoning.** The wire test
+  asserting a writer reads back its own version failed: a host hears its own change, and the reload it
+  triggers can read the backend *before* the next local write lands and then restore that older view over
+  it. The operator gets their own change handed back at the previous version, and nothing announces again
+  to correct it. Every announcement now carries a `ChangeFeedIdentity` payload (`pg_notify`'s payload
+  parameter; the Redis message) and a host skips its own. The identity is **per host, not per process** —
+  two hosts in one process (the test suite, and anyone embedding Mockifyr twice) would otherwise go deaf
+  to each other, which is the same bug wearing the fix's clothes. An unidentified announcement is always
+  processed: missing a real change is the worse failure.
+- **Reloads are serialized per host.** Both transports can deliver announcements concurrently; two
+  overlapping reloads read the backend at different instants and the later read can finish first, leaving
+  the host holding the older view with nothing left to announce.
+- **A pull is not an announcement.** Git sync reconciles *stubs alone* (`ReloadStubs`): the remote tree is
+  mapping files and carries no opinion about environment keys or sandbox documents, so reconciling them
+  against it would prune state the remote never described.
+- **Validation.** One suite run against **both** backends (`redis:7-alpine` pub/sub and
+  `postgres:16-alpine` `LISTEN`/`NOTIFY`), because the defect was per-provider — proving one backend
+  would have proven half a fix. Two live hosts, one backend: a key written on A is resolved by B; flipping
+  its active value moves both; deleting it prunes it from B; a document written on A is readable on B at
+  **A's** version and survives unrelated reloads at that version; a delete on A prunes it from B; and two
+  tenants holding the same collection and id stay apart through reload and prune. Every cross-instance
+  assertion re-reads after polling, and the delete cases assert the item *arrived* first — otherwise
+  "gone" and "never propagated" are indistinguishable from the far end. All twelve fail against the
+  pre-fix engine.
+- **Mutation testing.** Stryker on `InMemoryResourceStore`: 34 mutants, **0 survivors** (100%).
+- **Regression cases:** `RedisChangeFeedEnvironmentResourceTests` and
+  `PostgresChangeFeedEnvironmentResourceTests` (six cases each), plus `ResourceStoreRestoreTests` for the
+  store logic beneath them.
+
 ## Validated Git sync over the root-dir (post-G16 / issue #143, ADR 0007)
 
 - **Group / item:** post-roadmap platform feature — **self-tested** (WireMock has no Git surface, so

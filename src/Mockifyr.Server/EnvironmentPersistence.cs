@@ -198,10 +198,12 @@ internal static class PostgresEnvironmentSchema
 public sealed class PostgresEnvironmentPersistence : IEnvironmentPersistence
 {
     private readonly string _connectionString;
+    private readonly ChangeFeedIdentity? _writer;
 
-    public PostgresEnvironmentPersistence(string connectionString)
+    public PostgresEnvironmentPersistence(string connectionString, ChangeFeedIdentity? writer = null)
     {
         _connectionString = connectionString;
+        _writer = writer;
         PostgresEnvironmentSchema.Ensure(connectionString);
     }
 
@@ -217,6 +219,7 @@ public sealed class PostgresEnvironmentPersistence : IEnvironmentPersistence
         command.Parameters.AddWithValue("key", key.Key);
         command.Parameters.AddWithValue("json", EnvironmentJson.Serialize(key));
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -229,6 +232,7 @@ public sealed class PostgresEnvironmentPersistence : IEnvironmentPersistence
         command.Parameters.AddWithValue("tenant", tenant.Value);
         command.Parameters.AddWithValue("key", key);
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -238,6 +242,7 @@ public sealed class PostgresEnvironmentPersistence : IEnvironmentPersistence
         using var command = new NpgsqlCommand("DELETE FROM environments WHERE tenant = @tenant", connection);
         command.Parameters.AddWithValue("tenant", tenant.Value);
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     private NpgsqlConnection Open()
@@ -285,19 +290,31 @@ public sealed class PostgresEnvironmentsLoader : IEnvironmentsLoader
 /// Redis-backed environment persistence (G17): one hash per tenant
 /// (<c>mockifyr:environments:{tenant}</c>) keyed by the environment key name.
 /// </summary>
-public sealed class RedisEnvironmentPersistence(IConnectionMultiplexer redis) : IEnvironmentPersistence
+public sealed class RedisEnvironmentPersistence(IConnectionMultiplexer redis, ChangeFeedIdentity? writer = null)
+    : IEnvironmentPersistence
 {
     internal static string HashKey(TenantId tenant) => $"mockifyr:environments:{tenant.Value}";
 
     /// <inheritdoc />
-    public void Save(TenantId tenant, EnvironmentKey key) =>
+    public void Save(TenantId tenant, EnvironmentKey key)
+    {
         redis.GetDatabase().HashSet(HashKey(tenant), key.Key, EnvironmentJson.Serialize(key));
+        ChangeFeedAnnouncement.Redis(redis, writer);
+    }
 
     /// <inheritdoc />
-    public void Remove(TenantId tenant, string key) => redis.GetDatabase().HashDelete(HashKey(tenant), key);
+    public void Remove(TenantId tenant, string key)
+    {
+        redis.GetDatabase().HashDelete(HashKey(tenant), key);
+        ChangeFeedAnnouncement.Redis(redis, writer);
+    }
 
     /// <inheritdoc />
-    public void Clear(TenantId tenant) => redis.GetDatabase().KeyDelete(HashKey(tenant));
+    public void Clear(TenantId tenant)
+    {
+        redis.GetDatabase().KeyDelete(HashKey(tenant));
+        ChangeFeedAnnouncement.Redis(redis, writer);
+    }
 }
 
 /// <summary>Reloads what <see cref="RedisEnvironmentPersistence"/> wrote (G17).</summary>

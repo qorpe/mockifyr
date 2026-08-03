@@ -295,8 +295,11 @@ helpers found the documentation had it backwards — the reference engine reject
 too — and turned up two real `math` defects instead: `%` was rejected though the oracle supports it,
 and integer division rounded the wrong way for negatives.
 
-Remaining work is the **deferred-edge register**, `docs/parity/deferred-edges.md` — the single answer
-to "is anything open?", with a verdict per item (out of scope / tracked / accepted). The per-group
-parity files still hold the narrative, but they record deferrals as of the group that wrote them, so
-they are not a count. Builds clean
-(0 warnings); 858 tests green across the four suites.
+The **deferred-edge register**, `docs/parity/deferred-edges.md`, is the single answer to "is anything
+open?", with a verdict per item (out of scope / tracked / accepted). The per-group parity files still
+hold the narrative, but they record deferrals as of the group that wrote them, so they are not a count.
+Its Tracked section is currently **empty**: the one entry it held — change-feed reload for environments
+and sandbox resources (#279) — shipped in 1.5.0, and testing it turned up a second defect the analysis
+had not predicted: a host reloaded on its own announcement and could hand an operator their own write
+back at the previous version, so every announcement now carries the writer's identity. Builds clean
+(0 warnings); 878 tests green across the four suites.
