@@ -120,6 +120,8 @@ branch/PR**:
 
 - `docs/roadmap.md` — checkbox ticked / new item recorded.
 - `docs/parity/<group>.md` — learned behavior, validation story, deferred edges (never silent).
+- `docs/parity/deferred-edges.md` — the register: add a row when a gap is created, delete it when one
+  is closed. A deferral recorded only in a group file is how the register came to be needed.
 - `docs/decisions/` — new/updated ADR whenever a design decision was made or changed (+ index row).
 - `README.md` — flags table and feature claims still true.
 - `CLAUDE.md` — repo map (§4) and status (§7) still true.
@@ -293,5 +295,8 @@ helpers found the documentation had it backwards — the reference engine reject
 too — and turned up two real `math` defects instead: `%` was rejected though the oracle supports it,
 and integer division rounded the wrong way for negatives.
 
-Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
+Remaining work is the **deferred-edge register**, `docs/parity/deferred-edges.md` — the single answer
+to "is anything open?", with a verdict per item (out of scope / tracked / accepted). The per-group
+parity files still hold the narrative, but they record deferrals as of the group that wrote them, so
+they are not a count. Builds clean
 (0 warnings); 858 tests green across the four suites.

@@ -11,6 +11,16 @@ Saxon/JAXP XPath, XMLUnit, the JSON comparator). Every time a differential diff 
 non-obvious WireMock behavior, we write it down here so the next roadmap item is built on
 evidence instead of guesswork. The repo gets smarter over time.
 
+## The register
+
+**[deferred-edges.md](deferred-edges.md) is the single answer to "is anything still open?"** The
+per-group files below record deferrals *as of the group that wrote them*, so many of them say
+"deferred" about something delivered two releases later — reading them end to end gives the wrong
+count, which is exactly how a review of the 1.x line got that answer wrong. Every open gap lives in
+the register with a verdict; every group file keeps its narrative.
+
+When a change closes a gap, update **both**.
+
 ## How to use it
 
 - One file per roadmap group: `g1-matching.md`, `g2-templating.md`, `g3-webhooks.md`, …
