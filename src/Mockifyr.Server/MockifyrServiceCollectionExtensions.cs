@@ -44,6 +44,8 @@ public static class MockifyrServiceCollectionExtensions
         // registration. Registered here rather than only in the host so every composition that maps
         // the admin API — including tests — resolves a working log.
         services.AddSingleton<IAuditLog, NullAuditLog>();
+        // No file store unless a --root-dir gives one a meaning (bodyFileName).
+        services.AddSingleton<IResponseBodyFiles, NoResponseBodyFiles>();
         // No keys unless the host configures some (#250); MockifyrHost replaces this when it does.
         services.AddSingleton(ActiveKeyReport.None);
 
@@ -90,7 +92,8 @@ public static class MockifyrServiceCollectionExtensions
             environments: sp.GetRequiredService<IEnvironmentResolver>(),
             resources: sp.GetRequiredService<IResourceStore>(),
             resourceIds: sp.GetRequiredService<IResourceIdGenerator>(),
-            resourceOptions: sp.GetRequiredService<ResourceOptions>()));
+            resourceOptions: sp.GetRequiredService<ResourceOptions>(),
+            bodyFiles: sp.GetRequiredService<IResponseBodyFiles>()));
 
         // Serve-event listeners: the built-in webhook plus any user extensions.
         services.AddSingleton<IServeEventTemplateRenderer>(sp =>

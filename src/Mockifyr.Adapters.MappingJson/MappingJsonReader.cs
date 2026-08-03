@@ -886,6 +886,12 @@ public static class MappingJsonReader
             StatusMessage = statusMessage,
             Headers = headerPairs.ToLookup(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
             Body = body,
+            BodyFileName = response.ValueKind == JsonValueKind.Object &&
+                response.TryGetProperty("bodyFileName", out var bodyFile) &&
+                bodyFile.ValueKind == JsonValueKind.String &&
+                bodyFile.GetString() is { Length: > 0 } fileName
+                    ? fileName
+                    : null,
             Transformers = transformers,
             Delay = ReadDelay(response),
             DelayDistribution = ReadDelayDistribution(response),

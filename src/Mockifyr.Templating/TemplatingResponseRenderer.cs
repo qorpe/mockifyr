@@ -28,6 +28,7 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
     private readonly IHandlebars _handlebars;
     private readonly CompiledTemplateCache _templates;
     private readonly bool _globalTemplating;
+    private readonly IResponseBodyFiles _bodyFiles;
     private readonly IEnvironmentResolver? _environments;
 
     /// <summary>
@@ -48,8 +49,10 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         IEnvironmentResolver? environments = null,
         IResourceStore? resources = null,
         IResourceIdGenerator? resourceIds = null,
-        ResourceOptions? resourceOptions = null)
+        ResourceOptions? resourceOptions = null,
+        IResponseBodyFiles? bodyFiles = null)
     {
+        _bodyFiles = bodyFiles ?? new NoResponseBodyFiles();
         _handlebars = HandlebarsFactory.Create(extraHelpers);
         _templates = new CompiledTemplateCache(_handlebars);
         _globalTemplating = globalTemplating;
@@ -100,12 +103,17 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
 
         if (stateModel is null && !_globalTemplating && !definition.Transformers.Contains(ResponseTemplateTransformer))
         {
+            if (ResponseBody.Resolve(definition, _bodyFiles) is not { } fastPathBody)
+            {
+                return ResponseBody.MissingFile(definition);
+            }
+
             return new CanonicalResponse
             {
                 Status = definition.Status,
                 StatusMessage = definition.StatusMessage,
                 Headers = definition.Headers,
-                Body = definition.Body ?? [],
+                Body = fastPathBody,
                 Delay = definition.Delay,
                 DelayDistribution = definition.DelayDistribution,
                 Fault = definition.Fault,
@@ -119,8 +127,15 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
             model["state"] = stateModel;
         }
 
-        var body = definition.Body is { } raw
-            ? Encoding.UTF8.GetBytes(RenderTemplate(Encoding.UTF8.GetString(raw), model))
+        // A file-backed body is templated exactly like an inline one — the transformer applies to what
+        // the stub serves, not to where the bytes came from.
+        if (ResponseBody.Resolve(definition, _bodyFiles) is not { } resolved)
+        {
+            return ResponseBody.MissingFile(definition);
+        }
+
+        var body = resolved.Length > 0
+            ? Encoding.UTF8.GetBytes(RenderTemplate(Encoding.UTF8.GetString(resolved), model))
             : [];
 
         var headers = definition.Headers

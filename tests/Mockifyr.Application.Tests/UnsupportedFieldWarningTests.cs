@@ -10,21 +10,6 @@ namespace Mockifyr.Application.Tests;
 public sealed class UnsupportedFieldWarningTests
 {
     [Fact]
-    public void A_bodyFileName_response_is_reported()
-    {
-        var warnings = UnsupportedFieldWarnings.For(
-            """{"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"bodyFileName":"body.json"}}""");
-
-        var warning = Assert.Single(warnings);
-        Assert.Contains("bodyFileName", warning);
-        // The message has to say what will actually happen, or it is just a label. An empty body reads
-        // as a matching problem, which is the wrong thing to go debugging.
-        Assert.Contains("EMPTY body", warning);
-        // One stub gets no count: "(1 stubs)" is noise, and ungrammatical noise at that.
-        Assert.DoesNotContain("stubs)", warning);
-    }
-
-    [Fact]
     public void A_non_uniform_delay_distribution_is_reported()
     {
         var warnings = UnsupportedFieldWarnings.For(
@@ -49,6 +34,7 @@ public sealed class UnsupportedFieldWarningTests
 
     [Theory]
     [InlineData("""{"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"body":"ok"}}""")]
+    [InlineData("""{"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"bodyFileName":"b.json"}}""")]
     [InlineData("""{"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"jsonBody":{"a":1}}}""")]
     [InlineData("""{"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"fixedDelayMilliseconds":50}}""")]
     [InlineData("""{"request":{"method":"GET","urlPath":"/a"},"response":{"status":404}}""")]
@@ -62,39 +48,40 @@ public sealed class UnsupportedFieldWarningTests
             """
             {"mappings":[
               {"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"body":"fine"}},
-              {"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"bodyFileName":"b.json"}}
+              {"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"delayDistribution":{"type":"lognormal"}}}
             ]}
             """);
 
-        Assert.Contains("bodyFileName", Assert.Single(warnings));
+        Assert.Contains("lognormal", Assert.Single(warnings));
     }
 
     [Fact]
     public void A_bare_array_of_mappings_is_inspected_too() =>
         Assert.Single(UnsupportedFieldWarnings.For(
-            """[{"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"bodyFileName":"b.json"}}]"""));
+            """[{"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"delayDistribution":{"type":"lognormal"}}}]"""));
 
     [Fact]
     public void The_same_gap_across_a_bundle_is_reported_once_with_a_count()
     {
-        // Deliberately a DIFFERENT file name per stub: grouping by the whole message would let these
-        // through as fifty near-identical lines, which is the wall this is meant to prevent. The gap
-        // is one fact whatever the file is called, and the fix is the same for all of them.
+        // Built with escaped quotes rather than a raw literal: the JSON ends in a run of closing
+        // braces that an interpolated raw string reads as its own.
         var stubs = string.Join(",", Enumerable.Range(0, 50).Select(i =>
-            $$$"""{"request":{"method":"GET","urlPath":"/s{{{i}}}"},"response":{"status":200,"bodyFileName":"file-{{{i}}}.json"}}"""));
+            "{\"request\":{\"method\":\"GET\",\"urlPath\":\"/s" + i +
+            "\"},\"response\":{\"status\":200,\"delayDistribution\":{\"type\":\"lognormal\"}}}"));
 
-        var warning = Assert.Single(UnsupportedFieldWarnings.For($$$"""{"mappings":[{{{stubs}}}]}"""));
+        // One gap is one fact, however many stubs share it.
+        var warning = Assert.Single(UnsupportedFieldWarnings.For("{\"mappings\":[" + stubs + "]}"));
         Assert.Contains("50 stubs", warning);
     }
 
     [Fact]
-    public void Two_different_gaps_are_both_reported()
+    public void Two_different_distribution_types_are_both_reported()
     {
         var warnings = UnsupportedFieldWarnings.For(
             """
             {"mappings":[
-              {"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"bodyFileName":"a.json"}},
-              {"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"delayDistribution":{"type":"lognormal"}}}
+              {"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"delayDistribution":{"type":"lognormal"}}},
+              {"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"delayDistribution":{"type":"chunkedDribble"}}}
             ]}
             """);
 
@@ -108,7 +95,7 @@ public sealed class UnsupportedFieldWarningTests
     [InlineData("\"a string\"")]
     [InlineData("""{"request":{"method":"GET"}}""")]
     [InlineData("""{"response":"not an object"}""")]
-    [InlineData("""{"response":{"status":200,"bodyFileName":42}}""")]
+    [InlineData("""{"response":{"status":200,"delayDistribution":42}}""")]
     public void Anything_malformed_produces_no_warnings_rather_than_throwing(string mapping) =>
         // The warning pass runs on input a client controls, and it must never be the thing that fails
         // an import. Malformed JSON is reported by the importer itself, with a better message.

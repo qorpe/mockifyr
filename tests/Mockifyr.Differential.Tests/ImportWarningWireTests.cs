@@ -28,7 +28,34 @@ public sealed class ImportWarningWireTests
     private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
 
     [Fact]
-    public async Task A_bodyFileName_stub_is_created_and_the_gap_is_reported()
+    public async Task A_delayDistribution_stub_is_created_and_the_gap_is_reported()
+    {
+        var (host, client) = await StartAsync();
+        await using (host)
+        {
+            using var created = await client.PostAsync("/__admin/mappings", Json(
+                """
+                {"request":{"method":"GET","urlPath":"/slow"},
+                 "response":{"status":200,"body":"ok","delayDistribution":{"type":"lognormal","median":90,"sigma":0.1}}}
+                """));
+
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var payload = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement;
+            Assert.Contains("lognormal", payload.GetProperty("warnings").EnumerateArray().Single().GetString());
+
+            // And the warned-about behaviour is exactly what happens: served, with no delay. The
+            // warning is the only thing standing between that and an afternoon of debugging.
+            using var served = await client.GetAsync("/slow");
+            Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+            Assert.Equal("ok", await served.Content.ReadAsStringAsync());
+
+            await host.StopAsync();
+            client.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task A_bodyFileName_stub_no_longer_warns_and_says_so_loudly_when_the_file_is_absent()
     {
         var (host, client) = await StartAsync();
         await using (host)
@@ -37,14 +64,15 @@ public sealed class ImportWarningWireTests
                 """{"request":{"method":"GET","urlPath":"/file-backed"},"response":{"status":200,"bodyFileName":"body.json"}}"""));
 
             Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-            var payload = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement;
-            Assert.Contains("bodyFileName", payload.GetProperty("warnings").EnumerateArray().Single().GetString());
+            // The field is implemented now, so warning about it would be crying wolf.
+            Assert.False(JsonDocument.Parse(await created.Content.ReadAsStringAsync())
+                .RootElement.TryGetProperty("warnings", out _));
 
-            // And the warned-about behaviour is exactly what happens: matched, empty body. The warning
-            // is the only thing standing between that and an afternoon of debugging.
+            // This host has no --root-dir, so it has no file store. The answer is a 500 that names the
+            // file — not a 200 with an empty body, which would read as a matching problem.
             using var served = await client.GetAsync("/file-backed");
-            Assert.Equal(HttpStatusCode.OK, served.StatusCode);
-            Assert.Empty(await served.Content.ReadAsStringAsync());
+            Assert.Equal(HttpStatusCode.InternalServerError, served.StatusCode);
+            Assert.Contains("body.json", await served.Content.ReadAsStringAsync());
 
             await host.StopAsync();
             client.Dispose();
@@ -82,9 +110,9 @@ public sealed class ImportWarningWireTests
             using var imported = await client.PostAsync("/__admin/mappings/import", Json(
                 """
                 {"mappings":[
-                  {"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"bodyFileName":"a.json"}},
-                  {"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"bodyFileName":"b.json"}},
-                  {"request":{"method":"GET","urlPath":"/c"},"response":{"status":200,"delayDistribution":{"type":"lognormal"}}},
+                  {"request":{"method":"GET","urlPath":"/a"},"response":{"status":200,"delayDistribution":{"type":"lognormal"}}},
+                  {"request":{"method":"GET","urlPath":"/b"},"response":{"status":200,"delayDistribution":{"type":"lognormal"}}},
+                  {"request":{"method":"GET","urlPath":"/c"},"response":{"status":200,"delayDistribution":{"type":"chunkedDribble"}}},
                   {"request":{"method":"GET","urlPath":"/d"},"response":{"status":200,"body":"fine"}}
                 ]}
                 """));

@@ -22,11 +22,15 @@ public sealed class MockifyrServer
     /// Optional <see cref="HttpClient"/> for the webhook listener's outbound calls (the differential
     /// harness injects one; production uses the default).
     /// </param>
-    public MockifyrServer(HttpClient? webhookClient = null)
+    /// <param name="bodyFiles">
+    /// Optional store for <c>bodyFileName</c> response bodies. Absent, such a stub serves an empty
+    /// body — the same outcome the import warning describes.
+    /// </param>
+    public MockifyrServer(HttpClient? webhookClient = null, IResponseBodyFiles? bodyFiles = null)
     {
         _engine = new StubEngine(
             _stubStore,
-            new TemplatingResponseRenderer(),
+            new TemplatingResponseRenderer(bodyFiles: bodyFiles),
             new InMemoryScenarioStateStore(),
             new InMemoryRequestJournal(),
             serveEventListeners: [new WebhookServeEventListener(webhookClient, new WebhookTemplateRenderer())]);
