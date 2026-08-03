@@ -14,7 +14,7 @@ wrong until this page existed.
 | **Tracked** | A real gap with an issue. It will be done when it is worth doing. |
 | **Accepted** | A real limitation we do not intend to close, with a reason. |
 
-Last reviewed: **1.4.0**.
+Last reviewed: **1.5.0**.
 
 ## Out of scope — verified against the reference engine
 
@@ -32,9 +32,13 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 ## Tracked — real gaps with issues
 
-| Item | Issue | Why it is not done yet |
-|------|-------|------------------------|
-| Change-feed reload for environments and sandbox resources | [#279](https://github.com/qorpe/mockifyr/issues/279) | A second replica learns about another's *stub* writes immediately but not environment or resource writes. Needs notification on write in two more providers, not just reconciliation — see the issue for the analysis. |
+**None.** The one entry this section held — change-feed reload for environments and sandbox resources
+([#279](https://github.com/qorpe/mockifyr/issues/279)) — shipped; see `g16-persistence.md` for what the
+fix turned up along the way.
+
+A row belongs here when a gap is real, reachable by a documented deployment, and not yet closed. An empty
+section is the honest state, not an oversight — the sections below are where the standing limitations
+live.
 
 ## Accepted — limitations we do not intend to close
 

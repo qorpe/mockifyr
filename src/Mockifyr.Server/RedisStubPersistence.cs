@@ -13,7 +13,8 @@ namespace Mockifyr.Server;
 /// so ids round-trip identically to the other backends. The <see cref="IConnectionMultiplexer"/> is
 /// shared (DI singleton) and thread-safe. <see cref="RedisMappingsLoader"/> reloads on startup.
 /// </summary>
-public sealed class RedisStubPersistence(IConnectionMultiplexer redis) : IStubPersistence
+public sealed class RedisStubPersistence(IConnectionMultiplexer redis, ChangeFeedIdentity? writer = null)
+    : IStubPersistence
 {
     /// <summary>The pub/sub channel a mutation announces on, so other instances can reload (G16e).</summary>
     internal static readonly RedisChannel ChangeChannel = RedisChannel.Literal("mockifyr:changes");
@@ -42,25 +43,26 @@ public sealed class RedisStubPersistence(IConnectionMultiplexer redis) : IStubPe
         Announce();
     }
 
-    // Announce a change so change-feed subscribers (G16e) reload. A publish with no subscribers is a
-    // cheap no-op, so this is always safe to emit whether or not the change feed is enabled.
-    private void Announce() => redis.GetSubscriber().Publish(ChangeChannel, RedisValue.EmptyString);
+    // Announce a change so change-feed subscribers (G16e) reload, carrying this host's identity so it
+    // can skip its own (#279). A publish with no subscribers is a cheap no-op.
+    private void Announce() => ChangeFeedAnnouncement.Redis(redis, writer);
 }
 
 /// <summary>
 /// The change-feed reloader (G16e): keeps a live host's in-memory store coherent with a shared Redis
 /// backend across instances. On any change another instance announces (see
-/// <see cref="RedisStubPersistence.ChangeChannel"/>), it reloads the default tenant from the mappings
-/// loaders and reconciles the store — upserting what's persisted and pruning what's gone — so a stub
-/// created (or deleted) on one instance is served (or stopped) by the others without a restart.
+/// <see cref="RedisStubPersistence.ChangeChannel"/>), it reloads what is persisted and reconciles this
+/// host's state — upserting what's persisted and pruning what's gone — so a stub, environment key or
+/// sandbox document written (or deleted) on one instance is served (or stopped) by the others without a
+/// restart. Environments and resources joined stubs on the feed in #279.
 /// </summary>
 public sealed class RedisChangeFeedReloader(
-    IConnectionMultiplexer redis, IStubStore store, IEnumerable<IMappingsLoader> loaders) : IHostedService
+    IConnectionMultiplexer redis, ChangeFeedTargets targets) : IHostedService
 {
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        redis.GetSubscriber().Subscribe(RedisStubPersistence.ChangeChannel, (_, _) => Reload());
+        redis.GetSubscriber().Subscribe(RedisStubPersistence.ChangeChannel, (_, message) => Reload(message));
         return Task.CompletedTask;
     }
 
@@ -71,7 +73,9 @@ public sealed class RedisChangeFeedReloader(
         return Task.CompletedTask;
     }
 
-    private void Reload() => ChangeFeedReconciler.Reload(store, loaders);
+    // Reloads are serialized (and self-announcements skipped) by the reconciler, so two announcements
+    // arriving together cannot interleave into a mixed view of the backend.
+    private void Reload(RedisValue message) => ChangeFeedReconciler.Reload(targets, message);
 }
 
 /// <summary>

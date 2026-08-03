@@ -72,6 +72,19 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IEnvironmentPersistence, NullEnvironmentPersistence>();
         services.AddSingleton<IResourcePersistence, NullResourcePersistence>();
 
+        // What a change-feed reload reconciles (#279): all three kinds of shared state, resolved from the
+        // same singletons the serve path uses. Registered here (not only where a feed is configured) so a
+        // host that later adds one has nothing else to wire.
+        services.AddSingleton(ChangeFeedIdentity.New());
+        services.AddSingleton(sp => new ChangeFeedTargets(
+            sp.GetRequiredService<IStubStore>(),
+            sp.GetServices<IMappingsLoader>(),
+            sp.GetRequiredService<IEnvironmentStore>(),
+            sp.GetServices<IEnvironmentsLoader>(),
+            sp.GetRequiredService<IResourceStore>(),
+            sp.GetServices<IResourcesLoader>(),
+            sp.GetRequiredService<ChangeFeedIdentity>()));
+
         // Git sync (ADR 0007): unconfigured by default; MockifyrHost registers the real service on
         // top when --git-remote is set and it wins the resolution.
         services.AddSingleton<IGitSync, NotConfiguredGitSync>();

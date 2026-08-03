@@ -224,10 +224,12 @@ internal static class PostgresResourceSchema
 public sealed class PostgresResourcePersistence : IResourcePersistence
 {
     private readonly string _connectionString;
+    private readonly ChangeFeedIdentity? _writer;
 
-    public PostgresResourcePersistence(string connectionString)
+    public PostgresResourcePersistence(string connectionString, ChangeFeedIdentity? writer = null)
     {
         _connectionString = connectionString;
+        _writer = writer;
         PostgresResourceSchema.Ensure(connectionString);
     }
 
@@ -244,6 +246,7 @@ public sealed class PostgresResourcePersistence : IResourcePersistence
         command.Parameters.AddWithValue("id", document.Id);
         command.Parameters.AddWithValue("json", ResourceJson.Serialize(document));
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -257,6 +260,7 @@ public sealed class PostgresResourcePersistence : IResourcePersistence
         command.Parameters.AddWithValue("collection", collection);
         command.Parameters.AddWithValue("id", id);
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -273,6 +277,7 @@ public sealed class PostgresResourcePersistence : IResourcePersistence
         }
 
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     private NpgsqlConnection Open()
@@ -320,20 +325,27 @@ public sealed class PostgresResourcesLoader : IResourcesLoader
 /// Redis-backed resource persistence: one hash per tenant and collection
 /// (<c>mockifyr:resources:{tenant}:{collection}</c>) keyed by document id.
 /// </summary>
-public sealed class RedisResourcePersistence(IConnectionMultiplexer redis) : IResourcePersistence
+public sealed class RedisResourcePersistence(IConnectionMultiplexer redis, ChangeFeedIdentity? writer = null)
+    : IResourcePersistence
 {
     internal const string Prefix = "mockifyr:resources:";
 
     internal static string HashKey(TenantId tenant, string collection) => $"{Prefix}{tenant.Value}:{collection}";
 
     /// <inheritdoc />
-    public void Save(TenantId tenant, ResourceDocument document) =>
+    public void Save(TenantId tenant, ResourceDocument document)
+    {
         redis.GetDatabase().HashSet(
             HashKey(tenant, document.Collection), document.Id, ResourceJson.Serialize(document));
+        ChangeFeedAnnouncement.Redis(redis, writer);
+    }
 
     /// <inheritdoc />
-    public void Remove(TenantId tenant, string collection, string id) =>
+    public void Remove(TenantId tenant, string collection, string id)
+    {
         redis.GetDatabase().HashDelete(HashKey(tenant, collection), id);
+        ChangeFeedAnnouncement.Redis(redis, writer);
+    }
 
     /// <inheritdoc />
     public void Clear(TenantId tenant, string? collection)
@@ -342,6 +354,7 @@ public sealed class RedisResourcePersistence(IConnectionMultiplexer redis) : IRe
         if (collection is not null)
         {
             database.KeyDelete(HashKey(tenant, collection));
+            ChangeFeedAnnouncement.Redis(redis, writer);
             return;
         }
 
@@ -355,6 +368,8 @@ public sealed class RedisResourcePersistence(IConnectionMultiplexer redis) : IRe
         {
             database.KeyDelete(key);
         }
+
+        ChangeFeedAnnouncement.Redis(redis, writer);
     }
 }
 

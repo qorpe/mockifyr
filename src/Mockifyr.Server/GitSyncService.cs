@@ -293,7 +293,7 @@ public sealed partial class GitSyncService(
 
             // Reconcile the live store from the updated working copy: upsert-then-prune per tenant,
             // so there is no window in which a live request misses an existing match.
-            ChangeFeedReconciler.Reload(store, loaders);
+            ChangeFeedReconciler.ReloadStubs(store, loaders);
             return Result.Success(new GitPullOutcome(true, fetched, StubsServed(), "fast-forwarded"));
         }
         finally

@@ -97,6 +97,12 @@ public interface IResourceStore
     /// <summary>The collection's documents in insertion order; empty for an unknown collection.</summary>
     IReadOnlyList<ResourceDocument> List(TenantId tenant, string collection);
 
+    /// <summary>
+    /// Every tenant that currently owns at least one document. Used by change-feed reload (#279),
+    /// including pruning a tenant whose last document was deleted on another instance.
+    /// </summary>
+    IReadOnlyCollection<TenantId> GetTenants();
+
     /// <summary>One document, or null when the id (or collection) is unknown.</summary>
     ResourceDocument? Get(TenantId tenant, string collection, string id);
 
@@ -105,6 +111,19 @@ public interface IResourceStore
     /// keeps <c>CreatedAt</c> and the insertion position, advances <c>UpdatedAt</c> and the version.
     /// </summary>
     ResourceDocument Put(TenantId tenant, string collection, string id, string body);
+
+    /// <summary>
+    /// Writes a document exactly as it was persisted — id, collection, timestamps <em>and version</em>
+    /// preserved — rather than as a new write.
+    /// </summary>
+    /// <remarks>
+    /// This is what change-feed reload (#279) uses. Replaying another instance's document through
+    /// <see cref="Put"/> would advance its version and stamp a local <c>UpdatedAt</c>, so the same
+    /// document would report different versions on two replicas of one backend — a difference a client
+    /// can observe, and the reason this is a separate entry point rather than a flag on <c>Put</c>.
+    /// The per-collection bound still applies: a restore is a document arriving, like any other.
+    /// </remarks>
+    void Restore(TenantId tenant, ResourceDocument document);
 
     /// <summary>Removes one document; false when it did not exist.</summary>
     bool Delete(TenantId tenant, string collection, string id);

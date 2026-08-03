@@ -36,10 +36,12 @@ public sealed class PostgresStubPersistence : IStubPersistence
     internal const string ChangeChannel = "mockifyr_changes";
 
     private readonly string _connectionString;
+    private readonly ChangeFeedIdentity? _writer;
 
-    public PostgresStubPersistence(string connectionString)
+    public PostgresStubPersistence(string connectionString, ChangeFeedIdentity? writer = null)
     {
         _connectionString = connectionString;
+        _writer = writer;
         PostgresSchema.Ensure(connectionString);
     }
 
@@ -56,7 +58,7 @@ public sealed class PostgresStubPersistence : IStubPersistence
         command.Parameters.AddWithValue("tenant", stub.TenantId.Value);
         command.Parameters.AddWithValue("json", PersistableJson.WithId(mappingJson, stub.Id));
         command.ExecuteNonQuery();
-        Announce(connection);
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -67,7 +69,7 @@ public sealed class PostgresStubPersistence : IStubPersistence
         using var command = new NpgsqlCommand("DELETE FROM stubs WHERE id = @id", connection);
         command.Parameters.AddWithValue("id", id);
         command.ExecuteNonQuery();
-        Announce(connection);
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -78,40 +80,30 @@ public sealed class PostgresStubPersistence : IStubPersistence
         using var command = new NpgsqlCommand("DELETE FROM stubs WHERE tenant = @tenant", connection);
         command.Parameters.AddWithValue("tenant", tenant.Value);
         command.ExecuteNonQuery();
-        Announce(connection);
-    }
-
-    // Announce a change on the open connection so LISTEN subscribers (G16f) reload. The channel is a
-    // fixed identifier (not user input), so it is safe to interpolate; NOTIFY with no listener is a
-    // cheap no-op, so this is always safe whether or not the change feed is enabled.
-    private static void Announce(NpgsqlConnection connection)
-    {
-        using var notify = new NpgsqlCommand($"NOTIFY {ChangeChannel}", connection);
-        notify.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 }
 
 /// <summary>
 /// The Postgres change-feed reloader (G16f): the <see cref="RedisChangeFeedReloader"/> counterpart using
 /// PostgreSQL <c>LISTEN</c>/<c>NOTIFY</c>. It holds a dedicated connection that <c>LISTEN</c>s on the
-/// change channel and, on every notification another instance emits, reconciles the in-memory store from
-/// the mappings loaders (<see cref="ChangeFeedReconciler"/>) — so a mutation on one instance is reflected
-/// by the others without a restart. A background loop drives Npgsql's notification delivery.
+/// change channel and, on every notification another instance emits, reconciles this host's in-memory
+/// state from the loaders (<see cref="ChangeFeedReconciler"/>) — so a mutation on one instance is
+/// reflected by the others without a restart. Environments and sandbox resources reload alongside stubs
+/// since #279. A background loop drives Npgsql's notification delivery.
 /// </summary>
 public sealed class PostgresChangeFeedReloader : IHostedService
 {
     private readonly string _connectionString;
-    private readonly IStubStore _store;
-    private readonly IEnumerable<IMappingsLoader> _loaders;
+    private readonly ChangeFeedTargets _targets;
     private readonly CancellationTokenSource _stopping = new();
     private NpgsqlConnection? _connection;
     private Task? _listenLoop;
 
-    public PostgresChangeFeedReloader(string connectionString, IStubStore store, IEnumerable<IMappingsLoader> loaders)
+    public PostgresChangeFeedReloader(string connectionString, ChangeFeedTargets targets)
     {
         _connectionString = connectionString;
-        _store = store;
-        _loaders = loaders;
+        _targets = targets;
     }
 
     /// <inheritdoc />
@@ -119,7 +111,7 @@ public sealed class PostgresChangeFeedReloader : IHostedService
     {
         _connection = new NpgsqlConnection(_connectionString);
         await _connection.OpenAsync(cancellationToken);
-        _connection.Notification += (_, _) => ChangeFeedReconciler.Reload(_store, _loaders);
+        _connection.Notification += (_, args) => ChangeFeedReconciler.Reload(_targets, args.Payload);
 
         using (var listen = new NpgsqlCommand($"LISTEN {PostgresStubPersistence.ChangeChannel}", _connection))
         {
