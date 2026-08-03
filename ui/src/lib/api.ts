@@ -1,3 +1,4 @@
+import { getBearer } from '@/lib/oidc'
 import { TENANT_HEADER } from '@/lib/tenants'
 import type { EnvironmentKey } from '@/lib/environments'
 
@@ -51,15 +52,24 @@ export async function verifyAdminAuth(user: string, pass: string): Promise<boole
   return true
 }
 
+/** The Authorization header to send, if any: an OIDC token first, then stored Basic credentials. */
+function authorizationHeader(): Record<string, string> {
+  const bearer = getBearer()
+  if (bearer) return { Authorization: `Bearer ${bearer}` }
+  const basic = localStorage.getItem(AUTH_KEY)
+  return basic ? { Authorization: `Basic ${basic}` } : {}
+}
+
 /** Low-level admin fetch: scopes every call to the active tenant, and attaches admin auth when present. */
 async function adminFetch(path: string, tenant: string, init?: RequestInit): Promise<Response> {
-  const auth = localStorage.getItem(AUTH_KEY)
   const res = await fetch(`/__admin${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
       [TENANT_HEADER]: tenant,
-      ...(auth ? { Authorization: `Basic ${auth}` } : {}),
+      // An OIDC bearer token wins when the user signed in that way; Basic remains for hosts that
+      // use --admin-user, and both can be true of the same deployment (#251).
+      ...authorizationHeader(),
       ...init?.headers,
     },
   })
@@ -395,6 +405,8 @@ export interface Health {
   }
   /** Whether the host records administrative changes (#247); absent on older hosts. */
   audit?: boolean
+  /** How to sign in (#251): mode is none | basic | oidc. Absent on older hosts. */
+  auth?: { mode: string; authority?: string | null; clientId?: string | null }
 }
 
 const PERSISTENCE_LABEL: Record<string, string> = {

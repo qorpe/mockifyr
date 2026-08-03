@@ -131,6 +131,10 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--decrypt-key-file <path>` · `--sign-key-file <path>` | read keys from a file instead of the command line — one key per line, newest first, optionally `id: base64`. Re-read on change, so **rotation needs no restart**: new tokens use the newest key while every key in the file still decrypts and verifies |
 | `--key-reload-seconds <n>` | how often a key file is re-read (default 10) |
 | `--admin-pass-file <path>` | read the admin password from a file, keeping it out of the process listing |
+| `--oidc-authority <url>` | authenticate the admin API with OIDC bearer tokens; keys come from the issuer's discovery document. Works alongside `--admin-user`, so people can use SSO while machines keep a credential |
+| `--oidc-audience <aud>` · `--oidc-client-id <id>` | the audience tokens must carry, and the public client the dashboard signs in with (authorization code + PKCE) |
+| `--oidc-tenant-claim <claim>` | the claim naming the tenant an identity may address — a principal scoped to one tenant gets **403** on another. No claim means system scope |
+| `--oidc-required-role <role>` · `--oidc-role-claim <claim>` | require a role on the token (default claim `roles`) |
 | `--mask-headers <names>` | keep named header values out of the journal entirely (comma-separated, case-insensitive) — e.g. `Authorization,Cookie,X-Api-Key` |
 | `--mask-body-fields <names>` | keep named JSON body fields out of the journal (any depth, arrays included) — e.g. `pan,cvv,password` |
 | `--journal-limit <n>` | per-tenant request-journal bound (default 1000, oldest evicted first; `<=0` = unbounded). `--max-request-journal-entries` is a kept alias |

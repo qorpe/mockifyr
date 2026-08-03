@@ -13,11 +13,25 @@ namespace Mockifyr.Server;
 /// and any credential on an open host — is <c>anonymous</c>. The label is an attribution claim in a
 /// record someone will rely on, so a near miss must never be attributed to the real principal.
 /// </remarks>
-public sealed class AuditPrincipalResolver(string? systemAuthorization, TenantCredentials tenantCredentials)
+public sealed class AuditPrincipalResolver(
+    string? systemAuthorization,
+    TenantCredentials tenantCredentials,
+    OidcTokenValidator? oidc = null)
 {
     /// <summary>The label for the principal behind <paramref name="authorization"/>.</summary>
     public string Resolve(string authorization)
     {
+        // An OIDC identity is recorded by the name a human recognises — `oidc:jane@example.com` — so a
+        // reviewer reading the trail can act on it. The token itself never reaches an entry, for the
+        // same reason a password never did.
+        if (oidc is not null && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            // Validated synchronously here: the middleware has already accepted this request, so the
+            // token is known good and this is a re-read of claims rather than a second trust decision.
+            var principal = oidc.ValidateAsync(authorization, CancellationToken.None).GetAwaiter().GetResult();
+            return principal is null ? "anonymous" : $"oidc:{principal.Subject}";
+        }
+
         if (tenantCredentials.TenantFor(authorization) is { } tenant)
         {
             return $"tenant:{tenant}";

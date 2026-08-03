@@ -286,3 +286,57 @@ Validation: 18 unit tests (each gap, each ordinary shape producing nothing, bund
 grouping with a count, and every malformed shape) plus 3 wire tests — including one that asserts the
 warned-about behaviour really is what happens, so the warning cannot drift away from the truth.
 **Stryker: 100 %** (13/13). One survivor earned its test: a single-stub gap rendering as "(1 stubs)".
+
+## OIDC on the admin surface (#251, post-1.0)
+
+Deferred past 1.0 with written reasoning, then asked for. What made it a bounded change rather than
+the large one the deferral assumed: authentication has always lived in one middleware chain at the
+host edge, so OIDC is a **third principal source** beside the system credential and per-tenant
+credentials — not a replacement for either.
+
+```
+--oidc-authority https://login.example.com --oidc-audience mockifyr \
+--oidc-client-id mockifyr-dashboard --oidc-tenant-claim mockifyr_tenant --oidc-required-role mockifyr-admin
+```
+
+Decisions worth remembering:
+
+- **Core is untouched.** No auth type crosses into the engine; it never knew who a caller was and
+  still does not.
+- **Basic keeps working alongside it.** A host can run OIDC for people and `--admin-user` for
+  machines, which is what makes adoption incremental instead of a flag day — asserted by a test, since
+  it is exactly the property a refactor would break.
+- **A tenant claim scopes an identity the way `--tenant-credential` does** (#224): a principal scoped
+  to `acme` gets **403** on `globex`, and omitting the header does not help because that addresses the
+  default tenant it also does not own. An identity with no claim keeps system scope — the OIDC
+  equivalent of `--admin-user`, so an operator's own account still reaches every tenant.
+- **Keys come from discovery**, so a provider rotating its signing key needs nothing here — the same
+  reasoning as the key ring in #250, applied to somebody else's keys.
+- **An unreachable provider is a 401, not a 500.** Every failure — malformed, expired, wrong audience,
+  unverifiable, provider down — resolves to "this caller is not authenticated", because the header is
+  attacker-controlled input on the request path.
+- **The audit trail records the person**: `oidc:jane@example.com`, preferring a human-recognisable
+  claim over an opaque subject id, since an entry naming `a3f9…` tells a reviewer nothing they can act
+  on. The token never appears, for the same reason a password never did.
+- **`/__admin/health` reports the auth mode** (`none` / `basic` / `oidc`) plus the authority and public
+  client id. Necessarily unauthenticated: a login screen cannot authenticate before it knows where to
+  send the user. Only public parameters of a public client are exposed — never a secret.
+- **The open-admin warning (#225) now accounts for OIDC.** It used to fire regardless, which would
+  have told operators of a properly authenticated host that it was wide open — and a warning that
+  cries wolf is worse than none.
+- **Probes stay open** (#218, #242): a kubelet cannot carry a token.
+
+The dashboard signs in with **authorization code + PKCE and no client secret**, because anything
+shipped to a browser is readable; the flow has to stay safe when its parameters are. The access token
+lives in `sessionStorage`, so closing the tab ends the session — a shared machine should not keep
+someone signed in to a mock platform indefinitely. The authorization code is stripped from the URL
+after exchange, since a code left in the address bar ends up in history and in pasted links.
+
+Validation: 10 wire tests against a **real in-process issuer** — the test publishes a discovery
+document and a JWKS and signs RS256 tokens with the matching key, so the discovery fetch, key lookup
+and signature check are all the production path. There is no test-only shortcut that could hide a hole
+in it. The forged-token case uses the same issuer, audience and `kid` and differs only in the key: it
+passes only if the signature is genuinely checked against the published JWKS.
+
+Deferred: token refresh (an expired session returns the user to sign-in), back-channel logout, and
+mapping claims to anything finer than a tenant.

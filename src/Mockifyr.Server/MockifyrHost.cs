@@ -286,6 +286,38 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IAuditLog>(new InMemoryAuditLog(auditLimit));
         }
 
+        // OIDC (#251): a third principal source on the admin surface, alongside the system credential
+        // and per-tenant credentials — not a replacement. A host can run OIDC for people and
+        // --admin-user for machines, which is what makes adopting it incremental rather than a flag
+        // day. Nothing here reaches Core; authentication has always lived at this edge.
+        var oidc = OidcOptions.Parse(key => builder.Configuration[key]);
+        OidcTokenValidator? oidcValidator = null;
+        if (oidc is not null)
+        {
+            // The validator itself is a local, not a service: the two things that need it — the auth
+            // middleware and the audit principal resolver — are both constructed further down in this
+            // same method. What IS registered is the public descriptor the dashboard reads to know
+            // where to send a user to sign in.
+            oidcValidator = new OidcTokenValidator(oidc);
+            builder.Services.AddSingleton(new AdminAuthDescriptor("oidc", oidc.Authority, oidc.ClientId));
+        }
+        else if (!string.IsNullOrEmpty(builder.Configuration["admin-user"])
+            && (!string.IsNullOrEmpty(builder.Configuration["admin-pass"])
+                || !string.IsNullOrEmpty(builder.Configuration["admin-pass-file"])))
+        {
+            // Reported so /__admin/health tells the truth about how to sign in. The dashboard reaches
+            // the same conclusion from its own 401 either way, but a documented surface should not
+            // answer "none" for a host that plainly requires credentials.
+            builder.Services.AddSingleton(new AdminAuthDescriptor("basic"));
+        }
+
+        if (oidc is not null)
+        {
+            Console.WriteLine($"mockifyr: OIDC is on — bearer tokens from '{oidc.Authority}' authenticate the admin API"
+                + (oidc.TenantClaim is { } claim ? $", scoped by the '{claim}' claim." : ".")
+                + (oidc.RequiredRole is { } role ? $" Requires the '{role}' role." : string.Empty));
+        }
+
         // Observability (#246): opt-in, because a mock on a laptop should not open a metrics port or
         // ship spans anywhere. --otel-endpoint enables the OTLP exporter (traces + metrics);
         // --metrics-port… no: the scrape endpoint rides on the existing port at /__admin/metrics so
@@ -648,8 +680,10 @@ public static class MockifyrHost
 
         // An unauthenticated admin surface is a deliberate default (the documented quick start relies
         // on it), but it should never be a silent one (#225): say what is reachable, the same way the
-        // outbound-trust flags already announce themselves.
-        if (!adminAuthenticated)
+        // outbound-trust flags already announce themselves. OIDC counts as authentication (#251) —
+        // warning about an open surface that is not open would teach operators to ignore the warning,
+        // which is the only thing that makes it useful.
+        if (!adminAuthenticated && oidcValidator is null)
         {
             Console.WriteLine(
                 "mockifyr: the admin API (/__admin/*) is UNAUTHENTICATED — anyone who can reach this "
@@ -711,7 +745,8 @@ public static class MockifyrHost
                 adminAuthenticated
                     ? "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"))
                     : null,
-                tenantCredentials);
+                tenantCredentials,
+                oidcValidator);
             app.Use((context, next) => AdminAuditMiddleware.InvokeAsync(
                 context, _ => next(), auditLog, principals, auditLogger, TenantCredentialHeader));
         }
@@ -751,7 +786,7 @@ public static class MockifyrHost
             });
         }
 
-        if (adminAuthenticated || !tenantCredentials.IsEmpty)
+        if (adminAuthenticated || !tenantCredentials.IsEmpty || oidcValidator is not null)
         {
             var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"));
             app.Use(async (context, next) =>
@@ -763,6 +798,42 @@ public static class MockifyrHost
                 if (context.Request.Path.StartsWithSegments("/__admin") && !IsProbePath(context.Request.Path))
                 {
                     var provided = context.Request.Headers.Authorization.ToString();
+
+                    // A bearer token is checked first, because it is the only shape a Basic comparison
+                    // could never accidentally accept. A validated principal scoped to a tenant may
+                    // only address that tenant — the same rule --tenant-credential enforces (#224),
+                    // applied to a claim instead of a password.
+                    if (oidcValidator is not null && provided.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var principal = await oidcValidator.ValidateAsync(provided, context.RequestAborted);
+                        if (principal is null)
+                        {
+                            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                            return;
+                        }
+
+                        if (principal.Tenant is { } owned)
+                        {
+                            var requested = context.Request.Headers.TryGetValue(TenantCredentialHeader, out var header)
+                                && !string.IsNullOrEmpty(header)
+                                    ? header.ToString()
+                                    : TenantId.Default.Value;
+                            if (!string.Equals(owned, requested, StringComparison.Ordinal))
+                            {
+                                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                                await context.Response.WriteAsJsonAsync(new
+                                {
+                                    error = "Admin.TenantForbidden",
+                                    message = $"This identity is scoped to tenant '{owned}' and cannot address '{requested}'.",
+                                });
+                                return;
+                            }
+                        }
+
+                        await next();
+                        return;
+                    }
+
                     // A per-tenant credential authenticates too; the middleware above has already
                     // confirmed it is addressing its own tenant.
                     if (tenantCredentials.TenantFor(provided) is null &&

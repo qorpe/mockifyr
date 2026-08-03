@@ -267,9 +267,11 @@ log line for a SIEM — #247). Remaining: documentation and support policy (#248
 Key sources and rotation (#250) are done: `--decrypt-key-file`/`--sign-key-file`/`--admin-pass-file`,
 a key **ring** (produce with the newest, accept every active key) re-read on change so rotation needs
 no restart, an `IKeySource` seam for Vault/KMS, and a Helm mount mode that keeps keys out of the
-process listing. **OIDC (#251) is explicitly deferred past 1.0**, with the reasoning written down in
-`VERSIONING.md` under "Deliberately deferred" — the epic allows deliver-or-defer, and this is the
-defer, recorded rather than silent. The measured performance
+process listing. **OIDC (#251) shipped in 1.4.0** after being deferred and then asked for: bearer validation against
+the issuer's discovery keys, a claim that scopes an identity to one tenant exactly as
+`--tenant-credential` does, an optional required role, `oidc:<user>` in the audit trail, and dashboard
+sign-in via authorization code + PKCE. It is a third principal source in the existing host-edge
+middleware chain — Basic keeps working beside it, and Core is untouched. The measured performance
 envelope and sizing guidance are in `docs/parity/performance.md`, with the harnesses in `bench/`
 (BenchmarkDotNet for the engine, k6 for the transport); measuring immediately paid for itself: #266 (templates
 were recompiled on every request) is fixed — a templated response went from 699 µs to 1.21 µs — and
@@ -292,4 +294,4 @@ too — and turned up two real `math` defects instead: `%` was rejected though t
 and integer division rounded the wrong way for negatives.
 
 Remaining work is documented **deferred edges** (per group in `docs/parity/`). Builds clean
-(0 warnings); 848 tests green across the four suites.
+(0 warnings); 858 tests green across the four suites.

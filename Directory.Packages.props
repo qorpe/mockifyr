@@ -52,6 +52,9 @@
 
   <ItemGroup Label="Testing / harness">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <!-- OIDC bearer validation at the host edge (#251): discovery + JWKS, no auth in Core. -->
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.3.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.3.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <!-- FakeTimeProvider: lets the key-rotation tests advance time instead of sleeping (#250). -->
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />

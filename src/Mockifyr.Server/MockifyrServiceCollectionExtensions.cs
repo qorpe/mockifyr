@@ -48,6 +48,8 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IResponseBodyFiles, NoResponseBodyFiles>();
         // No keys unless the host configures some (#250); MockifyrHost replaces this when it does.
         services.AddSingleton(ActiveKeyReport.None);
+        // How to sign in (#251); MockifyrHost replaces this when auth is configured.
+        services.AddSingleton(AdminAuthDescriptor.None);
 
         // Captured messages (G18a, ADR 0009): the tenant-scoped, bounded inbox behind /__admin/messages.
         // Facades (SMTP, SMS profiles) write through IMessageSink; behavior decorates the sink, not them.
