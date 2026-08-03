@@ -68,6 +68,7 @@ public static class MockifyrServiceCollectionExtensions
         // registered on top (e.g. by MockifyrHost when --root-dir is set) and wins the resolution.
         services.AddSingleton<IStubPersistence, NullStubPersistence>();
         services.AddSingleton<IEnvironmentPersistence, NullEnvironmentPersistence>();
+        services.AddSingleton<IResourcePersistence, NullResourcePersistence>();
 
         // Git sync (ADR 0007): unconfigured by default; MockifyrHost registers the real service on
         // top when --git-remote is set and it wins the resolution.

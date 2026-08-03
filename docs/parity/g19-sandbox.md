@@ -228,3 +228,45 @@ showed `3 / 50`; confirmed the Turkish locale renders the full Access screen. `t
 **Deferred (tracked).** Copy-as-curl on the token reveal; per-key usage history (needs
 server-side counters that survive restarts, deferred with G19d's); a collection-level document
 search box.
+
+## Durable sandbox resources (post-1.0)
+
+The deferred edge that sat worst with calling this an integration sandbox: resources lived in memory
+only. A partner seeds their fixtures, the pod restarts, and their data is gone. Backup and restore
+(#252) covered the deliberate case; this covers the one nobody plans for.
+
+`IResourcePersistence` + `IResourcesLoader` mirror the stub and environment seams exactly, with all
+four G16 providers implemented — file system (`<root-dir>/resources/`), LiteDB, PostgreSQL and Redis —
+and rehydration at startup. No `--root-dir` or backend still means in-memory only, so a laptop run
+writes nothing: durability follows the persistence choice rather than becoming a new default.
+
+Decisions worth remembering:
+
+- **Persisted after the store accepts the write**, so what survives is exactly what the store holds,
+  including the `CreatedAt`/version bookkeeping a replace works out. And a delete is persisted only
+  once the store agrees the document existed — persisting a delete for something that was not there
+  is a write nobody asked for.
+- **Deletes and resets persist too.** Saving creates but not removals is the classic half-implementation:
+  the document rises from the dead on the next deploy, and a reset "un-resets" itself. Each has its own
+  restart test, on every backend.
+- **Rehydration goes through the store's own `Put`**, not a bulk restore, so a reloaded document is
+  indistinguishable from a freshly created one — including the per-collection bound, which a bulk load
+  could walk straight past.
+- **Ids are caller-chosen and are not path segments.** Whoever seeds a sandbox picks the ids, so the
+  file provider percent-escapes anything outside `[A-Za-z0-9._-]` — and the escaping is injective, so
+  `a/b` and a literal `a%2Fb` stay separate documents rather than one silently replacing the other.
+  A tenant, collection or id of `..` cannot produce a path component that leaves the store. The tenant
+  and collection are read back from the stored document, never un-escaped from a directory name, so
+  there is one encoding to keep correct rather than two.
+- **Postgres keys on `(tenant, collection, id)`** — tenant isolation expressed in the schema, not only
+  in the code above it. A restart test puts the same document id in two tenants and checks each comes
+  back where it belongs, because that damage would only ever show up after a restart.
+
+Validation: 18 unit tests on the file provider (most of them hostile names), 6 wire tests on a real
+host covering seed/delete/reset/tenant-isolation/odd-ids/no-persistence, and one restart test per
+backend added to the existing G16b/c/d provider suites. **Stryker on the file provider: the LiteDB,
+Postgres and Redis paths are covered by their provider tests rather than by unit mutation, matching how
+G16 has always validated them — a backend cannot be mutation-tested without the backend.**
+
+Still deferred: change-feed reload for resources (a second replica does not learn about another's
+writes until it restarts), and per-key scenario isolation.

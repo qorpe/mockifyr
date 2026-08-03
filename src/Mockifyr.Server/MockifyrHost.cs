@@ -215,6 +215,13 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IEnvironmentPersistence>(new FileSystemEnvironmentPersistence(environmentsDir));
             builder.Services.AddSingleton<IEnvironmentsLoader>(new FileSystemEnvironmentsLoader(environmentsDir));
 
+            // Sandbox resources persist alongside too: a partner seeds fixtures into a sandbox and a
+            // restart must not take them away. Backup/restore covered the deliberate case; this
+            // covers the one nobody plans for.
+            var resourcesDir = Path.Combine(rootDir, "resources");
+            builder.Services.AddSingleton<IResourcePersistence>(new FileSystemResourcePersistence(resourcesDir));
+            builder.Services.AddSingleton<IResourcesLoader>(new FileSystemResourcesLoader(resourcesDir));
+
             // API keys persist alongside (G19d, ADR 0011 addendum): a credential that vanishes on
             // redeploy is not a credential. Host-level directory — the key selects the tenant.
             var apiKeysDir = Path.Combine(rootDir, "apikeys");
@@ -506,6 +513,10 @@ public static class MockifyrHost
                 new LiteDbEnvironmentPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
             builder.Services.AddSingleton<IEnvironmentsLoader>(sp =>
                 new LiteDbEnvironmentsLoader(sp.GetRequiredService<LiteDB.LiteDatabase>()));
+            builder.Services.AddSingleton<IResourcePersistence>(sp =>
+                new LiteDbResourcePersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
+            builder.Services.AddSingleton<IResourcesLoader>(sp =>
+                new LiteDbResourcesLoader(sp.GetRequiredService<LiteDB.LiteDatabase>()));
             builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
                 new LiteDbApiKeyPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
         }
@@ -519,6 +530,8 @@ public static class MockifyrHost
                 new PostgresMappingsLoader(postgres, sp.GetRequiredService<IMatcherRegistry>()));
             builder.Services.AddSingleton<IEnvironmentPersistence>(new PostgresEnvironmentPersistence(postgres));
             builder.Services.AddSingleton<IEnvironmentsLoader>(new PostgresEnvironmentsLoader(postgres));
+            builder.Services.AddSingleton<IResourcePersistence>(new PostgresResourcePersistence(postgres));
+            builder.Services.AddSingleton<IResourcesLoader>(new PostgresResourcesLoader(postgres));
             builder.Services.AddSingleton<IApiKeyPersistence>(new PostgresApiKeyPersistence(postgres));
 
             // Change-feed reload (G16f): opt-in multi-instance coherence via Postgres LISTEN/NOTIFY —
@@ -547,6 +560,10 @@ public static class MockifyrHost
                 new RedisEnvironmentPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
             builder.Services.AddSingleton<IEnvironmentsLoader>(sp =>
                 new RedisEnvironmentsLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+            builder.Services.AddSingleton<IResourcePersistence>(sp =>
+                new RedisResourcePersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+            builder.Services.AddSingleton<IResourcesLoader>(sp =>
+                new RedisResourcesLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
             builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
                 new RedisApiKeyPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
 
@@ -819,6 +836,7 @@ public static class MockifyrHost
 
         ApplyStartupMappings(app);
         ApplyStartupEnvironments(app);
+        ApplyStartupResources(app);
         ApplyStartupApiKeys(app);
 
         // Everything the host needs in memory is loaded — only now may traffic be routed here (#242).
@@ -841,6 +859,29 @@ public static class MockifyrHost
                 foreach (var key in keys)
                 {
                     store.Put(tenant, key);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rehydrates persisted sandbox resources, so a partner's seeded fixtures survive a restart.
+    /// </summary>
+    /// <remarks>
+    /// Written through the store's own <c>Put</c> rather than restored wholesale, so a rehydrated
+    /// document is indistinguishable from one that was just created — including the per-collection
+    /// bound, which a bulk restore could otherwise walk straight past.
+    /// </remarks>
+    private static void ApplyStartupResources(WebApplication app)
+    {
+        var store = app.Services.GetRequiredService<IResourceStore>();
+        foreach (var loader in app.Services.GetServices<IResourcesLoader>())
+        {
+            foreach (var (tenant, documents) in loader.LoadAll())
+            {
+                foreach (var document in documents)
+                {
+                    store.Put(tenant, document.Collection, document.Id, document.Body);
                 }
             }
         }

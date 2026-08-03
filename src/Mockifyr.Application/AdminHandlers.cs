@@ -454,7 +454,7 @@ public sealed class GetResourceHandler(IResourceStore store)
 }
 
 /// <summary>Creates or replaces one document after the shared validation.</summary>
-public sealed class PutResourceHandler(IResourceStore store, ResourceOptions options)
+public sealed class PutResourceHandler(IResourceStore store, ResourceOptions options, IResourcePersistence persistence)
     : ICommandHandler<PutResourceCommand, Result<ResourceDocument>>
 {
     public ValueTask<Result<ResourceDocument>> Handle(PutResourceCommand command, CancellationToken cancellationToken)
@@ -467,13 +467,16 @@ public sealed class PutResourceHandler(IResourceStore store, ResourceOptions opt
             return ValueTask.FromResult<Result<ResourceDocument>>(error);
         }
 
-        return ValueTask.FromResult<Result<ResourceDocument>>(
-            store.Put(command.Tenant, command.Collection, command.Id, command.Body));
+        // Persisted after the store accepts it, so what survives a restart is exactly what the store
+        // holds — including the CreatedAt/version bookkeeping a replace works out.
+        var document = store.Put(command.Tenant, command.Collection, command.Id, command.Body);
+        persistence.Save(command.Tenant, document);
+        return ValueTask.FromResult<Result<ResourceDocument>>(document);
     }
 }
 
 /// <summary>Deletes one document; unknown ids are an honest 404, mirroring a real API.</summary>
-public sealed class DeleteResourceHandler(IResourceStore store)
+public sealed class DeleteResourceHandler(IResourceStore store, IResourcePersistence persistence)
     : ICommandHandler<DeleteResourceCommand, Result>
 {
     public ValueTask<Result> Handle(DeleteResourceCommand command, CancellationToken cancellationToken)
@@ -483,15 +486,21 @@ public sealed class DeleteResourceHandler(IResourceStore store)
             return ValueTask.FromResult(Result.Failure(error));
         }
 
-        return store.Delete(command.Tenant, command.Collection, command.Id)
-            ? ValueTask.FromResult(Result.Success())
-            : ValueTask.FromResult(Result.Failure(Error.NotFound(
+        if (!store.Delete(command.Tenant, command.Collection, command.Id))
+        {
+            return ValueTask.FromResult(Result.Failure(Error.NotFound(
                 "Resource.NotFound", $"No document '{command.Id}' in collection '{command.Collection}'.")));
+        }
+
+        // Only after the store agrees it existed: persisting a delete for a document that was not
+        // there would be a write nobody asked for.
+        persistence.Remove(command.Tenant, command.Collection, command.Id);
+        return ValueTask.FromResult(Result.Success());
     }
 }
 
 /// <summary>Clears one collection, or the tenant's whole resource state.</summary>
-public sealed class ResetResourcesHandler(IResourceStore store)
+public sealed class ResetResourcesHandler(IResourceStore store, IResourcePersistence persistence)
     : ICommandHandler<ResetResourcesCommand, Result>
 {
     public ValueTask<Result> Handle(ResetResourcesCommand command, CancellationToken cancellationToken)
@@ -499,6 +508,7 @@ public sealed class ResetResourcesHandler(IResourceStore store)
         if (command.Collection is null)
         {
             store.ResetAll(command.Tenant);
+            persistence.Clear(command.Tenant, collection: null);
             return ValueTask.FromResult(Result.Success());
         }
 
@@ -508,6 +518,7 @@ public sealed class ResetResourcesHandler(IResourceStore store)
         }
 
         store.Reset(command.Tenant, command.Collection);
+        persistence.Clear(command.Tenant, command.Collection);
         return ValueTask.FromResult(Result.Success());
     }
 }
@@ -516,7 +527,8 @@ public sealed class ResetResourcesHandler(IResourceStore store)
 /// Seeds a collection from a JSON array. Transactional per the ADR 0011 addendum: every item is
 /// validated before anything is stored, so a bad element means nothing landed.
 /// </summary>
-public sealed class SeedResourcesHandler(IResourceStore store, IResourceIdGenerator ids, ResourceOptions options)
+public sealed class SeedResourcesHandler(
+    IResourceStore store, IResourceIdGenerator ids, ResourceOptions options, IResourcePersistence persistence)
     : ICommandHandler<SeedResourcesCommand, Result<int>>
 {
     public ValueTask<Result<int>> Handle(SeedResourcesCommand command, CancellationToken cancellationToken)
@@ -538,7 +550,9 @@ public sealed class SeedResourcesHandler(IResourceStore store, IResourceIdGenera
 
         foreach (var item in command.Items)
         {
-            store.Put(command.Tenant, command.Collection, item.Id ?? ids.NextId(command.Collection), item.Body);
+            var document = store.Put(
+                command.Tenant, command.Collection, item.Id ?? ids.NextId(command.Collection), item.Body);
+            persistence.Save(command.Tenant, document);
         }
 
         return ValueTask.FromResult<Result<int>>(command.Items.Count);

@@ -19,7 +19,7 @@ public sealed class G19aResourceHandlerTests
     private static async Task<Mediant.Results.Result<ResourceDocument>> PutAsync(
         InMemoryResourceStore store, string collection, string id, string body)
     {
-        var result = await new PutResourceHandler(store, SmallCap)
+        var result = await new PutResourceHandler(store, SmallCap, new NullResourcePersistence())
             .Handle(new PutResourceCommand(collection, id, body, Acme), CancellationToken.None);
         if (result.IsFailure)
         {
@@ -95,7 +95,7 @@ public sealed class G19aResourceHandlerTests
     public async Task Seed_generates_ids_through_the_seam_and_is_transactional()
     {
         var store = Store();
-        var handler = new SeedResourcesHandler(store, new SequentialIds(), SmallCap);
+        var handler = new SeedResourcesHandler(store, new SequentialIds(), SmallCap, new NullResourcePersistence());
 
         var seeded = await handler.Handle(new SeedResourcesCommand("orders",
             [new SeedResourceItem(null, """{"n":1}"""), new SeedResourceItem("explicit", """{"n":2}""")], Acme),
