@@ -256,3 +256,33 @@ would show up anonymous in the Access screen).
 Deferred edges: no host-wide "every tenant" archive (each tenant is backed up on its own, which keeps
 the tenant boundary intact); no incremental or scheduled backups; the archive is not encrypted at rest
 — it is a file the operator stores wherever their secrets already live.
+
+
+## Import warnings for deferred fields (1.0)
+
+Mockifyr implements a validated subset of the mapping dialect, and the gaps were documented. Two of
+them were also **silent**, which is the part that matters: a `bodyFileName` stub matched and returned
+an empty body — reading exactly like a matching bug, and not being one — and a non-`uniform`
+`delayDistribution` produced no delay at all. Both had to be discovered from behaviour.
+
+`UnsupportedFieldWarnings` inspects an imported mapping for fields this engine accepts but does not act
+on, and the result is reported: as a `warnings` array on `POST /__admin/mappings` and
+`/__admin/mappings/import`, and as a console line for mappings loaded from disk at startup — the only
+place an operator would otherwise hear nothing at all.
+
+- **Warn, do not refuse.** The stub is still created. Refusing it would break importing a mapping set
+  written for the reference engine, which is the whole point of accepting the dialect. The goal is to
+  be loud, not strict.
+- **One line per kind of gap, with a count.** A 200-stub bundle whose responses each name a different
+  file would otherwise produce 200 near-identical lines — a wall nobody reads, which buries anything
+  else in the list. The fix is the same for every one of them, so the file name is not what makes the
+  message useful. The count is appended only when it says something: `(1 stubs)` is noise.
+- **The field is absent when there is nothing to say.** Existing clients parse the create response; a
+  `warnings` key on every successful create is a field they would learn to ignore.
+- **It can never fail an import.** Malformed input returns no warnings rather than throwing — the
+  importer reports malformed JSON itself, with a better message.
+
+Validation: 18 unit tests (each gap, each ordinary shape producing nothing, bundles, bare arrays,
+grouping with a count, and every malformed shape) plus 3 wire tests — including one that asserts the
+warned-about behaviour really is what happens, so the warning cannot drift away from the truth.
+**Stryker: 100 %** (13/13). One survivor earned its test: a single-stub gap rendering as "(1 stubs)".

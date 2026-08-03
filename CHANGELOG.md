@@ -10,6 +10,23 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Released
 
+### [v1.0.0](https://github.com/qorpe/mockifyr/releases/tag/v1.0.0) — 2026-08-03
+
+The compatibility promises in [VERSIONING.md](VERSIONING.md) become binding: from here, a breaking
+change means a major version.
+
+#### Added
+
+- Import warnings. A mapping that uses a field this engine accepts but does not act on now says so —
+  as a `warnings` array on `POST /__admin/mappings` and `/__admin/mappings/import`, and as a console
+  line for mappings loaded from disk. The stub is still created; the point is to be loud, not strict.
+  Covers `bodyFileName` (matches, empty body) and non-`uniform` `delayDistribution` (no delay), the
+  two gaps that were previously silent.
+
+#### Changed
+
+- Versioning policy: the pre-1.0 clause that let a minor release break you is gone.
+
 ### [v0.25.0](https://github.com/qorpe/mockifyr/releases/tag/v0.25.0) — 2026-08-02
 
 Matching stops caring how many stubs you have.
