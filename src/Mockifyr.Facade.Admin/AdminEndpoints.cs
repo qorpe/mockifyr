@@ -271,6 +271,14 @@ public static class AdminEndpoints
             return Results.Ok();
         });
 
+        // The reference engine spells journal reset as DELETE on the collection (its
+        // /__admin/requests/reset answers 404), so the dialect is matched rather than invented.
+        admin.MapDelete("/requests", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ResetRequestsCommand(TenantOf(request)));
+            return Results.Ok();
+        });
+
         admin.MapPost("/requests/count", async (HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new CountRequestsQuery(await ReadBody(request), TenantOf(request)));

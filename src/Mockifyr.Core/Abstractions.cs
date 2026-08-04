@@ -117,6 +117,12 @@ public interface IRequestJournal
 
     /// <summary>Queries recorded events for a tenant.</summary>
     IReadOnlyList<ServeEvent> Query(TenantId tenant, ServeEventQuery query);
+
+    /// <summary>
+    /// Discards everything recorded for a tenant. What a suite calls between tests so counts assert
+    /// about the test that is running, and never about the one before it.
+    /// </summary>
+    void Clear(TenantId tenant);
 }
 
 /// <summary>

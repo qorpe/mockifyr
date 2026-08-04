@@ -40,6 +40,25 @@ public sealed class InMemoryRequestJournal(int? limit = InMemoryRequestJournal.D
     }
 
     /// <inheritdoc />
+    public void Clear(TenantId tenant)
+    {
+        lock (_gate)
+        {
+            if (!_byTenant.TryRemove(tenant, out var events))
+            {
+                return;
+            }
+
+            // The id index spans tenants, so it is pruned entry by entry rather than cleared — another
+            // tenant's detail lookups must survive this one's reset.
+            foreach (var serveEvent in events)
+            {
+                _byId.Remove(serveEvent.Id);
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public IReadOnlyList<ServeEvent> Query(TenantId tenant, ServeEventQuery query)
     {
         lock (_gate)
@@ -91,4 +110,11 @@ public sealed class NullRequestJournal : IRequestJournal
 
     /// <inheritdoc />
     public IReadOnlyList<ServeEvent> Query(TenantId tenant, ServeEventQuery query) => [];
+
+    /// <inheritdoc />
+    public void Clear(TenantId tenant)
+    {
+        // Nothing was kept, so clearing succeeds trivially — a suite's teardown must not start failing
+        // just because the host was started with the journal off.
+    }
 }

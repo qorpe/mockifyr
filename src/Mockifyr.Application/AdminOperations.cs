@@ -22,6 +22,11 @@ public sealed record ImportMappingsCommand(string MappingJson, TenantId Tenant) 
 /// <summary>Removes all stubs for the tenant (the <c>/__admin/mappings/reset</c> admin endpoint).</summary>
 public sealed record ResetMappingsCommand(TenantId Tenant) : ICommand<Result>;
 
+/// <summary>
+/// Discards the tenant's journaled requests (the <c>DELETE /__admin/requests</c> admin endpoint).
+/// </summary>
+public sealed record ResetRequestsCommand(TenantId Tenant) : ICommand<Result>;
+
 /// <summary>Lists all stubs for the tenant.</summary>
 public sealed record GetStubsQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<StubMapping>>>;
 

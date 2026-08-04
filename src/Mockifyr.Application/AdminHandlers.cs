@@ -166,6 +166,20 @@ public sealed class GetStubHandler(IStubStore store) : IQueryHandler<GetStubQuer
     }
 }
 
+/// <summary>
+/// Clears the tenant's request journal. A suite sharing one host calls this between tests so a count
+/// asserts about the test that is running — the reference engine answers <c>DELETE /__admin/requests</c>
+/// the same way.
+/// </summary>
+public sealed class ResetRequestsHandler(IRequestJournal journal) : ICommandHandler<ResetRequestsCommand, Result>
+{
+    public ValueTask<Result> Handle(ResetRequestsCommand command, CancellationToken cancellationToken)
+    {
+        journal.Clear(command.Tenant);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
 /// <summary>Counts journaled requests matching the given request pattern.</summary>
 public sealed class CountRequestsHandler(StubEngine engine) : IQueryHandler<CountRequestsQuery, Result<int>>
 {

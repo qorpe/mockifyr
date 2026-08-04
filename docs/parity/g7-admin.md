@@ -340,3 +340,31 @@ passes only if the signature is genuinely checked against the published JWKS.
 
 Deferred: token refresh (an expired session returns the user to sign-in), back-channel logout, and
 mapping claims to anything finer than a tenant.
+
+## Journal reset — `DELETE /__admin/requests` (post-1.5.0)
+
+- **Group / item:** post-roadmap admin parity, oracle-verified.
+- **The gap.** The journal could not be cleared at all. `IRequestJournal` had `Record` and `Query` and
+  nothing else, so a suite sharing one host either restarted it between tests or accepted that every
+  count answered about the whole run. Found while writing the site's verification guide: the endpoint
+  the guide needed to document did not exist.
+- **The oracle chose the spelling, and corrected the guess.** `POST /__admin/requests/reset` — the
+  intuitive form, and the one this repo was about to document from memory — answers **404** on the
+  reference engine. `DELETE /__admin/requests` answers **200** and empties the journal. Mockifyr
+  implements the second and deliberately keeps answering 404 for the first: adding the friendlier alias
+  would be a divergence, and a script that works here has to work there.
+- **Clearing prunes the id index, not just the tenant's list.** The journal keeps a cross-tenant index
+  for O(1) detail lookups (#220). A reset that dropped only the list would leave `GET
+  /__admin/requests/{id}` still answering — a "cleared" journal handing back the very request body
+  somebody asked to be rid of. The index is pruned entry by entry so other tenants' lookups survive.
+- **Reset is per tenant**, which the oracle cannot judge: parallel suites share a host by taking a
+  tenant each, so a reset that reached across them would silently corrupt a neighbour's counts.
+- **A disabled journal accepts a reset** (`--journal-disabled`) and a masking-decorated journal passes
+  it through. Teardown runs whatever the host was started with; neither configuration may turn cleanup
+  into a failure.
+- **Validation.** `JournalResetTests` — four differential cases against the oracle (count before/after,
+  the listing agreeing with the count, an empty reset accepted, and the rejected spelling rejected on
+  both) plus one self-test for tenant scoping. `JournalResetUnitTests` — seven cases for the store
+  logic, including the id index, the neighbour tenant, and the bound applying fresh after a reset.
+  **Stryker: 100 %** on `InMemoryRequestJournal`.
+
