@@ -301,5 +301,13 @@ hold the narrative, but they record deferrals as of the group that wrote them, s
 Its Tracked section is currently **empty**: the one entry it held — change-feed reload for environments
 and sandbox resources (#279) — shipped in 1.5.0, and testing it turned up a second defect the analysis
 had not predicted: a host reloaded on its own announcement and could hand an operator their own write
-back at the previous version, so every announcement now carries the writer's identity. Builds clean
-(0 warnings); 878 tests green across the four suites.
+back at the previous version, so every announcement now carries the writer's identity.
+
+Auditing the **documentation website** against the shipped surface (every CLI flag, every admin route)
+found the reference complete — 53 of 54 flags, all 32 routes — and the teaching layer missing in two
+places: the integration sandbox had no page at all, only rows in the admin tables, and verification was
+documented as routes rather than as the two questions people arrive with. Both now have guides. Writing
+the second one turned up a missing endpoint rather than a missing paragraph: the request journal could
+not be cleared at all, and the reference engine's spelling for it (`DELETE /__admin/requests`, not the
+intuitive `POST …/reset`, which 404s on both) shipped in 1.6.0 with a dashboard action beside it.
+Builds clean (0 warnings); 890 tests green across the four suites.
