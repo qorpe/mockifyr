@@ -82,6 +82,7 @@ export function MessagesPage() {
   }
 
   async function clearAll() {
+    setConfirmClear(false)
     await resetMessages(tenant)
     setDetailId(null)
     refresh()

@@ -1,20 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
 import {
   type ColumnDef, flexRender, getCoreRowModel, getPaginationRowModel,
   getSortedRowModel, type SortingState, useReactTable,
 } from '@tanstack/react-table'
-import { ArrowUpDown, CheckCircle2, ChevronLeft, ChevronRight, Clock, MessageSquareText, RefreshCw, Rows2, Rows3, XCircle } from 'lucide-react'
+import { ArrowUpDown, CheckCircle2, ChevronLeft, ChevronRight, Clock, MessageSquareText, RefreshCw, Rows2, Rows3, Trash2, XCircle } from 'lucide-react'
 import { cn, formatDateTime, timeAgo } from '@/lib/utils'
 import { useUi } from '@/components/providers'
-import { fetchJournal, type JournalEntry } from '@/lib/api'
+import { fetchJournal, resetJournal, type JournalEntry } from '@/lib/api'
 import { MethodChip } from '@/components/ui/badges'
 import { Button } from '@/components/ui/button'
 import { FacetFilter } from '@/components/ui/facet-filter'
 import { SearchBox } from '@/components/ui/search-box'
 import { EmptyState } from '@/components/ui/empty-state'
 import { JournalArt } from '@/components/ui/illustrations'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { JournalDetailSheet } from '@/components/journal/journal-detail'
 import {
   applyFilters, clearFacet, countSelected, type FacetDef, facetOptions, type Selections, toggleSelection,
@@ -62,6 +64,18 @@ export function JournalPage() {
     // terminal while watching this table in a background browser window (#155).
     refetchIntervalInBackground: true,
   })
+
+  const [confirmClear, setConfirmClear] = useState(false)
+
+  // Clearing is what makes a shared host usable between test runs: counts and this table read the
+  // same store, so the reset empties both. It is scoped to the current tenant — never a neighbour's.
+  async function clearAll() {
+    setConfirmClear(false)
+    await resetJournal(tenant)
+    setDetailId(null)
+    await refetch()
+    toast.success(t('journal.cleared'))
+  }
 
   const [selected, setSelected] = useState<Selections>({})
   const [search, setSearch] = useState('')
@@ -173,6 +187,9 @@ export function JournalPage() {
           <Button variant="outline" onClick={() => setDense((d) => !d)}>
             {dense ? <Rows3 /> : <Rows2 />}{t('stubs.density')}
           </Button>
+          <Button variant="outline" onClick={() => setConfirmClear(true)} disabled={!entries.length}>
+            <Trash2 />{t('journal.clearAll')}
+          </Button>
         </div>
 
         <div className="scroll-area overflow-x-auto">
@@ -229,6 +246,11 @@ export function JournalPage() {
       </div>
 
       <JournalDetailSheet id={detailId} tenant={tenant} onClose={() => setDetailId(null)} />
+
+      <ConfirmDialog open={confirmClear} onOpenChange={setConfirmClear}
+        title={t('journal.clearConfirmTitle')} body={t('journal.clearConfirmBody')}
+        confirmLabel={t('journal.clearAll')} cancelLabel={t('editor.cancel')} destructive
+        onConfirm={() => void clearAll()} />
     </div>
   )
 }
