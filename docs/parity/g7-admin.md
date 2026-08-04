@@ -367,4 +367,10 @@ mapping claims to anything finer than a tenant.
   both) plus one self-test for tenant scoping. `JournalResetUnitTests` — seven cases for the store
   logic, including the id index, the neighbour tenant, and the bound applying fresh after a reset.
   **Stryker: 100 %** on `InMemoryRequestJournal`.
+- **In the dashboard.** The Journal screen has a *Clear journal* action behind a confirmation that says
+  what it does — every recorded request, counts included, this tenant only. Verified in-browser in
+  English and Turkish. Doing so surfaced a pre-existing defect on the Messages screen: `ConfirmDialog`
+  leaves closing to its caller (deliberately — the resource editor keeps it open when the edit is
+  invalid) and *Clear all* never closed it, so the dialog sat over a table that had already emptied.
+  Both callers now close on confirm.
 

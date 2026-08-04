@@ -283,6 +283,21 @@ export async function deleteMessage(tenant: string, id: string): Promise<{ mock:
   }
 }
 
+/**
+ * Discards the tenant's request journal. A DELETE on the collection rather than a `/reset` sibling —
+ * the spelling the reference engine uses, so a script written against the dashboard's behaviour works
+ * against either engine.
+ */
+export async function resetJournal(tenant: string): Promise<{ mock: boolean }> {
+  try {
+    const res = await adminFetch('/requests', tenant, { method: 'DELETE' })
+    if (!res.ok) throw new Error(String(res.status))
+    return { mock: false }
+  } catch {
+    return { mock: true }
+  }
+}
+
 export async function resetMessages(tenant: string): Promise<{ mock: boolean }> {
   try {
     const res = await adminFetch('/messages/reset', tenant, { method: 'POST' })
