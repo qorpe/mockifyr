@@ -161,4 +161,7 @@ public sealed class MaskingRequestJournal(IRequestJournal inner, JournalMaskingO
 
     /// <inheritdoc />
     public IReadOnlyList<ServeEvent> Query(TenantId tenant, ServeEventQuery query) => inner.Query(tenant, query);
+
+    /// <inheritdoc />
+    public void Clear(TenantId tenant) => inner.Clear(tenant);
 }

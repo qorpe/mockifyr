@@ -8,6 +8,12 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- `DELETE /__admin/requests` discards the tenant's request journal, so a suite sharing one host can
+  clear it between tests instead of restarting. The reference engine spells it the same way; its
+  `POST /__admin/requests/reset` answers 404 there and here.
+
 ## Released
 
 ### [v1.5.0](https://github.com/qorpe/mockifyr/releases/tag/v1.5.0) — 2026-08-03
