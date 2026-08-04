@@ -14,7 +14,7 @@ wrong until this page existed.
 | **Tracked** | A real gap with an issue. It will be done when it is worth doing. |
 | **Accepted** | A real limitation we do not intend to close, with a reason. |
 
-Last reviewed: **1.5.0**.
+Last reviewed: **1.7.0**.
 
 ## Out of scope — verified against the reference engine
 

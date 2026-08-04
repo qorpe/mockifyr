@@ -8,17 +8,19 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Added
+## Released
+
+### [v1.7.0](https://github.com/qorpe/mockifyr/releases/tag/v1.7.0) — 2026-08-04
+
+#### Added
 
 - The dashboard's Journal screen has a **Clear journal** action, behind a confirmation, in all six
   locales.
 
-### Fixed
+#### Fixed
 
 - The Messages screen's *Clear all* confirmation stayed open after confirming, over a table that had
   already emptied.
-
-## Released
 
 ### [v1.6.0](https://github.com/qorpe/mockifyr/releases/tag/v1.6.0) — 2026-08-04
 
