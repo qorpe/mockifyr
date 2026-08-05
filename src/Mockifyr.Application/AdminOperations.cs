@@ -29,6 +29,13 @@ public sealed record ResetMappingsCommand(TenantId Tenant) : ICommand<Result>;
 public sealed record VerifyContractQuery(string SpecText, TenantId Tenant)
     : IQuery<Result<Mockifyr.Adapters.OpenApi.ConformanceReport>>;
 
+/// <summary>
+/// Checks what clients actually sent against an OpenAPI specification (<c>POST
+/// /__admin/requests/verify</c>, #287). Reads the journal; never changes it.
+/// </summary>
+public sealed record VerifyTrafficQuery(string SpecText, TenantId Tenant)
+    : IQuery<Result<Mockifyr.Adapters.OpenApi.TrafficReport>>;
+
 /// <summary>Reads the tenant's degradation profile (<c>GET /__admin/degradation</c>).</summary>
 public sealed record GetDegradationQuery(TenantId Tenant) : IQuery<Result<DegradationProfile>>;
 

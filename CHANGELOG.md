@@ -10,6 +10,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **Traffic conformance** (#287, third slice). `POST /__admin/requests/verify` checks what clients
+  actually sent against an OpenAPI document: calls to operations the contract never declared, missing
+  required query parameters and headers, and request bodies the schema forbids. Reads the journal and
+  changes nothing. With the stub check and the recording check, all three questions #287 asked are now
+  answerable.
 - **Drift against reality** (#287, second slice). With a recording session live,
   `POST /__admin/recordings/verify` compares what the real upstream just returned against what your
   stubs would have answered — reporting a field the upstream grew, one only the stub has, a changed

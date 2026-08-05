@@ -272,6 +272,37 @@ public static class AdminEndpoints
             return Results.Ok();
         });
 
+        // The consumer side of conformance (#287): what clients actually sent, against what the contract
+        // allows. Symmetric with /__admin/recordings/verify, which asks about the mock rather than the
+        // client.
+        admin.MapPost("/requests/verify", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new VerifyTrafficQuery(await ReadBody(request), TenantOf(request)));
+            if (!result.IsSuccess)
+            {
+                return Results.Json(
+                    new { error = result.Error.Code, message = result.Error.Description },
+                    statusCode: result.Error.Code == "OpenApi.TooLarge"
+                        ? StatusCodes.Status413PayloadTooLarge
+                        : StatusCodes.Status422UnprocessableEntity);
+            }
+
+            var report = result.Value;
+            return Results.Json(new
+            {
+                conforms = report.Conforms,
+                requestsExamined = report.RequestsExamined,
+                requestsConforming = report.RequestsConforming,
+                findings = report.Findings.Select(f => new
+                {
+                    kind = TrafficDriftKindName(f.Kind),
+                    method = f.Method,
+                    url = f.Url,
+                    detail = f.Detail,
+                }),
+            });
+        });
+
         // Near-miss diagnostics (#288). Deliberately an admin query rather than a 404 body: the served
         // response stays byte-identical to what the differential suite proves, and computing a
         // diagnostic never touches the serve path.
@@ -1373,6 +1404,13 @@ public static class AdminEndpoints
             var unknown => throw new InvalidOperationException($"'{unknown}' is not a known fault."),
         };
     }
+
+    private static string TrafficDriftKindName(TrafficDriftKind kind) => kind switch
+    {
+        TrafficDriftKind.UndeclaredOperation => "undeclaredOperation",
+        TrafficDriftKind.MissingParameter => "missingParameter",
+        _ => "requestSchemaViolation",
+    };
 
     private static string DriftKindName(ResponseDriftKind kind) => kind switch
     {

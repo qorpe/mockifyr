@@ -200,6 +200,37 @@ public sealed class VerifyContractHandler(IStubStore store)
     }
 }
 
+/// <summary>
+/// Checks the tenant's journaled traffic against a specification (#287) — the consumer side of
+/// conformance.
+/// </summary>
+public sealed class VerifyTrafficHandler(StubEngine engine)
+    : IQueryHandler<VerifyTrafficQuery, Result<Mockifyr.Adapters.OpenApi.TrafficReport>>
+{
+    public ValueTask<Result<Mockifyr.Adapters.OpenApi.TrafficReport>> Handle(
+        VerifyTrafficQuery query, CancellationToken cancellationToken)
+    {
+        var requests = engine.GetServeEvents(query.Tenant, new ServeEventQuery())
+            .Select(e => new Mockifyr.Adapters.OpenApi.RecordedRequest(
+                e.Request.Method,
+                e.Request.Url,
+                e.Request.Body.Length == 0 ? null : System.Text.Encoding.UTF8.GetString(e.Request.Body),
+                [.. e.Request.Headers.Select(h => h.Key)]))
+            .ToList();
+
+        try
+        {
+            return ValueTask.FromResult<Result<Mockifyr.Adapters.OpenApi.TrafficReport>>(
+                Mockifyr.Adapters.OpenApi.TrafficConformance.Verify(query.SpecText, requests));
+        }
+        catch (Mockifyr.Adapters.OpenApi.OpenApiImportException ex)
+        {
+            return ValueTask.FromResult<Result<Mockifyr.Adapters.OpenApi.TrafficReport>>(
+                Error.Validation($"OpenApi.{ex.Error}", ex.Message));
+        }
+    }
+}
+
 /// <summary>Reads the tenant's degradation profile (#289).</summary>
 public sealed class GetDegradationHandler(IDegradationStore store)
     : IQueryHandler<GetDegradationQuery, Result<DegradationProfile>>
