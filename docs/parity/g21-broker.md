@@ -80,7 +80,45 @@ verify, document and choose between. Revisit when AMQP adds a second client or t
   instead of waiting (so it polls), and one Kafka shared across the class lets one test read another's
   message (so each test uses its own topic).
 
+## Slice 2 — capture
+
+- **Group / item:** G21b — self-tested; messages the system under test publishes land in the tenant's
+  inbox, so "assert we emitted `OrderSettled`" is one call against the surface people already query.
+- **Shape.** `--kafka-subscribe topic-a,topic-b` (and optional `--kafka-group`). Capture is separate
+  from publishing on purpose: a host that publishes but subscribes to nothing starts no consumer and
+  joins no group.
+- **One inbox, as ADR 0013 decided.** A captured message is a `MessageEnvelope` with
+  `MessageChannel.Broker`; `/__admin/messages` and its count/verify surface answer for it with no new
+  API. Asserted by a wire test that counts broker messages through the endpoint that already existed.
+- **What the envelope carries.** The **topic stands in for the sender** — it is what somebody scanning
+  the inbox is looking for, and leaving `From` empty would make every broker row look identical. There
+  are **no recipients**: a published message is addressed to a topic, not to anybody, and inventing a
+  consumer group there would suggest a delivery guarantee the inbox does not make. Topic, partition,
+  offset and key go in `Meta`, which is what turns "a message arrived" into "this exact one did".
+- **Producer headers are prefixed** (`header.*`) so a producer cannot overwrite `topic` or `offset`
+  with a header of the same name. Those three have to be trustworthy rather than usually right.
+- **Tenancy.** A topic carries none of its own, so an `X-Mockifyr-Tenant` message header addresses one
+  and its absence lands in the default tenant — the same chain shape every other channel uses
+  (ADR 0003/0009). Matched case-insensitively, because header names are; the first wins when a producer
+  sets two, because Kafka allows repeats and picking deterministically beats picking whichever the
+  client enumerated last.
+- **Offsets commit after the inbox write, never before.** A host that crashed in between would
+  otherwise have acknowledged a message nobody can see. At-least-once, as the ADR states, with
+  redelivery preferred over silent loss.
+- **A dedicated thread, not the pool.** `Consume()` blocks; parking a pool thread on it for the host's
+  lifetime is the pattern that starves everything else.
+- **A found bug, before it shipped.** The admin API projected a message's channel with a two-way
+  ternary (`Email ? "email" : "sms"`), so every broker message would have been labelled **"sms"** the
+  moment a third channel existed. Now a switch, with a wire test asserting it.
+- **Validation.** `BrokerCaptureTests` (13 unit cases over the pure factory — tenancy, meta, the header
+  prefix, a null payload stored as an empty body rather than pushed onward, a keyless message carrying
+  no key rather than an empty one) and `BrokerCaptureWireTests` (6 integration cases producing with the
+  **official client** against a real broker: capture, the channel label, provenance surviving into the
+  inbox, tenant addressing, verification through the existing count endpoint, and a host that
+  subscribes to nothing capturing nothing). **Stryker: 100 %** on `BrokerMessageFactory`.
+
 ### Deferred (the remaining slices of ADR 0013)
 
-Capture (subscribe, land messages in the inbox), serve-on-consume (`brokerMappings`), and AMQP. None is
-written; the ADR holds their shape.
+Serve-on-consume (`brokerMappings`) and AMQP. Neither is written; the ADR holds their shape. The
+dashboard's Messages screen shows broker messages already — it reads the same inbox — but has no
+channel filter for them yet.

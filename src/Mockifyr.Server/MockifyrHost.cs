@@ -592,6 +592,21 @@ public static class MockifyrHost
                 sp.GetRequiredService<Facade.Broker.IBrokerPublisher>(),
                 sp.GetRequiredService<IServeEventTemplateRenderer>()));
             Console.WriteLine($"mockifyr: publishing to Kafka at '{kafka}' for stubs that declare a publish action.");
+
+            // Capture (ADR 0013, slice 2): only with topics to listen to. A host that publishes but
+            // subscribes to nothing starts no consumer and joins no group.
+            var topics = (builder.Configuration["kafka-subscribe"] ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (topics.Length > 0)
+            {
+                var group = builder.Configuration["kafka-group"] is { Length: > 0 } g ? g : "mockifyr";
+                builder.Services.AddSingleton(new Facade.Broker.BrokerCaptureOptions(kafka, topics, group));
+                builder.Services.AddHostedService(sp => new Facade.Broker.KafkaCaptureService(
+                    sp.GetRequiredService<Facade.Broker.BrokerCaptureOptions>(),
+                    sp.GetRequiredService<IMessageSink>()));
+                Console.WriteLine(
+                    $"mockifyr: capturing {string.Join(", ", topics)} into the message inbox as consumer group '{group}'.");
+            }
         }
 
         // Redis persistence (G16d): stubs persist to a Redis hash and reload on startup. The

@@ -1647,7 +1647,14 @@ public static class AdminEndpoints
     private static object MessageJson(MessageEnvelope message) => new
     {
         id = message.Id,
-        channel = message.Channel == MessageChannel.Email ? "email" : "sms",
+        // A switch rather than a ternary: the two-channel form silently reported a broker message as
+        // "sms" the moment a third channel existed (ADR 0013).
+        channel = message.Channel switch
+        {
+            MessageChannel.Email => "email",
+            MessageChannel.Sms => "sms",
+            _ => "broker",
+        },
         from = message.From,
         to = message.To,
         subject = message.Subject,

@@ -355,6 +355,10 @@ learns what a broker is, because the I/O is an `IServeEventListener` in `Mockify
 Validated against a real Kafka container with the official client, since a fake broker proving a mock
 works would prove nothing. The ADR's own image-size trigger fired (+20 MB) and the recorded judgement
 is that the split it prescribed is not worth taking yet — with the number, and the condition to
-revisit, written down.
+revisit, written down. Slice 2 adds **capture**: `--kafka-subscribe` lands what the system under test
+publishes in the tenant's message inbox, so `/__admin/messages` and its verify surface answer for broker
+messages with no new API — one inbox, as the ADR decided. Writing it found a bug that would have
+shipped: the admin API projected a message's channel with a two-way ternary, so every broker message
+would have been labelled "sms" the moment a third channel existed.
 
-Builds clean (0 warnings); 1103 tests green across the four suites.
+Builds clean (0 warnings); 1122 tests green across the four suites.
