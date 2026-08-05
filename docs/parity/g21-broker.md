@@ -117,6 +117,49 @@ verify, document and choose between. Revisit when AMQP adds a second client or t
   inbox, tenant addressing, verification through the existing count endpoint, and a host that
   subscribes to nothing capturing nothing). **Stryker: 100 %** on `BrokerMessageFactory`.
 
+## Two silent gaps, found by running the released image (1.10.1)
+
+Both were found the same way: pulling `ghcr.io/qorpe/mockifyr:1.10.0` and driving the documented flow
+by hand. Neither was a failing test, because neither was wrong — they were quiet, which the release
+before them had already established is the failure mode this repo cares about most.
+
+- **A `publish` action on a host with no broker did nothing, and said nothing.** No producer is built
+  without `--kafka-bootstrap`, which is the correct posture — but the stub was still accepted, still
+  served its 201, and emitted nothing at all, with no warning at import and no record in the journal.
+  That is indistinguishable from a broker outage, and the flag is the last place anybody would look.
+  It is exactly the shape of the `bodyFileName` and `delayDistribution` gaps 1.0 made loud, so it goes
+  through the same surface: `UnsupportedFieldWarnings` now takes whether the host has a publisher, and
+  reports the gap on `POST /__admin/mappings`, on import, and at startup for mappings loaded from disk.
+  The question is asked of the **container** (`IBrokerPublisher` registered?) rather than of
+  configuration, so the answer cannot drift from what actually does the work.
+  The default is "a broker exists", because every caller that knows better passes the answer — a
+  default that warned would tell an in-process library user about a flag they cannot pass.
+- **A failed publish recorded that it failed, not what it was carrying.** The journal showed
+  `{"topic": …, "key": null, "body": null, "delivered": false, "error": "Local: Message timed out"}` —
+  the nulls were structural, because `PublishErrorData` had no room for them. "Delivery failed" and
+  "delivery failed, and here is the body whose template you got wrong" are the difference between
+  knowing something is broken and knowing what. The rendered key and body now ride on the failure.
+  Nulls survive for one case only, and there they are a fact: rendering is what failed, so there was
+  never a message — recording an empty body would claim we tried to send one.
+
+**Validation.** 11 unit cases over the warning (a webhook not mistaken for a publish, the action name
+matched case-insensitively, a host with no broker saying nothing about a stub that does not publish,
+four malformed `postServeActions` shapes producing no warning rather than throwing, and a publishing
+stub that *also* has a deferred field reporting both — which pins that neither check's early return can
+swallow the other), two wire cases over a real host with and without the flag, and two over the failure
+record. **Stryker: 98.08 %** on `UnsupportedFieldWarnings`, and it earned its keep again — it found
+that the `(N stubs)` suffix's suppression for a single stub was asserted nowhere, so `"(1 stubs)"`
+would have shipped unnoticed.
+
+The one survivor is equivalent: the warning's *kind* key `"publish:no-broker"` mutated to `""` still
+groups correctly, because a kind key only ever collides with itself and no other kind is empty. It is
+equivalent to the current set of kinds rather than in principle — a future warning keyed `""` would
+merge with it — which is exactly why the key is a descriptive constant and not an empty string.
+
+The general lesson, third time it has paid: **the released artifact is a test surface**. Building it,
+signing it and having a green suite says the code does what the tests say; running it says what an
+operator sees.
+
 ### Deferred (the remaining slices of ADR 0013)
 
 Serve-on-consume (`brokerMappings`) and AMQP. Neither is written; the ADR holds their shape. The

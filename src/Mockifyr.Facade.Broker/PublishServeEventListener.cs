@@ -10,8 +10,15 @@ public sealed record PublishData(string Topic, string? Key, string? Body);
 
 /// <summary>Sub-event payload recorded when a publish could not be delivered.</summary>
 /// <param name="Topic">The topic it was meant for.</param>
+/// <param name="Key">The partition key that was rendered, or <c>null</c> if rendering is what failed.</param>
+/// <param name="Body">The body that was rendered, or <c>null</c> if rendering is what failed.</param>
 /// <param name="Error">What went wrong, in the words the client used.</param>
-public sealed record PublishErrorData(string Topic, string Error);
+/// <remarks>
+/// The message carries what it *would have* sent, not just that it did not send. "Delivery failed" and
+/// "delivery failed, and here is the body whose template you got wrong" are the difference between
+/// knowing something is broken and knowing what.
+/// </remarks>
+public sealed record PublishErrorData(string Topic, string? Key, string? Body, string Error);
 
 /// <summary>
 /// Publishes a stub's declared messages after it serves a request (ADR 0013, slice 1).
@@ -81,8 +88,9 @@ public sealed class PublishServeEventListener(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // A template that fails to render dies before any message exists, so there is nothing to
-            // report but the error itself — the same shape the webhook listener uses.
-            Append(serveEvent, FailedType, new PublishErrorData(publish.Topic, exception.Message));
+            // report but the error itself — the same shape the webhook listener uses. The topic is the
+            // raw template rather than a rendered one, because rendering is what failed.
+            Append(serveEvent, FailedType, new PublishErrorData(publish.Topic, null, null, exception.Message));
             return;
         }
 
@@ -94,8 +102,9 @@ public sealed class PublishServeEventListener(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // An unreachable broker must not take the served response down with it: the client already
-            // has its answer by the time this runs, and the failure belongs in the journal.
-            Append(serveEvent, FailedType, new PublishErrorData(topic, exception.Message));
+            // has its answer by the time this runs, and the failure belongs in the journal — with the
+            // message it was carrying, so a failure is diagnosable and not merely visible.
+            Append(serveEvent, FailedType, new PublishErrorData(topic, key, body, exception.Message));
         }
     }
 

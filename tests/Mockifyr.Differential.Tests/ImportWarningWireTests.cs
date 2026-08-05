@@ -133,4 +133,58 @@ public sealed class ImportWarningWireTests
             client.Dispose();
         }
     }
+
+    private const string PublishingStub =
+        """
+        {"request":{"method":"POST","urlPath":"/payments"},"response":{"status":201,"body":"{\"ok\":true}"},
+         "postServeActions":[{"name":"publish","parameters":{"topic":"payments.events","body":"emitted"}}]}
+        """;
+
+    [Fact]
+    public async Task A_publish_action_on_a_host_with_no_broker_is_created_and_reported()
+    {
+        var (host, client) = await StartAsync();
+        await using (host)
+        {
+            using var created = await client.PostAsync("/__admin/mappings", Json(PublishingStub));
+
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            var warning = JsonDocument.Parse(await created.Content.ReadAsStringAsync())
+                .RootElement.GetProperty("warnings").EnumerateArray().Single().GetString()!;
+            Assert.Contains("--kafka-bootstrap", warning, StringComparison.Ordinal);
+
+            // And the warned-about behaviour is exactly what happens: a perfect 201 and no event at all.
+            // Without the warning that reads as a broker outage, and the flag is the last place anyone
+            // would look.
+            using var served = await client.PostAsync("/payments", Json("""{"orderId":"ord-7"}"""));
+            Assert.Equal(HttpStatusCode.Created, served.StatusCode);
+
+            await host.StopAsync();
+            client.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task The_same_stub_on_a_host_with_a_broker_is_not_reported()
+    {
+        // Nothing has to connect for this: the warning asks whether a publisher exists, not whether the
+        // broker answers — an unreachable broker is a journal entry, which is a different report.
+        var host = MockifyrHost.Build(["--port", "0", "--kafka-bootstrap", "localhost:19092"]);
+        await using (host)
+        {
+            await host.StartAsync();
+            var address = host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!
+                .Addresses.First(a => a.StartsWith("http://", StringComparison.Ordinal))
+                .Replace("[::]", "127.0.0.1").Replace("0.0.0.0", "127.0.0.1");
+            using var client = new HttpClient { BaseAddress = new Uri(address) };
+
+            using var created = await client.PostAsync("/__admin/mappings", Json(PublishingStub));
+
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            Assert.False(JsonDocument.Parse(await created.Content.ReadAsStringAsync())
+                .RootElement.TryGetProperty("warnings", out _));
+
+            await host.StopAsync();
+        }
+    }
 }

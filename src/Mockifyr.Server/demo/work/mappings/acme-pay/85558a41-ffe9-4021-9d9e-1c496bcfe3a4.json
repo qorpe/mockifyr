@@ -1,0 +1,1 @@
+{"name":"Callback receiver (stands in for the merchant system)","request":{"method":"POST","urlPath":"/callbacks/payment-status"},"response":{"status":200,"jsonBody":{"received":true}},"id":"85558a41-ffe9-4021-9d9e-1c496bcfe3a4","uuid":"85558a41-ffe9-4021-9d9e-1c496bcfe3a4"}
