@@ -329,4 +329,11 @@ A profile composes with each stub rather than replacing it, is deterministic fro
 reports (so a chaos run becomes a regression test), and never touches the admin API — a profile an
 operator could not undo would be a trap, not an instrument.
 
-Builds clean (0 warnings); 980 tests green across the four suites.
+**Contract conformance (#287)** is the first slice of the largest idea: a mock that has silently drifted
+from the API it models is worse than no mock, because it manufactures confidence. `POST
+/__admin/openapi/verify` joins two things the repo already had — an OpenAPI reader and the stub set —
+and reports what disagrees without ever changing it. Mutation testing paid for itself twice here: it
+found that the check read the path fields in the opposite precedence to the engine, and that which
+operation an ambiguous stub belonged to was being decided by enumeration order.
+
+Builds clean (0 warnings); 1023 tests green across the four suites.

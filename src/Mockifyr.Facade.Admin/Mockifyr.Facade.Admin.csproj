@@ -4,6 +4,9 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Mockifyr.Core\Mockifyr.Core.csproj" />
     <ProjectReference Include="..\Mockifyr.Application\Mockifyr.Application.csproj" />
+    <!-- Conformance reporting (#287) serializes the adapter's report type; an adapter, not a facade,
+         so the "no facade depends on another facade" rule is intact. -->
+    <ProjectReference Include="..\Mockifyr.Adapters.OpenApi\Mockifyr.Adapters.OpenApi.csproj" />
     <!-- Recording control (start/stop/snapshot) manipulates the shared edge RecordingSession. -->
     <ProjectReference Include="..\Mockifyr.Outbound\Mockifyr.Outbound.csproj" />
   </ItemGroup>

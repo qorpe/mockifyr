@@ -30,7 +30,12 @@ public static partial class OpenApiStubGenerator
     private static partial Regex RefPattern();
 
     /// <summary>Generates one mapping JSON per operation, or throws a typed <see cref="OpenApiImportException"/>.</summary>
-    public static IReadOnlyList<string> Generate(string specText, bool stateful = false)
+    /// <summary>
+    /// The size and external-<c>$ref</c> guards every path that accepts a specification must apply
+    /// (G19c). Shared with conformance verification (#287): a document handed to a verify run comes
+    /// from exactly the same untrusted place as one handed to an import.
+    /// </summary>
+    public static void GuardSpec(string specText)
     {
         if (Encoding.UTF8.GetByteCount(specText) > MaxSpecBytes)
         {
@@ -39,7 +44,7 @@ public static partial class OpenApiStubGenerator
         }
 
         // SSRF stays impossible by construction: external $refs are refused before parsing and the
-        // reader below only ever resolves local (#/…) references — nothing is fetched, ever.
+        // readers only ever resolve local (#/…) references — nothing is fetched, ever.
         foreach (Match match in RefPattern().Matches(specText))
         {
             var target = match.Groups["target"].Value;
@@ -51,6 +56,11 @@ public static partial class OpenApiStubGenerator
                     pointer: target);
             }
         }
+    }
+
+    public static IReadOnlyList<string> Generate(string specText, bool stateful = false)
+    {
+        GuardSpec(specText);
 
         var reader = new OpenApiStringReader(new OpenApiReaderSettings
         {

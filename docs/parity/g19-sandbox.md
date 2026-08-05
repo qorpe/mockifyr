@@ -270,3 +270,53 @@ G16 has always validated them — a backend cannot be mutation-tested without th
 
 Still deferred: change-feed reload for resources (a second replica does not learn about another's
 writes until it restarts), and per-key scenario isolation.
+
+
+## Contract conformance — `POST /__admin/openapi/verify` (#287, post-1.0)
+
+- **Group / item:** post-roadmap platform feature, the first slice of #287 — **self-tested**; the
+  reference engine has no conformance surface, so there is no oracle.
+- **The problem.** The deepest failure mode of mocking is not a bug in the mock — it is the mock being
+  *confidently out of date*. The upstream adds a required field, tightens a status, drops an endpoint;
+  the stubs do not move; every test stays green; production breaks. Mockifyr already had both halves of
+  the answer — it can read an OpenAPI document (G19c) and it holds the stubs — and did not join them.
+- **What it reports.** Four kinds: a stub answering an operation the specification no longer declares;
+  an operation no stub answers; a status the specification does not declare for that operation; and a
+  response body that does not satisfy the declared schema, named by JSON pointer. Plus coverage counts,
+  because "conforms" on an empty stub set is true and useless.
+- **It reports, it never mutates.** Asserted on the wire (the stub set is byte-identical afterwards).
+  Which side is wrong is a judgement about the caller's system; a tool that "fixed" the drift itself
+  would be making that judgement for them.
+- **The same validator as `matchesJsonSchema`.** JsonSchema.Net, so a body that a stub would accept and
+  a body the report calls conformant are judged by one implementation rather than two.
+- **A templated body is left alone.** A template is not JSON until a request renders it; validating the
+  template text would report drift on every templated stub, which is the fastest way to make a report
+  people stop reading. The same instinct governs the other silences: a stub matching by regular
+  expression, a message-channel stub, an operation whose schema the document omits.
+- **Two ambiguities were made explicit rather than left to chance**, both found by mutation testing:
+  - *Which field names the path.* The check now mirrors the engine's own precedence — `url`, then
+    `urlPath`, then `urlPathTemplate`. It had them in the opposite order, so a mapping carrying more
+    than one would have been reported confidently against an endpoint it was not serving.
+  - *Which operation a stub belongs to* when several agree. A specification may declare both
+    `/orders/new` and `/orders/{id}`; the literal wins, by counting wildcards rather than characters.
+    Equal wildcard counts fall back to ordinal path order — arbitrary, but *stable*, which is what a
+    report wired into CI needs.
+- **The round trip is asserted**: stubs the importer generated from a document must verify clean
+  against that same document. If the two halves disagreed, a user would have no way to tell which one
+  was lying.
+- **Validation.** `ContractConformanceTests` (35 unit cases) and `ContractVerifyTests` (8 wire cases,
+  including the round trip, tenant isolation, both refusals, and the no-mutation assertion).
+  **Stryker 90.3 %**, 7 survivors, all analysed as equivalent:
+  - `OrderBy` → `OrderByDescending` on the specification's paths: enumeration order no longer decides
+    anything now that operation selection is explicit, and findings are sorted before they are returned.
+  - Two tie-break reorderings in the findings sort: reachable only for two findings sharing a path *and*
+    a method and differing by kind, which the control flow cannot produce (an undeclared status stops
+    before a schema check).
+  - `Count <= 1` → `< 1` and its ternary: a fast path; ordering a single-element list is the identity.
+  - `character == '{'` → `!=`: counts non-wildcards instead of wildcards, which orders identically for
+    every pair the check can be handed — the two paths must already agree with the same stub, so they
+    have the same segment count.
+  - The `Flush()` before reading a `StringWriter`: the reader flushes.
+- **Deferred, and recorded on the issue rather than here as done:** journal-vs-spec (what clients
+  actually sent, against what the contract allows) and recording-vs-stubs (drift against reality rather
+  than against a document). Both reuse this conformance engine; neither is written yet.

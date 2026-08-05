@@ -2,6 +2,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.OpenApi.Readers" />
+    <!-- Contract conformance (#287) judges a stub's response body against the specification's schema
+         with the same validator that backs matchesJsonSchema, so both answer the same way. -->
+    <PackageReference Include="JsonSchema.Net" />
   </ItemGroup>
 
 </Project>

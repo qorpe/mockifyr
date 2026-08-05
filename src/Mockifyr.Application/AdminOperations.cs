@@ -22,6 +22,13 @@ public sealed record ImportMappingsCommand(string MappingJson, TenantId Tenant) 
 /// <summary>Removes all stubs for the tenant (the <c>/__admin/mappings/reset</c> admin endpoint).</summary>
 public sealed record ResetMappingsCommand(TenantId Tenant) : ICommand<Result>;
 
+/// <summary>
+/// Checks the tenant's stubs against an OpenAPI specification (<c>POST /__admin/openapi/verify</c>,
+/// #287). Reports; never mutates.
+/// </summary>
+public sealed record VerifyContractQuery(string SpecText, TenantId Tenant)
+    : IQuery<Result<Mockifyr.Adapters.OpenApi.ConformanceReport>>;
+
 /// <summary>Reads the tenant's degradation profile (<c>GET /__admin/degradation</c>).</summary>
 public sealed record GetDegradationQuery(TenantId Tenant) : IQuery<Result<DegradationProfile>>;
 
