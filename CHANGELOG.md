@@ -8,6 +8,19 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Changed
+
+- **A `publish` action on a host with no broker is now reported instead of being silent.** Such a stub
+  served its response and emitted nothing, which is indistinguishable from a broker outage — and the
+  missing `--kafka-bootstrap` flag is the last place anybody would look. The gap is now reported on
+  `POST /__admin/mappings`, on `/__admin/mappings/import`, and at startup for mappings loaded from
+  disk, through the same warning surface `bodyFileName` and `delayDistribution` use. The stub is still
+  created; the goal is to be loud, not strict.
+- **A failed publish now records the message it was carrying.** The journal's `publishes` entry
+  reported `"key": null, "body": null` on any failure, so a template mistake and an unreachable broker
+  looked identical after the fact. Both are recorded now. Nulls remain for the one case where they are
+  a fact: rendering itself failed, so there was never a message.
+
 ## Released
 
 ### [v1.10.0](https://github.com/qorpe/mockifyr/releases/tag/v1.10.0) — 2026-08-06

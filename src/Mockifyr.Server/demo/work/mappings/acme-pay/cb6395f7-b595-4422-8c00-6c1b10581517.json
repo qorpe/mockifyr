@@ -1,0 +1,1 @@
+{"name":"list payments","request":{"method":"GET","urlPath":"/payments"},"response":{"status":200,"headers":{"Content-Type":"application/json"},"body":"{\u0022count\u0022:{{state.count}},\u0022items\u0022:{{state.list}} }","state":{"operation":"list","collection":"payments"}},"id":"cb6395f7-b595-4422-8c00-6c1b10581517","uuid":"cb6395f7-b595-4422-8c00-6c1b10581517"}

@@ -3,6 +3,7 @@ using Mediant.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Mockifyr.Adapters.MappingJson;
 using Mockifyr.Adapters.OpenApi;
 using Mockifyr.Application;
@@ -48,6 +49,14 @@ public static class AdminEndpoints
     /// different system than "did the callback land?", and one list of two kinds would answer neither
     /// question quickly.
     /// </summary>
+    /// <summary>Whether this host can actually publish, which decides whether a `publish` action is a gap.</summary>
+    /// <remarks>
+    /// Asked of the container rather than of configuration: the publisher is what does the work, so its
+    /// presence is the fact, and a future broker that is wired differently cannot drift from this answer.
+    /// </remarks>
+    private static bool BrokerConfigured(IServiceProvider services) =>
+        services.GetService<Facade.Broker.IBrokerPublisher>() is not null;
+
     private static IReadOnlyList<object> JournalPublishes(ServeEvent e) =>
     [
         .. e.SubEvents
@@ -66,8 +75,11 @@ public static class AdminEndpoints
                 Facade.Broker.PublishErrorData failed => new
                 {
                     topic = failed.Topic,
-                    key = (string?)null,
-                    body = (string?)null,
+
+                    // What it was carrying, not just that it failed. Null here means rendering itself
+                    // failed, so there was never a message — which the error text says.
+                    key = failed.Key,
+                    body = failed.Body,
                     delivered = false,
                     error = (string?)failed.Error,
                 },
@@ -242,7 +254,7 @@ public static class AdminEndpoints
             return Results.Json(new { mappings });
         });
 
-        admin.MapPost("/mappings", async (HttpRequest request, ISender sender) =>
+        admin.MapPost("/mappings", async (HttpRequest request, ISender sender, IServiceProvider services) =>
         {
             var body = await ReadBody(request);
             var result = await sender.Send(new CreateStubCommand(body, TenantOf(request)));
@@ -256,7 +268,7 @@ public static class AdminEndpoints
             // reference engine, which is the point of accepting the dialect. The goal is to be loud,
             // not strict: a `bodyFileName` stub used to match and return an empty body, which reads
             // as a matching bug and is not one.
-            var warnings = UnsupportedFieldWarnings.For(body);
+            var warnings = UnsupportedFieldWarnings.For(body, BrokerConfigured(services));
             return warnings.Count == 0
                 ? Results.Json(new { id = result.Value, uuid = result.Value }, statusCode: StatusCodes.Status201Created)
                 : Results.Json(
@@ -284,7 +296,7 @@ public static class AdminEndpoints
             return Results.Ok();
         });
 
-        admin.MapPost("/mappings/import", async (HttpRequest request, ISender sender) =>
+        admin.MapPost("/mappings/import", async (HttpRequest request, ISender sender, IServiceProvider services) =>
         {
             var body = await ReadBody(request);
             var result = await sender.Send(new ImportMappingsCommand(body, TenantOf(request)));
@@ -295,7 +307,7 @@ public static class AdminEndpoints
 
             // A bundle is where deferred fields hide best — nobody reads 200 stubs. Warnings are
             // de-duplicated, so the same gap across the whole bundle is reported as one fact.
-            var warnings = UnsupportedFieldWarnings.For(body);
+            var warnings = UnsupportedFieldWarnings.For(body, BrokerConfigured(services));
             return warnings.Count == 0 ? Results.Ok() : Results.Json(new { warnings });
         });
 

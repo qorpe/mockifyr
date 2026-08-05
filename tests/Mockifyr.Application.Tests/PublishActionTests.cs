@@ -193,6 +193,58 @@ public sealed class PublishActionTests
     }
 
     [Fact]
+    public async Task A_failed_delivery_records_the_message_it_was_carrying()
+    {
+        var stub = Read(
+            """
+            {"request":{"method":"POST","urlPath":"/payments"},
+             "response":{"status":201},
+             "postServeActions":[{"name":"publish","parameters":{
+               "topic":"payments.events","key":"{{jsonPath originalRequest.body '$.orderId'}}",
+               "body":"{\"type\":\"PaymentAccepted\"}"}}]}
+            """);
+
+        var publisher = new RecordingPublisher { Throw = new InvalidOperationException("broker is down") };
+        var listener = new PublishServeEventListener(publisher, new WebhookTemplateRenderer());
+        var serveEvent = ServeEventFor(stub);
+
+        await listener.OnServeEventAsync(serveEvent, CancellationToken.None);
+
+        // "It failed" and "it failed, and here is what it was sending" are the difference between
+        // knowing something is broken and knowing what. The templates rendered fine; the broker did not
+        // answer — and only the recorded key and body can tell those two apart afterwards.
+        var failed = (PublishErrorData)Assert.Single(serveEvent.SubEvents).Data!;
+        Assert.Equal("payments.events", failed.Topic);
+        Assert.Equal("ord-7", failed.Key);
+        Assert.Equal("""{"type":"PaymentAccepted"}""", failed.Body);
+    }
+
+    [Fact]
+    public async Task A_message_that_never_rendered_records_no_key_or_body()
+    {
+        var stub = Read(
+            """
+            {"request":{"method":"POST","urlPath":"/payments"},
+             "response":{"status":201},
+             "postServeActions":[{"name":"publish","parameters":{
+               "topic":"payments.events","body":"{{#each items}}"}}]}
+            """);
+
+        var publisher = new RecordingPublisher();
+        var listener = new PublishServeEventListener(publisher, new WebhookTemplateRenderer());
+        var serveEvent = ServeEventFor(stub);
+
+        await listener.OnServeEventAsync(serveEvent, CancellationToken.None);
+
+        // Nulls here are a fact, not a shrug: rendering is what failed, so there was never a message.
+        // Reporting an empty body instead would claim we tried to send one.
+        var failed = (PublishErrorData)Assert.Single(serveEvent.SubEvents).Data!;
+        Assert.Null(failed.Key);
+        Assert.Null(failed.Body);
+        Assert.Empty(publisher.Sent);
+    }
+
+    [Fact]
     public async Task A_delivered_message_is_recorded_so_the_journal_can_show_it()
     {
         var stub = Read(

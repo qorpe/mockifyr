@@ -1012,6 +1012,10 @@ public static class MockifyrHost
     {
         var store = app.Services.GetRequiredService<IStubStore>();
         var warnings = new HashSet<string>(StringComparer.Ordinal);
+
+        // Whether a `publish` action is honoured depends on how this host was started, not on the
+        // mapping — so the answer has to come from here.
+        var broker = app.Services.GetService<Facade.Broker.IBrokerPublisher>() is not null;
         foreach (var loader in app.Services.GetServices<IMappingsLoader>())
         {
             foreach (var stub in loader.Load(TenantId.Default))
@@ -1019,7 +1023,7 @@ public static class MockifyrHost
                 store.Put(stub);
                 if (stub.Source is { } source)
                 {
-                    warnings.UnionWith(Adapters.MappingJson.UnsupportedFieldWarnings.For(source));
+                    warnings.UnionWith(Adapters.MappingJson.UnsupportedFieldWarnings.For(source, broker));
                 }
             }
         }

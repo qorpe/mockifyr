@@ -15,6 +15,11 @@ namespace Mockifyr.Adapters.MappingJson;
 /// were documented and both were silent.
 /// </para>
 /// <para>
+/// One gap here is not about the dialect at all: a <c>publish</c> action on a host started without a
+/// broker. Nothing in the mapping is wrong, and the stub is honoured in every other respect — it just
+/// emits nothing, which looks exactly like a broker problem and is not one.
+/// </para>
+/// <para>
 /// The stub is still imported. Refusing it would break importing a mapping set written for the
 /// reference engine, which is the entire point of accepting the dialect — the goal is to be loud, not
 /// to be strict.
@@ -27,7 +32,13 @@ public static class UnsupportedFieldWarnings
     /// when everything in it is honoured. Never throws: malformed JSON is the caller's error to
     /// report, and a warning pass must not be the thing that fails an import.
     /// </summary>
-    public static IReadOnlyList<string> For(string mappingJson)
+    /// <param name="mappingJson">The mapping document as it was submitted.</param>
+    /// <param name="brokerConfigured">
+    /// Whether this host has a broker to publish to. A <c>publish</c> action is honoured or not
+    /// depending on how the host was started, not on anything in the mapping — so unlike every other
+    /// gap here, whether it is a gap is the caller's to say.
+    /// </param>
+    public static IReadOnlyList<string> For(string mappingJson, bool brokerConfigured = true)
     {
         JsonDocument document;
         try
@@ -50,19 +61,19 @@ public static class UnsupportedFieldWarnings
             {
                 foreach (var mapping in mappings.EnumerateArray())
                 {
-                    Inspect(mapping, warnings);
+                    Inspect(mapping, brokerConfigured, warnings);
                 }
             }
             else if (root.ValueKind == JsonValueKind.Array)
             {
                 foreach (var mapping in root.EnumerateArray())
                 {
-                    Inspect(mapping, warnings);
+                    Inspect(mapping, brokerConfigured, warnings);
                 }
             }
             else
             {
-                Inspect(root, warnings);
+                Inspect(root, brokerConfigured, warnings);
             }
 
             // One line per KIND of gap, with a count — not one per stub. A 200-stub bundle whose
@@ -83,10 +94,22 @@ public static class UnsupportedFieldWarnings
         }
     }
 
-    private static void Inspect(JsonElement mapping, List<(string Kind, string Message)> warnings)
+    private static void Inspect(JsonElement mapping, bool brokerConfigured, List<(string Kind, string Message)> warnings)
     {
-        if (mapping.ValueKind != JsonValueKind.Object ||
-            !mapping.TryGetProperty("response", out var response) ||
+        if (mapping.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (!brokerConfigured && DeclaresPublish(mapping))
+        {
+            warnings.Add((
+                "publish:no-broker",
+                "a 'publish' post-serve action was accepted but this host has no broker — "
+                + "such a stub serves its response and emits NOTHING. Start with --kafka-bootstrap."));
+        }
+
+        if (!mapping.TryGetProperty("response", out var response) ||
             response.ValueKind != JsonValueKind.Object)
         {
             return;
@@ -103,5 +126,28 @@ public static class UnsupportedFieldWarnings
                 $"delayDistribution type '{type.GetString()}' is not implemented — only 'uniform' is. "
                 + "Such a stub responds with NO delay. Use 'uniform' or 'fixedDelayMilliseconds'."));
         }
+    }
+
+    /// <summary>Whether any post-serve action on this mapping is a <c>publish</c>.</summary>
+    private static bool DeclaresPublish(JsonElement mapping)
+    {
+        if (!mapping.TryGetProperty("postServeActions", out var actions) ||
+            actions.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var action in actions.EnumerateArray())
+        {
+            if (action.ValueKind == JsonValueKind.Object &&
+                action.TryGetProperty("name", out var name) &&
+                name.ValueKind == JsonValueKind.String &&
+                string.Equals(name.GetString(), "publish", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
