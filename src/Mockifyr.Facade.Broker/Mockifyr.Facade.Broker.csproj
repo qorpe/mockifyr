@@ -5,6 +5,7 @@
     <!-- The broker client lives here and nowhere else (ADR 0013), exactly as MimeKit lives in the SMTP
          facade. Confluent.Kafka is Apache-2.0, so it is compatible with shipping. -->
     <PackageReference Include="Confluent.Kafka" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
 </Project>

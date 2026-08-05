@@ -10,6 +10,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **Broker capture** (#291, ADR 0013 slice 2). `--kafka-subscribe orders.events` lands what your system
+  publishes in the tenant's message inbox, so `/__admin/messages` and its count/verify surface answer
+  for broker messages with no new API. Topic, partition, offset and key are recorded; an
+  `X-Mockifyr-Tenant` message header addresses a tenant. Offsets commit after the inbox write, so a
+  crash redelivers rather than loses.
 - **The broker channel, first slice** (#291, ADR 0013). A stub can answer a request *and* publish a
   message: `postServeActions: [{"name":"publish","parameters":{"topic":…,"key":…,"body":…}}]`, with
   every field templated against the triggering request. Opt in with `--kafka-bootstrap`; a host
