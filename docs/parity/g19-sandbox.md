@@ -320,3 +320,40 @@ writes until it restarts), and per-key scenario isolation.
 - **Deferred, and recorded on the issue rather than here as done:** journal-vs-spec (what clients
   actually sent, against what the contract allows) and recording-vs-stubs (drift against reality rather
   than against a document). Both reuse this conformance engine; neither is written yet.
+
+
+## Traffic conformance — `POST /__admin/requests/verify` (#287, third slice)
+
+- **Group / item:** post-roadmap platform feature, the last slice of #287 — **self-tested**.
+- **The mirror of the stub check.** That one asks whether the mock still describes the API; this asks
+  whether the **consumer** is staying inside it. A client calling an endpoint the contract never
+  promised, omitting a required parameter, or sending a body the schema forbids works perfectly
+  against a mock that is more permissive than the real service — and fails the first time it meets the
+  real one. Three findings: `undeclaredOperation`, `missingParameter`, `requestSchemaViolation`.
+- **Reads the journal; changes nothing.** Verifying twice reports the same numbers, asserted — a check
+  that journaled its own probing would grow its own input.
+- **One engine, two directions.** `ParseSpec`, `OperationsOf`, `FindOperation` and the schema-failure
+  walk are shared with the stub check, so both credit a request to the *same* operation under the same
+  ambiguity rules. Two reports about one document that disagreed on which operation a path belongs to
+  would be worse than either alone. A wire test drives conforming traffic through an imported spec and
+  asserts both checks answer clean.
+- **Silences, again on purpose.** A body on an operation that declares none is odd, not a violation. A
+  header name is matched case-insensitively, because HTTP says so and reporting `x-tenant` as missing
+  when the contract spells it `X-Tenant` would be a false finding on correct traffic. A percent-encoded
+  parameter name is decoded before the comparison.
+- **Path parameters are never "missing"** — the URL matching the template at all is what satisfies
+  them. Cookies cannot be checked at all: the journal keeps header *names*, and individual cookies live
+  inside one `Cookie` header. Stated rather than silently approximated.
+- **Counts, not just a verdict.** "Conforms: false" says nothing about scale; two of three requests
+  passing is a different morning from none of three.
+- **Validation.** `TrafficConformanceTests` (23 unit cases) and `TrafficVerifyTests` (8 wire cases,
+  including tenant isolation and the both-checks-agree round trip). **Stryker 79.2 %**, 4 survivors,
+  each analysed as equivalent:
+  - The `"cookie"` and `"path parameter"` labels: unreachable, because neither location can be reported
+    missing — the switch above them answers `true` for both.
+  - `index < 0` → `<= 0` when looking for the query separator: differs only for a URL that *starts* with
+    `?`, which a journaled request cannot be.
+  - Emptying the `return []` branch: cannot compile (no return path).
+- **Discovered while testing:** the schema validator reports absent required properties as **one**
+  error naming them all, not one per property. The first version of the cap test therefore asserted
+  nothing; it now uses several separately wrong types, which is what actually reaches the cap.

@@ -343,4 +343,9 @@ serves nothing while it looks, which is why `StubEngine.FindMatch` was extracted
 than reimplemented — a diagnostic matching by different rules than the server would describe a host
 that does not exist.
 
-Builds clean (0 warnings); 1055 tests green across the four suites.
+The third slice — **traffic conformance** — completes it: `POST /__admin/requests/verify` asks whether
+the *consumer* stayed inside the contract, which is the failure a permissive mock hides completely. All
+three checks share one engine and one set of ambiguity rules, so two reports about the same document
+cannot disagree about which operation a path belongs to.
+
+Builds clean (0 warnings); 1086 tests green across the four suites.

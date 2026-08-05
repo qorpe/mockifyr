@@ -114,6 +114,39 @@ public static class ContractConformance
             covered.Count);
     }
 
+    /// <summary>
+    /// Parses and guards a specification. Shared with the traffic check (#287) so both sides of
+    /// conformance refuse the same documents for the same reasons.
+    /// </summary>
+    internal static OpenApiDocument ParseSpec(string specText) => Parse(specText);
+
+    /// <summary>The operations a document declares, shared with the traffic check.</summary>
+    internal static IReadOnlyList<object> OperationsOf(OpenApiDocument document) => [.. Operations(document)];
+
+    /// <summary>
+    /// The operation a method and path belong to, by the same rules the stub check uses — the literal
+    /// path wins over a templated one, and ties fall back to ordinal order. Traffic and stubs must be
+    /// credited to the same operation, or the two reports disagree about the same document.
+    /// </summary>
+    internal static OpenApiOperation? FindOperation(IReadOnlyList<object> operations, string method, string path)
+    {
+        var typed = operations.Cast<SpecOperation>().ToList();
+        var candidates = typed.Where(operation =>
+            string.Equals(operation.Method, method, StringComparison.OrdinalIgnoreCase)
+            && PathsAgree(operation.Path, path)).ToList();
+
+        return candidates.Count switch
+        {
+            0 => null,
+            1 => candidates[0].Operation,
+            _ => candidates.OrderBy(Wildcards).ThenBy(o => o.Path, StringComparer.Ordinal).First().Operation,
+        };
+    }
+
+    /// <summary>The leaves of a schema evaluation that actually failed, shared with the traffic check.</summary>
+    internal static IEnumerable<Json.Schema.EvaluationResults> FailureLeaves(Json.Schema.EvaluationResults result) =>
+        Failures(result);
+
     private static OpenApiDocument Parse(string specText)
     {
         // The same guards the importer applies, for the same reasons (G19c): a conformance run takes a
