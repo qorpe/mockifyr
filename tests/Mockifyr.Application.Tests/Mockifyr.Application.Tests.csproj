@@ -9,6 +9,7 @@
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <ProjectReference Include="..\..\src\Mockifyr.Facade.Broker\Mockifyr.Facade.Broker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

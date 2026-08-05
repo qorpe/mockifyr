@@ -86,6 +86,7 @@ public static class MappingJsonReader
             Request = ReadRequest(request, matchers),
             Response = ReadResponse(response),
             Webhooks = ReadWebhooks(mapping),
+            Publishes = ReadPublishes(mapping),
             Scenario = ReadScenario(mapping),
             Metadata = ReadMetadata(mapping),
         };
@@ -157,6 +158,78 @@ public static class MappingJsonReader
         }
 
         return webhooks;
+    }
+
+    /// <summary>
+    /// Reads <c>publish</c> post-serve actions (ADR 0013) from the same two array names webhooks come
+    /// from, so a mapping can answer a request and emit an event without learning a third place to put
+    /// things. Entries that are not publishes are ignored, exactly as non-webhook entries are.
+    /// </summary>
+    private static IReadOnlyList<PublishDefinition> ReadPublishes(JsonElement mapping)
+    {
+        if (mapping.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        var publishes = new List<PublishDefinition>();
+        foreach (var key in (string[])["postServeActions", "serveEventListeners"])
+        {
+            if (!mapping.TryGetProperty(key, out var actions) || actions.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var action in actions.EnumerateArray())
+            {
+                if (action.ValueKind != JsonValueKind.Object
+                    || !action.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String
+                    || !string.Equals(name.GetString(), "publish", StringComparison.OrdinalIgnoreCase)
+                    || !action.TryGetProperty("parameters", out var parameters)
+                    || parameters.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                // A publish with no topic has nowhere to go; skipping it silently would make a typo look
+                // like a working stub, so it is simply not a publish action at all.
+                if (!parameters.TryGetProperty("topic", out var topic) || topic.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                publishes.Add(new PublishDefinition
+                {
+                    Topic = topic.GetString()!,
+                    Key = parameters.TryGetProperty("key", out var k) && k.ValueKind == JsonValueKind.String
+                        ? k.GetString()
+                        : null,
+                    Body = parameters.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String
+                        ? b.GetString()
+                        : null,
+                    Headers = ReadPublishHeaders(parameters),
+                    DelayMilliseconds = parameters.TryGetProperty("delay", out var d)
+                        && d.ValueKind == JsonValueKind.Number ? d.GetInt32() : 0,
+                });
+            }
+        }
+
+        return publishes;
+    }
+
+    private static IReadOnlyList<KeyValuePair<string, string>> ReadPublishHeaders(JsonElement parameters)
+    {
+        if (!parameters.TryGetProperty("headers", out var headers) || headers.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        return
+        [
+            .. headers.EnumerateObject()
+                .Where(p => p.Value.ValueKind == JsonValueKind.String)
+                .Select(p => new KeyValuePair<string, string>(p.Name, p.Value.GetString()!)),
+        ];
     }
 
     private static void ReadWebhookActions(JsonElement actions, List<WebhookDefinition> webhooks)

@@ -318,6 +318,13 @@ public sealed record StubMapping
     public IReadOnlyList<WebhookDefinition> Webhooks { get; init; } = [];
 
     /// <summary>
+    /// Messages published to a broker after this stub serves a request (the <c>publish</c> post-serve
+    /// action, ADR 0013). Like <see cref="Webhooks"/>, the engine records only the intent — the I/O is
+    /// an <see cref="IServeEventListener"/> at the facade edge, so Core never learns what a broker is.
+    /// </summary>
+    public IReadOnlyList<PublishDefinition> Publishes { get; init; } = [];
+
+    /// <summary>
     /// The raw imported JSON this stub was parsed from, kept verbatim so the admin API can return the
     /// full mapping (not just an id) for faithful display + edit round-trips. Inert data — the engine
     /// never reads it for matching. Null for stubs constructed directly (not via the JSON adapter).
@@ -344,6 +351,32 @@ public sealed record WebhookDefinition
     public byte[]? Body { get; init; }
 
     /// <summary>Fixed delay (ms) applied before firing the webhook (the <c>delay</c> field). 0 = none.</summary>
+    public int DelayMilliseconds { get; init; }
+}
+
+/// <summary>
+/// One message to publish after a stub matches (a <c>publish</c> post-serve action, ADR 0013).
+/// </summary>
+/// <remarks>
+/// The headline case for the broker channel: a stub that answers <c>201</c> <em>and</em> emits the
+/// event the rest of the system is waiting for. Every field is a template rendered against the
+/// triggering request, exactly as a webhook's URL and body are.
+/// </remarks>
+public sealed record PublishDefinition
+{
+    /// <summary>The topic to publish to.</summary>
+    public required string Topic { get; init; }
+
+    /// <summary>The partition key, or null to let the broker choose.</summary>
+    public string? Key { get; init; }
+
+    /// <summary>The message body.</summary>
+    public string? Body { get; init; }
+
+    /// <summary>Message headers, in declaration order.</summary>
+    public IReadOnlyList<KeyValuePair<string, string>> Headers { get; init; } = [];
+
+    /// <summary>Fixed delay (ms) before publishing, mirroring a webhook's. 0 = none.</summary>
     public int DelayMilliseconds { get; init; }
 }
 

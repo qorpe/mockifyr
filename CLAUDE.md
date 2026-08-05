@@ -348,4 +348,13 @@ the *consumer* stayed inside the contract, which is the failure a permissive moc
 three checks share one engine and one set of ambiguity rules, so two reports about the same document
 cannot disagree about which operation a path belongs to.
 
-Builds clean (0 warnings); 1086 tests green across the four suites.
+**G21 — the broker channel (ADR 0013)** has begun. The integration sandbox was HTTP-shaped: a team could
+mock the call that starts a payment and not the event that reports it settled. Slice 1 ships
+`publish` as a post-serve action beside `webhook`, so a stub answers 201 *and* emits — Core still never
+learns what a broker is, because the I/O is an `IServeEventListener` in `Mockifyr.Facade.Broker`.
+Validated against a real Kafka container with the official client, since a fake broker proving a mock
+works would prove nothing. The ADR's own image-size trigger fired (+20 MB) and the recorded judgement
+is that the split it prescribed is not worth taking yet — with the number, and the condition to
+revisit, written down.
+
+Builds clean (0 warnings); 1103 tests green across the four suites.

@@ -42,6 +42,39 @@ public static class AdminEndpoints
     /// stub's webhooks sequentially) win over the configured definitions; a definition beyond the
     /// recorded deliveries (still in flight or delayed) is shown as-configured with <c>delivered: false</c>.
     /// </summary>
+    /// <summary>
+    /// The broker messages this request published, and any that failed (ADR 0013). Beside the webhooks
+    /// rather than mixed into them: a reader debugging "did the event go out?" is asking about a
+    /// different system than "did the callback land?", and one list of two kinds would answer neither
+    /// question quickly.
+    /// </summary>
+    private static IReadOnlyList<object> JournalPublishes(ServeEvent e) =>
+    [
+        .. e.SubEvents
+            .Where(sub => sub.Type is Facade.Broker.PublishServeEventListener.PublishedType
+                or Facade.Broker.PublishServeEventListener.FailedType)
+            .Select(sub => sub.Data switch
+            {
+                Facade.Broker.PublishData published => (object)new
+                {
+                    topic = published.Topic,
+                    key = published.Key,
+                    body = published.Body,
+                    delivered = true,
+                    error = (string?)null,
+                },
+                Facade.Broker.PublishErrorData failed => new
+                {
+                    topic = failed.Topic,
+                    key = (string?)null,
+                    body = (string?)null,
+                    delivered = false,
+                    error = (string?)failed.Error,
+                },
+                _ => new { topic = "", key = (string?)null, body = (string?)null, delivered = false, error = (string?)null },
+            }),
+    ];
+
     private static IReadOnlyList<object> JournalWebhooks(ServeEvent e)
     {
         var definitions = e.MatchedStub?.Webhooks ?? [];
@@ -530,6 +563,7 @@ public static class AdminEndpoints
                     body = Utf8(e.Response.Body),
                 },
                 webhooks = JournalWebhooks(e),
+                publishes = JournalPublishes(e),
             });
         });
 

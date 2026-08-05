@@ -580,6 +580,20 @@ public static class MockifyrHost
             }
         }
 
+        // Broker channel (ADR 0013, slice 1): opt-in publishing. Nothing is connected without the flag,
+        // so a host that mocks no events pays nothing — no producer, no background threads, no
+        // connection attempt at startup.
+        var kafka = builder.Configuration["kafka-bootstrap"];
+        if (!string.IsNullOrWhiteSpace(kafka))
+        {
+            builder.Services.AddSingleton<Facade.Broker.IBrokerPublisher>(
+                _ => new Facade.Broker.KafkaPublisher(kafka));
+            builder.Services.AddSingleton<IServeEventListener>(sp => new Facade.Broker.PublishServeEventListener(
+                sp.GetRequiredService<Facade.Broker.IBrokerPublisher>(),
+                sp.GetRequiredService<IServeEventTemplateRenderer>()));
+            Console.WriteLine($"mockifyr: publishing to Kafka at '{kafka}' for stubs that declare a publish action.");
+        }
+
         // Redis persistence (G16d): stubs persist to a Redis hash and reload on startup. The
         // multiplexer is a DI-created singleton so the container disposes it on shutdown.
         var redis = builder.Configuration["redis"];

@@ -14,6 +14,8 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <!-- Real Redis container for the G16d persistence differential. -->
     <PackageReference Include="Testcontainers.Redis" />
+    <PackageReference Include="Testcontainers.Kafka" />
+    <PackageReference Include="Confluent.Kafka" />
     <!-- Real SMTP client for the G18b self-test (WireMock has no SMTP — no oracle exists). -->
     <PackageReference Include="MailKit" />
     <!-- Official Twilio SDK driven at the G18d provider profile. -->
@@ -22,6 +24,7 @@
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+    <ProjectReference Include="..\..\src\Mockifyr.Facade.Broker\Mockifyr.Facade.Broker.csproj" />
   </ItemGroup>
 
   <!-- WebApplicationFactory needs the ASP.NET shared framework in this (non-web) test project. -->
