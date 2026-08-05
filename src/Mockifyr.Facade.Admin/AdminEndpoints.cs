@@ -927,6 +927,50 @@ public static class AdminEndpoints
         admin.MapPost("/recordings/stop", (HttpRequest request, RecordingSession session) =>
             Mappings(session.Stop(TenantOf(request))));
 
+        // Drift against reality (#287). Verifying against a specification asks whether the stubs match
+        // the document; this asks whether they match the upstream that is running right now — the
+        // version teams actually trust, because a document can be stale too.
+        admin.MapPost("/recordings/verify", (HttpRequest request, RecordingSession session, StubEngine engine) =>
+        {
+            var tenant = TenantOf(request);
+            var captured = session.Captured(tenant);
+            var findings = new List<ResponseDrift>();
+
+            foreach (var (recorded, upstream) in captured)
+            {
+                // The very same selection the host serves by (priority, scenarios, signatures), and
+                // deliberately without serving: nothing is journaled and no scenario advances, so asking
+                // the question does not change the answer to the next one.
+                var stub = engine.FindMatch(tenant, recorded);
+
+                // The DECLARED body, not a rendered one. Rendering would run the `state` directive and
+                // quietly create or delete sandbox documents — a diagnostic must not have side effects,
+                // so a templated stub is skipped instead (ResponseDriftCheck says so).
+                findings.AddRange(ResponseDriftCheck.Compare(
+                    recorded.Method,
+                    recorded.Url,
+                    stub?.Response.Status,
+                    stub?.Response.Body is { } declared ? System.Text.Encoding.UTF8.GetString(declared) : null,
+                    upstream.Status,
+                    upstream.Body.Length == 0 ? null : System.Text.Encoding.UTF8.GetString(upstream.Body)));
+            }
+
+            return Results.Json(new
+            {
+                recording = session.TargetBaseUrl(tenant) is not null,
+                exchanges = captured.Count,
+                agrees = findings.Count == 0,
+                findings = findings.Select(f => new
+                {
+                    kind = DriftKindName(f.Kind),
+                    method = f.Method,
+                    url = f.Url,
+                    pointer = f.Pointer,
+                    detail = f.Detail,
+                }),
+            });
+        });
+
         // Git sync (ADR 0007) — host-level, not tenant-scoped: the host has one root-dir working
         // copy. Status always answers (configured=false when the flag is absent); push/pull refuse
         // with a typed error the dashboard can surface (conflict / validation / auth / not set up).
@@ -1329,6 +1373,15 @@ public static class AdminEndpoints
             var unknown => throw new InvalidOperationException($"'{unknown}' is not a known fault."),
         };
     }
+
+    private static string DriftKindName(ResponseDriftKind kind) => kind switch
+    {
+        ResponseDriftKind.NoStub => "noStub",
+        ResponseDriftKind.StatusDiffers => "statusDiffers",
+        ResponseDriftKind.FieldMissing => "fieldMissing",
+        ResponseDriftKind.FieldUnexpected => "fieldUnexpected",
+        _ => "typeDiffers",
+    };
 
     private static string DriftKindName(DriftKind kind) => kind switch
     {

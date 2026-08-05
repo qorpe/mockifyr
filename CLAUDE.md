@@ -336,4 +336,11 @@ and reports what disagrees without ever changing it. Mutation testing paid for i
 found that the check read the path fields in the opposite precedence to the engine, and that which
 operation an ambiguous stub belonged to was being decided by enumeration order.
 
-Builds clean (0 warnings); 1023 tests green across the four suites.
+Its second slice — **drift against reality** — followed: with a recording session live,
+`POST /__admin/recordings/verify` compares what the upstream just returned against what the stubs
+would have answered. Structural, never literal, so ids and timestamps do not drown the findings; and it
+serves nothing while it looks, which is why `StubEngine.FindMatch` was extracted from `Handle` rather
+than reimplemented — a diagnostic matching by different rules than the server would describe a host
+that does not exist.
+
+Builds clean (0 warnings); 1055 tests green across the four suites.
