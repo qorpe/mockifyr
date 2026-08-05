@@ -166,6 +166,36 @@ public sealed class GetStubHandler(IStubStore store) : IQueryHandler<GetStubQuer
     }
 }
 
+/// <summary>Reads the tenant's clock override (#290).</summary>
+public sealed class GetClockHandler(IClockStore store) : IQueryHandler<GetClockQuery, Result<ClockOverride>>
+{
+    public ValueTask<Result<ClockOverride>> Handle(GetClockQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(store.Get(query.Tenant)));
+}
+
+/// <summary>
+/// Sets the tenant's clock override (#290). Setting real time is the same as clearing, so a client
+/// that always PUTs its configuration does not accumulate no-op overrides.
+/// </summary>
+public sealed class SetClockHandler(IClockStore store) : ICommandHandler<SetClockCommand, Result>
+{
+    public ValueTask<Result> Handle(SetClockCommand command, CancellationToken cancellationToken)
+    {
+        store.Set(command.Tenant, command.Clock);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
+/// <summary>Returns the tenant to real time (#290).</summary>
+public sealed class ClearClockHandler(IClockStore store) : ICommandHandler<ClearClockCommand, Result>
+{
+    public ValueTask<Result> Handle(ClearClockCommand command, CancellationToken cancellationToken)
+    {
+        store.Clear(command.Tenant);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
 /// <summary>
 /// Clears the tenant's request journal. A suite sharing one host calls this between tests so a count
 /// asserts about the test that is running — the reference engine answers <c>DELETE /__admin/requests</c>

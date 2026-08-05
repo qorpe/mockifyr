@@ -310,4 +310,11 @@ documented as routes rather than as the two questions people arrive with. Both n
 the second one turned up a missing endpoint rather than a missing paragraph: the request journal could
 not be cleared at all, and the reference engine's spelling for it (`DELETE /__admin/requests`, not the
 intuitive `POST …/reset`, which 404s on both) shipped in 1.6.0 with a dashboard action beside it.
-Builds clean (0 warnings); 890 tests green across the four suites.
+Auditing the site also produced the first of a set of filed **capability ideas** (#287–#291), of which
+**tenant clock control (#290)** is delivered: `PUT /__admin/clock` freezes or shifts the instant a
+tenant's templates see, so a token that expires in an hour is testable without waiting an hour. It is
+the change that made `now` — a helper recorded as racy since G2 because no oracle can agree on a moving
+clock — deterministic enough to assert exactly. The journal, audit trail and inbox keep real time by
+design.
+
+Builds clean (0 warnings); 916 tests green across the four suites.

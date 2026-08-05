@@ -271,6 +271,41 @@ public static class AdminEndpoints
             return Results.Ok();
         });
 
+        // Tenant clock control (#290). Deliberately not a mapping-JSON concept: a stub says what it
+        // renders, the tenant says what time it is.
+        admin.MapGet("/clock", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetClockQuery(TenantOf(request)));
+            return Results.Json(ClockJson(result.Value));
+        });
+
+        admin.MapPut("/clock", async (HttpRequest request, ISender sender) =>
+        {
+            ClockOverride parsed;
+            try
+            {
+                parsed = ReadClock(await ReadBody(request));
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or FormatException)
+            {
+                return ClockFailure(Mediant.Results.Error.Validation(
+                    "Clock.InvalidBody", "Expected {\"frozenAt\": \"<ISO-8601>\"} or {\"offsetSeconds\": <number>}."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ClockFailure(Mediant.Results.Error.Validation("Clock.Ambiguous", ex.Message));
+            }
+
+            var result = await sender.Send(new SetClockCommand(parsed, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(ClockJson(parsed)) : ClockFailure(result.Error);
+        });
+
+        admin.MapDelete("/clock", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ClearClockCommand(TenantOf(request)));
+            return Results.Ok();
+        });
+
         // The reference engine spells journal reset as DELETE on the collection (its
         // /__admin/requests/reset answers 404), so the dialect is matched rather than invented.
         admin.MapDelete("/requests", async (HttpRequest request, ISender sender) =>
@@ -1018,6 +1053,49 @@ public static class AdminEndpoints
 
     // The body is stored as opaque text but was validated as well-formed JSON, so it re-embeds
     // as a real JSON value here — clients read a document, not a double-encoded string.
+    /// <summary>
+    /// Reads a clock override. The two modes are exclusive by design (see <see cref="ClockOverride"/>),
+    /// so a body carrying both is refused rather than silently resolved in favour of one.
+    /// </summary>
+    private static ClockOverride ReadClock(string body)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        var hasFrozen = root.TryGetProperty("frozenAt", out var frozen)
+            && frozen.ValueKind is System.Text.Json.JsonValueKind.String;
+        var hasOffset = root.TryGetProperty("offsetSeconds", out var offset)
+            && offset.ValueKind is System.Text.Json.JsonValueKind.Number;
+
+        if (hasFrozen && hasOffset)
+        {
+            throw new InvalidOperationException(
+                "Set either 'frozenAt' or 'offsetSeconds', not both — a frozen clock does not also drift.");
+        }
+
+        if (hasFrozen)
+        {
+            return new ClockOverride(
+                DateTimeOffset.Parse(frozen.GetString()!, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind),
+                TimeSpan.Zero);
+        }
+
+        return hasOffset
+            ? new ClockOverride(null, TimeSpan.FromSeconds(offset.GetDouble()))
+            : ClockOverride.RealTime;
+    }
+
+    private static object ClockJson(ClockOverride clock) => new
+    {
+        mode = clock.FrozenAt is not null ? "frozen" : clock.Offset == TimeSpan.Zero ? "real" : "offset",
+        frozenAt = clock.FrozenAt,
+        offsetSeconds = (long)clock.Offset.TotalSeconds,
+    };
+
+    private static IResult ClockFailure(Mediant.Results.Error error) =>
+        Results.Json(new { errors = new[] { new { code = error.Code, message = error.Description } } }, statusCode: 422);
+
     private static object ResourceJson(ResourceDocument document) => new
     {
         id = document.Id,

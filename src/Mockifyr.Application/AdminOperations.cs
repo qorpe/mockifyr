@@ -22,6 +22,15 @@ public sealed record ImportMappingsCommand(string MappingJson, TenantId Tenant) 
 /// <summary>Removes all stubs for the tenant (the <c>/__admin/mappings/reset</c> admin endpoint).</summary>
 public sealed record ResetMappingsCommand(TenantId Tenant) : ICommand<Result>;
 
+/// <summary>Reads the tenant's clock override (<c>GET /__admin/clock</c>).</summary>
+public sealed record GetClockQuery(TenantId Tenant) : IQuery<Result<ClockOverride>>;
+
+/// <summary>Sets the tenant's clock override (<c>PUT /__admin/clock</c>).</summary>
+public sealed record SetClockCommand(ClockOverride Clock, TenantId Tenant) : ICommand<Result>;
+
+/// <summary>Returns the tenant to real time (<c>DELETE /__admin/clock</c>).</summary>
+public sealed record ClearClockCommand(TenantId Tenant) : ICommand<Result>;
+
 /// <summary>
 /// Discards the tenant's journaled requests (the <c>DELETE /__admin/requests</c> admin endpoint).
 /// </summary>
