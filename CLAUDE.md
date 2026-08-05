@@ -317,4 +317,10 @@ the change that made `now` — a helper recorded as racy since G2 because no ora
 clock — deterministic enough to assert exactly. The journal, audit trail and inbox keep real time by
 design.
 
-Builds clean (0 warnings); 916 tests green across the four suites.
+**Near-miss diagnostics (#288)** followed: ranking by distance had existed since G6 but only on the
+in-process API and only as a number, which does not answer the question anybody has — *which part of my
+stub disagreed*. It is now an admin query (never the 404 body, so the served response the differential
+suite pins stays byte-identical), naming each attribute in the mapping JSON's own vocabulary so a
+reader can search their own file for the string we printed.
+
+Builds clean (0 warnings); 947 tests green across the four suites.

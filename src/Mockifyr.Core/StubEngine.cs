@@ -1,7 +1,31 @@
 namespace Mockifyr.Core;
 
+/// <summary>
+/// One attribute of a stub's request pattern, and whether the request satisfied it (#288).
+/// </summary>
+/// <remarks>
+/// <see cref="Attribute"/> names the slot in the pattern — <c>method</c>, <c>url</c>,
+/// <c>headers[0]</c>, <c>bodyPatterns[1]</c> — so a reader can point at the line in the stub that
+/// disagreed instead of re-reading the whole thing. <see cref="Actual"/> is what the request carried
+/// there; what the stub *expected* lives in the stub's own JSON, which the admin layer serves beside
+/// this rather than making every matcher describe itself.
+/// </remarks>
+/// <param name="Attribute">The pattern slot, in the mapping JSON's own vocabulary.</param>
+/// <param name="Matched">Whether this attribute was satisfied.</param>
+/// <param name="Actual">What the request carried, or null when it carried nothing at all.</param>
+public sealed record MatchAttribute(string Attribute, bool Matched, string? Actual);
+
 /// <summary>A stub that did not match, with its distance, for near-miss diagnostics.</summary>
-public sealed record NearMiss(StubMapping Stub, double Distance);
+/// <remarks>
+/// <see cref="Attributes"/> is empty unless the caller asked for the detailed form (#288) — computing
+/// it re-runs every matcher and extracts request values, which is the right cost for a debugging
+/// question asked once and the wrong one for the serve path.
+/// </remarks>
+public sealed record NearMiss(StubMapping Stub, double Distance)
+{
+    /// <summary>Per-attribute verdicts, in pattern order; empty when not requested.</summary>
+    public IReadOnlyList<MatchAttribute> Attributes { get; init; } = [];
+}
 
 /// <summary>The outcome of handling a request: a matched response, or the ranked near-misses.</summary>
 public sealed record StubResolution
@@ -214,16 +238,84 @@ public sealed class StubEngine
     /// The stubs closest to an unmatched request, ranked by ascending match distance — the near-miss
     /// diagnostic. The distance is the same one matching computes, so no extra machinery is needed.
     /// </summary>
-    public IReadOnlyList<NearMiss> FindNearMisses(TenantId tenant, CanonicalRequest request)
+    public IReadOnlyList<NearMiss> FindNearMisses(TenantId tenant, CanonicalRequest request) =>
+        FindNearMisses(tenant, request, detailed: false);
+
+    /// <summary>
+    /// The same ranking, optionally with a per-attribute verdict for each candidate (#288) — which
+    /// attribute of the pattern the request failed, and what it carried there.
+    /// </summary>
+    /// <remarks>
+    /// The detail is computed only for the candidates that survive the ranking, so asking for it costs
+    /// a second pass over a handful of stubs rather than over the whole store.
+    /// </remarks>
+    public IReadOnlyList<NearMiss> FindNearMisses(TenantId tenant, CanonicalRequest request, bool detailed)
     {
         var input = new MatchInput { Request = request };
-        return
-        [
-            .. _stubStore.GetStubs(tenant)
-                .Select(stub => new NearMiss(stub, Evaluate(stub.Request, input).Distance))
-                .OrderBy(nearMiss => nearMiss.Distance)
-                .Take(3),
-        ];
+        var ranked = _stubStore.GetStubs(tenant)
+            .Select(stub => new NearMiss(stub, Evaluate(stub.Request, input).Distance))
+            .OrderBy(nearMiss => nearMiss.Distance)
+            .Take(3)
+            .ToList();
+
+        return detailed
+            ? [.. ranked.Select(near => near with { Attributes = Explain(near.Stub.Request, input) })]
+            : ranked;
+    }
+
+    /// <summary>
+    /// Re-runs each matcher on its own so a failure can be attributed to the attribute that produced
+    /// it. Matching itself only ever needs the sum, which is why this is a separate walk rather than
+    /// something the serve path carries.
+    /// </summary>
+    private static IReadOnlyList<MatchAttribute> Explain(RequestPattern pattern, MatchInput input) =>
+    [
+        .. EnumerateNamedMatchers(pattern).Select(entry => new MatchAttribute(
+            entry.Attribute,
+            entry.Matcher.Match(input).IsExactMatch,
+            ActualFor(entry.Attribute, entry.Matcher, input.Request))),
+    ];
+
+    /// <summary>
+    /// What the request carried at the named attribute. Only the slots whose value is unambiguous are
+    /// reported: a header matcher names its header, but a body pattern's subject is the whole body,
+    /// which the caller already has in the journal entry.
+    /// </summary>
+    private static string? ActualFor(string attribute, IMatcher matcher, CanonicalRequest request)
+    {
+        if (matcher is INamedTargetMatcher named && !UrlSlots.Contains(attribute))
+        {
+            // The value the request actually carried under that name — the single most useful line in a
+            // near-miss report, and the reason naming the target was worth an interface.
+            // Headers and query parameters are multi-valued, cookies are not; a repeated header is
+            // joined rather than truncated, because "which of the two did you mean" is exactly the
+            // question a near miss is being asked.
+            if (attribute.StartsWith("headers", StringComparison.Ordinal))
+            {
+                return request.Headers.Contains(named.TargetName)
+                    ? string.Join(", ", request.Headers[named.TargetName]) : null;
+            }
+
+            if (attribute.StartsWith("queryParameters", StringComparison.Ordinal))
+            {
+                return request.Query.Contains(named.TargetName)
+                    ? string.Join(", ", request.Query[named.TargetName]) : null;
+            }
+
+            return attribute.StartsWith("cookies", StringComparison.Ordinal)
+                && request.Cookies.TryGetValue(named.TargetName, out var cookie) ? cookie : null;
+        }
+
+        return attribute switch
+        {
+            "method" => request.Method,
+            // A urlPath* matcher is judging the path, so echoing the query string back would invite the
+            // reader to look for a difference that is not being compared.
+            "urlPath" or "urlPathPattern" or "urlPathTemplate" => request.Path,
+            "url" or "urlPattern" => request.Url,
+            "scheme" => request.Scheme,
+            _ => null,
+        };
     }
 
     private List<CanonicalRequest> RequestsMatching(TenantId tenant, RequestPattern pattern) =>
@@ -252,63 +344,89 @@ public sealed class StubEngine
         return exact ? MatchResult.Exact : MatchResult.NoMatch(distance);
     }
 
-    private static IEnumerable<IMatcher> EnumerateMatchers(RequestPattern pattern)
+    private static IEnumerable<IMatcher> EnumerateMatchers(RequestPattern pattern) =>
+        EnumerateNamedMatchers(pattern).Select(entry => entry.Matcher);
+
+    /// <summary>
+    /// Every matcher in the pattern, paired with the mapping-JSON slot it came from. The names are the
+    /// dialect's own (<c>bodyPatterns[0]</c>, not "body matcher 1") so a diagnostic points at something
+    /// the reader can find in their stub.
+    /// </summary>
+    private static IEnumerable<(string Attribute, IMatcher Matcher)> EnumerateNamedMatchers(RequestPattern pattern)
     {
         if (pattern.Url is not null)
         {
-            yield return pattern.Url;
+            // The dialect has five spellings for the URL slot; report the one the stub actually used, so
+            // a reader searching their mapping for "urlPath" finds the line rather than wondering why we
+            // said "url".
+            yield return (
+                pattern.Url is INamedTargetMatcher named ? named.TargetName : "url",
+                pattern.Url);
         }
 
         if (pattern.Method is not null)
         {
-            yield return pattern.Method;
+            yield return ("method", pattern.Method);
         }
 
         if (pattern.Scheme is not null)
         {
-            yield return pattern.Scheme;
+            yield return ("scheme", pattern.Scheme);
         }
 
         if (pattern.Host is not null)
         {
-            yield return pattern.Host;
+            yield return ("host", pattern.Host);
         }
 
         if (pattern.Port is not null)
         {
-            yield return pattern.Port;
+            yield return ("port", pattern.Port);
         }
 
-        foreach (var matcher in pattern.Headers)
+        foreach (var (matcher, index) in pattern.Headers.Select((m, i) => (m, i)))
         {
-            yield return matcher;
+            yield return (Slot("headers", matcher, index), matcher);
         }
 
-        foreach (var matcher in pattern.Query)
+        foreach (var (matcher, index) in pattern.Query.Select((m, i) => (m, i)))
         {
-            yield return matcher;
+            yield return (Slot("queryParameters", matcher, index), matcher);
         }
 
-        foreach (var matcher in pattern.FormParameters)
+        foreach (var (matcher, index) in pattern.FormParameters.Select((m, i) => (m, i)))
         {
-            yield return matcher;
+            yield return (Slot("formParameters", matcher, index), matcher);
         }
 
-        foreach (var matcher in pattern.Cookies)
+        foreach (var (matcher, index) in pattern.Cookies.Select((m, i) => (m, i)))
         {
-            yield return matcher;
+            yield return (Slot("cookies", matcher, index), matcher);
         }
 
-        foreach (var matcher in pattern.Body)
+        foreach (var (matcher, index) in pattern.Body.Select((m, i) => (m, i)))
         {
-            yield return matcher;
+            yield return ($"bodyPatterns[{index}]", matcher);
         }
 
-        foreach (var matcher in pattern.Custom)
+        foreach (var (matcher, index) in pattern.Custom.Select((m, i) => (m, i)))
         {
-            yield return matcher;
+            yield return ($"customMatcher[{index}]", matcher);
         }
     }
+
+    /// <summary>
+    /// Names a slot by the part of the request it addresses when the matcher can say
+    /// (<c>headers['X-Api-Key']</c>), and by position when it cannot — a custom matcher (G10) written
+    /// before <see cref="INamedTargetMatcher"/> existed still reports somewhere findable.
+    /// </summary>
+    private static readonly string[] UrlSlots =
+        ["url", "urlPath", "urlPattern", "urlPathPattern", "urlPathTemplate"];
+
+    private static string Slot(string collection, IMatcher matcher, int index) =>
+        matcher is INamedTargetMatcher named
+            ? $"{collection}['{named.TargetName}']"
+            : $"{collection}[{index}]";
 
     // Applies the registered response transformers (G10): a transformer runs when it applies globally
     // or the stub named it in its `transformers`. The built-in response-template runs in the renderer.

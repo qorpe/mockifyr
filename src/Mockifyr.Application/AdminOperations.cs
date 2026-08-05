@@ -48,6 +48,13 @@ public sealed record CountRequestsQuery(string PatternJson, TenantId Tenant) : I
 /// <summary>Lists the journaled requests that matched no stub.</summary>
 public sealed record FindUnmatchedRequestsQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<CanonicalRequest>>>;
 
+/// <summary>
+/// The stubs closest to a request, with per-attribute verdicts (#288). Backs both admin routes: the
+/// one that asks about a journaled request and the one that asks about a hypothetical one.
+/// </summary>
+public sealed record FindNearMissesQuery(CanonicalRequest Request, TenantId Tenant)
+    : IQuery<Result<IReadOnlyList<NearMiss>>>;
+
 /// <summary>Lists the journaled serve events for a tenant (the request log).</summary>
 public sealed record GetServeEventsQuery(TenantId Tenant, bool UnmatchedOnly = false, int? Limit = null)
     : IQuery<Result<IReadOnlyList<ServeEvent>>>;

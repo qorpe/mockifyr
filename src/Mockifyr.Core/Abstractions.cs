@@ -47,6 +47,22 @@ public interface IMatcher
     MatchResult Match(MatchInput input);
 }
 
+/// <summary>
+/// Implemented by matchers that address a <em>named</em> part of the request — a header, a query
+/// parameter, a cookie, a form field (#288).
+/// </summary>
+/// <remarks>
+/// Optional by design, in the shape of <c>IMultiTenantMappingsLoader</c>: a matcher that does not
+/// implement it still matches, it just reports as <c>headers[0]</c> rather than
+/// <c>headers['X-Api-Key']</c> in a near-miss diagnostic. Making it part of <see cref="IMatcher"/>
+/// would break every custom matcher a user has written (G10) to improve an error message.
+/// </remarks>
+public interface INamedTargetMatcher
+{
+    /// <summary>The name of the request part this matcher addresses.</summary>
+    string TargetName { get; }
+}
+
 /// <summary>Renders a <see cref="ResponseDefinition"/> into a concrete response (templating).</summary>
 public interface IResponseRenderer
 {
