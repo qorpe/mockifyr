@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Mockifyr.Adapters.MappingJson;
+using Mockifyr.Adapters.OpenApi;
 using Mockifyr.Application;
 using Mockifyr.Core;
 using Mockifyr.Outbound;
@@ -312,6 +313,40 @@ public static class AdminEndpoints
 
             var result = await sender.Send(new FindNearMissesQuery(candidate, TenantOf(request)));
             return Results.Json(new { nearMisses = result.Value.Select(NearMissJson) });
+        });
+
+        // Contract conformance (#287): does this stub set still tell the truth about the specification?
+        // A report, never a mutation — which side is wrong is a judgement about the caller's system.
+        admin.MapPost("/openapi/verify", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new VerifyContractQuery(await ReadBody(request), TenantOf(request)));
+            if (!result.IsSuccess)
+            {
+                // The same typed refusals the importer gives, for the same document problems: a spec
+                // that cannot be imported cannot be verified against either, and saying so the same way
+                // twice is one thing to learn rather than two.
+                return Results.Json(
+                    new { error = result.Error.Code, message = result.Error.Description },
+                    statusCode: result.Error.Code == "OpenApi.TooLarge"
+                        ? StatusCodes.Status413PayloadTooLarge
+                        : StatusCodes.Status422UnprocessableEntity);
+            }
+
+            var report = result.Value;
+            return Results.Json(new
+            {
+                conforms = report.Conforms,
+                operationsInSpec = report.OperationsInSpec,
+                operationsCovered = report.OperationsCovered,
+                findings = report.Findings.Select(f => new
+                {
+                    kind = DriftKindName(f.Kind),
+                    method = f.Method,
+                    path = f.Path,
+                    stubId = f.StubId,
+                    detail = f.Detail,
+                }),
+            });
         });
 
         // Degradation profiles (#289): what the whole dependency is doing, rather than what one stub
@@ -1294,6 +1329,14 @@ public static class AdminEndpoints
             var unknown => throw new InvalidOperationException($"'{unknown}' is not a known fault."),
         };
     }
+
+    private static string DriftKindName(DriftKind kind) => kind switch
+    {
+        DriftKind.UndeclaredOperation => "undeclaredOperation",
+        DriftKind.UncoveredOperation => "uncoveredOperation",
+        DriftKind.UndeclaredStatus => "undeclaredStatus",
+        _ => "schemaViolation",
+    };
 
     private static object DegradationJson(DegradationProfile profile) => new
     {

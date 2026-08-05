@@ -166,6 +166,40 @@ public sealed class GetStubHandler(IStubStore store) : IQueryHandler<GetStubQuer
     }
 }
 
+/// <summary>
+/// Runs a conformance check of the tenant's stubs against a specification (#287).
+/// </summary>
+/// <remarks>
+/// The stubs are handed over as the JSON they were written in, not as compiled matchers: the question
+/// is whether what the stub <em>says</em> still agrees with the document, and that is what a human
+/// compares too.
+/// </remarks>
+public sealed class VerifyContractHandler(IStubStore store)
+    : IQueryHandler<VerifyContractQuery, Result<Mockifyr.Adapters.OpenApi.ConformanceReport>>
+{
+    public ValueTask<Result<Mockifyr.Adapters.OpenApi.ConformanceReport>> Handle(
+        VerifyContractQuery query, CancellationToken cancellationToken)
+    {
+        var stubs = store.GetStubs(query.Tenant)
+            .Where(stub => stub.Source is not null)
+            .Select(stub => new Mockifyr.Adapters.OpenApi.StubUnderTest(stub.Id, stub.Source!))
+            .ToList();
+
+        try
+        {
+            return ValueTask.FromResult<Result<Mockifyr.Adapters.OpenApi.ConformanceReport>>(
+                Mockifyr.Adapters.OpenApi.ContractConformance.Verify(query.SpecText, stubs));
+        }
+        catch (Mockifyr.Adapters.OpenApi.OpenApiImportException ex)
+        {
+            // Typed refusals live here rather than at the HTTP edge, the same way the import handler
+            // does it: a document that cannot be parsed fails identically whichever facade asked.
+            return ValueTask.FromResult<Result<Mockifyr.Adapters.OpenApi.ConformanceReport>>(
+                Error.Validation($"OpenApi.{ex.Error}", ex.Message));
+        }
+    }
+}
+
 /// <summary>Reads the tenant's degradation profile (#289).</summary>
 public sealed class GetDegradationHandler(IDegradationStore store)
     : IQueryHandler<GetDegradationQuery, Result<DegradationProfile>>

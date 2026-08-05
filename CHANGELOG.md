@@ -10,6 +10,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **Contract conformance** (#287). `POST /__admin/openapi/verify` checks a tenant's stubs against an
+  OpenAPI document and reports what disagrees: stubs answering operations the specification no longer
+  declares, operations no stub answers, undeclared statuses, and response bodies that violate the
+  declared schema — with coverage counts. A report, never a mutation. Templated bodies, regular-
+  expression stubs and schemaless operations are deliberately left alone.
 - **Tenant degradation profiles** (#289). `PUT /__admin/degradation` degrades a whole dependency for
   one tenant — added latency with jitter, a share of responses answered with an error status, a share
   of connections broken outright — composing with whatever each stub already declares instead of
