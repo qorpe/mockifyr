@@ -46,6 +46,12 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<InMemoryClockStore>();
         services.AddSingleton<IClockStore>(sp => sp.GetRequiredService<InMemoryClockStore>());
         services.AddSingleton<IClockResolver>(sp => sp.GetRequiredService<InMemoryClockStore>());
+        // Degradation profiles (#289): one instance behind both the admin store and the serve-path
+        // resolver, so flipping a profile applies to the next request. In memory, like the clock — a
+        // host that restarted still dropping 5% of requests would be a support ticket.
+        services.AddSingleton<InMemoryDegradationStore>();
+        services.AddSingleton<IDegradationStore>(sp => sp.GetRequiredService<InMemoryDegradationStore>());
+        services.AddSingleton<IDegradationResolver>(sp => sp.GetRequiredService<InMemoryDegradationStore>());
         services.AddSingleton<IRequestJournal, InMemoryRequestJournal>();
         // Admin audit trail (#247): off unless the host is started with --audit, which replaces this
         // registration. Registered here rather than only in the host so every composition that maps

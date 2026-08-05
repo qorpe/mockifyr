@@ -166,6 +166,40 @@ public sealed class GetStubHandler(IStubStore store) : IQueryHandler<GetStubQuer
     }
 }
 
+/// <summary>Reads the tenant's degradation profile (#289).</summary>
+public sealed class GetDegradationHandler(IDegradationStore store)
+    : IQueryHandler<GetDegradationQuery, Result<DegradationProfile>>
+{
+    public ValueTask<Result<DegradationProfile>> Handle(
+        GetDegradationQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(store.Get(query.Tenant)));
+}
+
+/// <summary>
+/// Degrades the tenant (#289). Setting a healthy profile is the same as clearing, so a client that
+/// always PUTs its whole configuration does not leave tenants marked as degraded while behaving
+/// normally.
+/// </summary>
+public sealed class SetDegradationHandler(IDegradationStore store) : ICommandHandler<SetDegradationCommand, Result>
+{
+    public ValueTask<Result> Handle(SetDegradationCommand command, CancellationToken cancellationToken)
+    {
+        store.Set(command.Tenant, command.Profile);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
+/// <summary>Returns the tenant to full health (#289).</summary>
+public sealed class ClearDegradationHandler(IDegradationStore store)
+    : ICommandHandler<ClearDegradationCommand, Result>
+{
+    public ValueTask<Result> Handle(ClearDegradationCommand command, CancellationToken cancellationToken)
+    {
+        store.Clear(command.Tenant);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
 /// <summary>Reads the tenant's clock override (#290).</summary>
 public sealed class GetClockHandler(IClockStore store) : IQueryHandler<GetClockQuery, Result<ClockOverride>>
 {

@@ -22,6 +22,15 @@ public sealed record ImportMappingsCommand(string MappingJson, TenantId Tenant) 
 /// <summary>Removes all stubs for the tenant (the <c>/__admin/mappings/reset</c> admin endpoint).</summary>
 public sealed record ResetMappingsCommand(TenantId Tenant) : ICommand<Result>;
 
+/// <summary>Reads the tenant's degradation profile (<c>GET /__admin/degradation</c>).</summary>
+public sealed record GetDegradationQuery(TenantId Tenant) : IQuery<Result<DegradationProfile>>;
+
+/// <summary>Sets the tenant's degradation profile (<c>PUT /__admin/degradation</c>).</summary>
+public sealed record SetDegradationCommand(DegradationProfile Profile, TenantId Tenant) : ICommand<Result>;
+
+/// <summary>Returns the tenant to full health (<c>DELETE /__admin/degradation</c>).</summary>
+public sealed record ClearDegradationCommand(TenantId Tenant) : ICommand<Result>;
+
 /// <summary>Reads the tenant's clock override (<c>GET /__admin/clock</c>).</summary>
 public sealed record GetClockQuery(TenantId Tenant) : IQuery<Result<ClockOverride>>;
 

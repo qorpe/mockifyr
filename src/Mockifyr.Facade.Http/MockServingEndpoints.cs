@@ -126,6 +126,31 @@ public static class MockServingEndpoints
             return;
         }
 
+        // Degradation profile (#289): what the whole dependency is doing today, on top of whatever this
+        // stub declares. Asked for once per request so the ordinal advances exactly once — the seeded
+        // sequence is only reproducible if every served request takes exactly one number.
+        var degradation = context.RequestServices.GetService<IDegradationResolver>()?.Next(tenant)
+            ?? DegradationDecision.None;
+
+        if (degradation.DelayMs > 0)
+        {
+            await Task.Delay(degradation.DelayMs);
+        }
+
+        if (degradation.Fault is { } degradedFault)
+        {
+            // A dependency that resets the connection does not first politely explain itself, so this
+            // outranks both the profile's error status and the stub's own response.
+            await EmitFaultAsync(context, new FaultDirective(degradedFault));
+            return;
+        }
+
+        if (degradation.ErrorStatus is { } degradedStatus)
+        {
+            context.Response.StatusCode = degradedStatus;
+            return;
+        }
+
         if (response.Delay is { Milliseconds: > 0 } delay)
         {
             await Task.Delay(delay.Milliseconds);
