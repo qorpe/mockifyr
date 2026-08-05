@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Added
+## Released
+
+### [v1.10.0](https://github.com/qorpe/mockifyr/releases/tag/v1.10.0) — 2026-08-06
+
+#### Added
 
 - **Broker capture** (#291, ADR 0013 slice 2). `--kafka-subscribe orders.events` lands what your system
   publishes in the tenant's message inbox, so `/__admin/messages` and its count/verify surface answer
@@ -20,8 +24,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   every field templated against the triggering request. Opt in with `--kafka-bootstrap`; a host
   without it is unchanged. The journal shows what went out and what failed, and an unreachable broker
   never takes the served response down with it.
-
-## Released
 
 ### [v1.9.0](https://github.com/qorpe/mockifyr/releases/tag/v1.9.0) — 2026-08-05
 
