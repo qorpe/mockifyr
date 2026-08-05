@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Added
+## Released
+
+### [v1.9.0](https://github.com/qorpe/mockifyr/releases/tag/v1.9.0) — 2026-08-05
+
+#### Added
 
 - **Traffic conformance** (#287, third slice). `POST /__admin/requests/verify` checks what clients
   actually sent against an OpenAPI document: calls to operations the contract never declared, missing
@@ -21,8 +25,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   type, a changed status, or a request no stub matches at all. Structural, not literal: ids,
   timestamps and totals differ between environments and are never reported. It serves nothing while
   it looks — no journal entry, no scenario advances.
-
-## Released
 
 ### [v1.8.0](https://github.com/qorpe/mockifyr/releases/tag/v1.8.0) — 2026-08-05
 
