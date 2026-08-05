@@ -18,5 +18,6 @@ consequences.
 | [0010](0010-protocol-aware-stub-ux.md) | Protocol-aware stub UX: computed field + channel editors | Accepted |
 | [0011](0011-integration-sandbox-vertical.md) | Integration sandbox: stateful resources, OpenAPI import, access | Proposed |
 | [0012](0012-payload-cryptography.md) | Payload cryptography: field-level encryption, whole-body encryption, signing | Proposed |
+| [0013](0013-broker-channel.md) | The broker channel: messages that arrive on a topic, not on a socket | Proposed |
 
 When adding a decision, use the next number and add a row to this table.
