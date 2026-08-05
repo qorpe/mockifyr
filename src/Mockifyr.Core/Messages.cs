@@ -5,6 +5,13 @@ public enum MessageChannel
 {
     Email,
     Sms,
+
+    /// <summary>
+    /// A message on a broker topic (ADR 0013). Topic and partition key live in <c>Meta</c>, the same
+    /// place the SMS profile puts its provider fields — one inbox, one verify surface, one screen.
+    /// <c>Subject</c> and <c>HtmlBody</c> stay null, as they do on SMS.
+    /// </summary>
+    Broker,
 }
 
 /// <summary>An attachment carried by a captured email message.</summary>

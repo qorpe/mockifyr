@@ -8,6 +8,14 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- **The broker channel, first slice** (#291, ADR 0013). A stub can answer a request *and* publish a
+  message: `postServeActions: [{"name":"publish","parameters":{"topic":…,"key":…,"body":…}}]`, with
+  every field templated against the triggering request. Opt in with `--kafka-bootstrap`; a host
+  without it is unchanged. The journal shows what went out and what failed, and an unreachable broker
+  never takes the served response down with it.
+
 ## Released
 
 ### [v1.9.0](https://github.com/qorpe/mockifyr/releases/tag/v1.9.0) — 2026-08-05

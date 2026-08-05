@@ -141,8 +141,26 @@ mutation-tested to the usual bar.
 **Costs, accepted deliberately.**
 
 - **A broker dependency is heavy.** The facade project carries a client library that a host not using
-  brokers still ships. Measure it; if the image grows more than a few megabytes, split the facade into
-  its own optional image layer before shipping, not after.
+  brokers still ships. This ADR said to measure it before shipping and to split the facade into its own
+  image if the growth was more than a few megabytes. **Measured, at slice 1:**
+
+  | | |
+  |---|---|
+  | `dotnet publish` with every RID | **+64 MB** — librdkafka for six platforms |
+  | The published image (`-a $ARCH`, what the Dockerfile does) | **536 MB → 556 MB, +20 MB** |
+  | In the image | one `librdkafka.so` (8.3 MB), loaded and working — verified by running the image |
+
+  The multi-RID number never reaches a user: the Dockerfile cross-publishes for the target
+  architecture, so only that platform's native library ships.
+
+  **+20 MB is more than "a few", so the trigger fired — and the split is still not being taken.** The
+  judgement changed once the number was real: 3.7 % on an image that is already half a gigabyte does
+  not justify two images to build, sign, verify, document and choose between, which is a cost paid by
+  every user including the ones who do want brokers. The threshold was written before anybody knew the
+  number; recording that it was wrong is better than pretending it was met.
+
+  **Revisit when:** AMQP (slice 4) adds a second client, or the image crosses 600 MB. At that point the
+  split buys something measurable rather than tidiness.
 - **Testcontainers for Kafka is slow.** The differential suite already takes minutes; a broker suite
   will add more, and it belongs behind the same Docker-required gate.
 - **`MessageEnvelope` grows a channel whose fields do not all apply.** Accepted, per above.
