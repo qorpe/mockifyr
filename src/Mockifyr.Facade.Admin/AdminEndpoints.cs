@@ -314,6 +314,42 @@ public static class AdminEndpoints
             return Results.Json(new { nearMisses = result.Value.Select(NearMissJson) });
         });
 
+        // Degradation profiles (#289): what the whole dependency is doing, rather than what one stub
+        // declares. Scoped to the tenant, because degrading a shared host for everybody is the failure
+        // this exists to avoid.
+        admin.MapGet("/degradation", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetDegradationQuery(TenantOf(request)));
+            return Results.Json(DegradationJson(result.Value));
+        });
+
+        admin.MapPut("/degradation", async (HttpRequest request, ISender sender) =>
+        {
+            DegradationProfile parsed;
+            try
+            {
+                parsed = ReadDegradation(await ReadBody(request));
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException)
+            {
+                return DegradationFailure("Degradation.InvalidBody", "The degradation profile JSON is malformed.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return DegradationFailure("Degradation.OutOfRange", ex.Message);
+            }
+
+            var result = await sender.Send(new SetDegradationCommand(parsed, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(DegradationJson(parsed)) : DegradationFailure(
+                result.Error.Code, result.Error.Description);
+        });
+
+        admin.MapDelete("/degradation", async (HttpRequest request, ISender sender) =>
+        {
+            await sender.Send(new ClearDegradationCommand(TenantOf(request)));
+            return Results.Ok();
+        });
+
         // Tenant clock control (#290). Deliberately not a mapping-JSON concept: a stub says what it
         // renders, the tenant says what time it is.
         admin.MapGet("/clock", async (HttpRequest request, ISender sender) =>
@@ -1172,6 +1208,112 @@ public static class AdminEndpoints
         return CanonicalRequestBuilder.Build(
             method!, url!, headers, payload is null ? null : System.Text.Encoding.UTF8.GetBytes(payload));
     }
+
+    /// <summary>
+    /// Reads a degradation profile, refusing anything that cannot mean what it says: a ratio outside
+    /// 0..1, a negative delay, a status outside the HTTP range, an unknown fault name. Nothing
+    /// half-lands — a rejected profile leaves the tenant exactly as healthy (or as degraded) as it was.
+    /// </summary>
+    private static DegradationProfile ReadDegradation(string body)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        var latency = Section(root, "latency");
+        var error = Section(root, "errorRate");
+        var fault = Section(root, "faultRate");
+
+        var fixedMs = Int(latency, "fixedMs", 0);
+        var jitterMs = Int(latency, "jitterMs", 0);
+        var errorRatio = Ratio(error, "ratio");
+        var errorStatus = Int(error, "status", 503);
+        var faultRatio = Ratio(fault, "ratio");
+        var faultKind = FaultName(fault);
+
+        if (fixedMs < 0 || jitterMs < 0)
+        {
+            throw new InvalidOperationException("Delays cannot be negative.");
+        }
+
+        if (errorStatus is < 100 or > 599)
+        {
+            throw new InvalidOperationException("status must be a valid HTTP status code.");
+        }
+
+        // A seed is always stored: one supplied by the caller when they want to replay a known
+        // sequence, otherwise one we pick and report back, so a run that turns up something interesting
+        // can be reproduced rather than described.
+        var seed = root.TryGetProperty("seed", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.Number
+            ? s.GetInt32()
+            : Random.Shared.Next();
+
+        return new DegradationProfile(fixedMs, jitterMs, errorRatio, errorStatus, faultRatio, faultKind, seed);
+    }
+
+    private static System.Text.Json.JsonElement? Section(System.Text.Json.JsonElement root, string name) =>
+        root.TryGetProperty(name, out var section) && section.ValueKind == System.Text.Json.JsonValueKind.Object
+            ? section
+            : null;
+
+    private static int Int(System.Text.Json.JsonElement? section, string name, int fallback) =>
+        section is { } s && s.TryGetProperty(name, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.Number
+            ? value.GetInt32()
+            : fallback;
+
+    private static double Ratio(System.Text.Json.JsonElement? section, string name)
+    {
+        if (section is not { } s || !s.TryGetProperty(name, out var value)
+            || value.ValueKind != System.Text.Json.JsonValueKind.Number)
+        {
+            return 0d;
+        }
+
+        var ratio = value.GetDouble();
+        return ratio is >= 0d and <= 1d
+            ? ratio
+            : throw new InvalidOperationException($"{name} must be between 0 and 1.");
+    }
+
+    private static FaultKind FaultName(System.Text.Json.JsonElement? section)
+    {
+        if (section is not { } s || !s.TryGetProperty("fault", out var value)
+            || value.ValueKind != System.Text.Json.JsonValueKind.String)
+        {
+            return FaultKind.ConnectionResetByPeer;
+        }
+
+        // The same four names the mapping dialect uses for a stub's own `fault`, so an operator does not
+        // have to learn a second vocabulary for the same four behaviours.
+        return value.GetString() switch
+        {
+            "EMPTY_RESPONSE" => FaultKind.EmptyResponse,
+            "MALFORMED_RESPONSE_CHUNK" => FaultKind.MalformedResponseChunk,
+            "RANDOM_DATA_THEN_CLOSE" => FaultKind.RandomDataThenClose,
+            "CONNECTION_RESET_BY_PEER" => FaultKind.ConnectionResetByPeer,
+            var unknown => throw new InvalidOperationException($"'{unknown}' is not a known fault."),
+        };
+    }
+
+    private static object DegradationJson(DegradationProfile profile) => new
+    {
+        degraded = !profile.IsHealthy,
+        latency = new { fixedMs = profile.FixedDelayMs, jitterMs = profile.JitterMs },
+        errorRate = new { ratio = profile.ErrorRatio, status = profile.ErrorStatus },
+        faultRate = new { ratio = profile.FaultRatio, fault = FaultDialectName(profile.Fault) },
+        seed = profile.Seed,
+    };
+
+    private static string FaultDialectName(FaultKind kind) => kind switch
+    {
+        FaultKind.EmptyResponse => "EMPTY_RESPONSE",
+        FaultKind.MalformedResponseChunk => "MALFORMED_RESPONSE_CHUNK",
+        FaultKind.RandomDataThenClose => "RANDOM_DATA_THEN_CLOSE",
+        _ => "CONNECTION_RESET_BY_PEER",
+    };
+
+    private static IResult DegradationFailure(string code, string message) =>
+        Results.Json(new { errors = new[] { new { code, message } } }, statusCode: 422);
 
     private static object ClockJson(ClockOverride clock) => new
     {

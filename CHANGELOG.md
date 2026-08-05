@@ -10,6 +10,12 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **Tenant degradation profiles** (#289). `PUT /__admin/degradation` degrades a whole dependency for
+  one tenant — added latency with jitter, a share of responses answered with an error status, a share
+  of connections broken outright — composing with whatever each stub already declares instead of
+  replacing it. `DELETE` restores full health in one call. Deterministic: every profile carries a seed
+  (generated and reported when you do not supply one), so a run that found something can be replayed.
+  The admin API is never degraded, and one tenant's outage leaves the others healthy.
 - **Near-miss diagnostics** (#288). `GET /__admin/requests/{id}/near-misses` explains why a journaled
   request matched nothing — per attribute, in the mapping JSON's own vocabulary (`urlPath`,
   `headers['X-Api-Key']`, `bodyPatterns[0]`), with what the request actually carried there and the

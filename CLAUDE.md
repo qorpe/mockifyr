@@ -323,4 +323,10 @@ stub disagreed*. It is now an admin query (never the 404 body, so the served res
 suite pins stays byte-identical), naming each attribute in the mapping JSON's own vocabulary so a
 reader can search their own file for the string we printed.
 
-Builds clean (0 warnings); 947 tests green across the four suites.
+**Tenant degradation profiles (#289)** followed the same reasoning one level up: `delay` and `fault`
+describe one stub, and the question teams actually ask is what happens when a whole dependency degrades.
+A profile composes with each stub rather than replacing it, is deterministic from a seed the host always
+reports (so a chaos run becomes a regression test), and never touches the admin API — a profile an
+operator could not undo would be a trap, not an instrument.
+
+Builds clean (0 warnings); 980 tests green across the four suites.
