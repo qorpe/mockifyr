@@ -10,7 +10,8 @@ namespace Mockifyr.Templating;
 /// set as response templating — so <c>{{jsonPath originalRequest.body '$.id'}}</c>,
 /// <c>{{originalRequest.headers.X}}</c>, etc. all work. See docs/parity/g3-webhook.md.
 /// </summary>
-public sealed class WebhookTemplateRenderer(IEnvironmentResolver? environments = null) : IServeEventTemplateRenderer
+public sealed class WebhookTemplateRenderer(
+    IEnvironmentResolver? environments = null, IClockResolver? clock = null) : IServeEventTemplateRenderer
 {
     // Compiled once per distinct template (#266) — a webhook body re-renders on every delivery.
     private readonly CompiledTemplateCache _templates = CompiledTemplateCache.Create();
@@ -28,6 +29,10 @@ public sealed class WebhookTemplateRenderer(IEnvironmentResolver? environments =
         }
 
         var model = new Dictionary<string, object?> { ["originalRequest"] = RequestModel.Build(originalRequest) };
+
+        // The same tenant clock the response saw (#290): a callback whose timestamp disagreed with the
+        // response that triggered it would be a puzzle for whoever receives both.
+        using var scope = RenderClock.Use(clock?.UtcNow(tenant));
         return _templates.Render(template, model);
     }
 }

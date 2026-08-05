@@ -61,7 +61,8 @@ internal static class JwtHelpers
 
     private static object CreateToken(IReadOnlyDictionary<string, object>? hash)
     {
-        var now = DateTimeOffset.UtcNow;
+        // The tenant's clock (#290), so a token minted for a frozen host expires on that host's terms.
+        var now = RenderClock.UtcNow;
         var payload = new JsonObject
         {
             ["exp"] = now.Add(ParseMaxAge(Get(hash, "maxAge"))).ToUnixTimeSeconds(),

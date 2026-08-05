@@ -400,3 +400,43 @@ operands (a decimal operand does not round at all).
 
 Stated divergence: division or modulo by zero makes the oracle answer **500**; Mockifyr renders an
 empty value instead, so a template mistake cannot take down the request path.
+
+
+## Tenant clock control (#290, post-1.0)
+
+- **Group / item:** post-roadmap platform feature — **self-tested**; the reference engine has no clock
+  surface, so per the G18 honesty rule there is no oracle and the validation method is stated here.
+- **The problem.** Serve-time `now` was the host's clock, so every date-dependent integration was
+  testable only in real time: a token that expires in an hour, a statement that closes at month end, a
+  trial that ends in fourteen days. The workarounds — make the test wait, or hardcode dates that rot —
+  are both worse than the feature.
+- **Shape.** `PUT /__admin/clock` with `{"frozenAt": "<ISO-8601>"}` or `{"offsetSeconds": <signed>}`,
+  `GET` to read it back (`mode` is `real` / `frozen` / `offset`), `DELETE` to return to real time.
+  Tenant-scoped, like everything else.
+- **The two modes are exclusive, and a body carrying both is refused** (`Clock.Ambiguous`, 422). "Frozen
+  *and* drifting" has one meaning to whoever wrote it and another to whoever reads it next; stepping a
+  frozen clock forward is a new `frozenAt`, which says what it means.
+- **One instant for the whole render.** The renderer publishes the tenant's instant once and `now`, the
+  date helpers and a minted JWT all read it — a response whose body said one time while its own token
+  said another would be worse than having no clock control. Webhook templates read the same instant, so
+  a callback agrees with the response that triggered it.
+- **Deliberately in-memory.** Not persisted, not on the change feed: a host that came back from a
+  restart still believing it is 2027 would be a bug report rather than a convenience.
+- **What the clock does NOT move:** the request journal, the audit trail, the message inbox, API-key
+  timestamps and the rate-limit window. Those record when something *actually* happened, and a forensic
+  record that follows a test's fiction is worthless. Asserted, not merely intended.
+- **Implementation note.** Handlebars helpers are registered once on a shared engine — that is what
+  makes the compiled-template cache (#266) worth having — so the instant travels through a
+  `[ThreadStatic]` scope rather than a helper parameter. A render is synchronous end to end, so there is
+  no continuation to flow across, and an `AsyncLocal` write would copy the execution context on a path
+  measured in microseconds. The `finally` is load-bearing: a render that throws must not leave the next
+  request on that thread in 2027.
+- **This makes a racy helper deterministic.** `now` was previously validated only structurally (correct
+  format, plausible value) because it cannot be byte-diffed against an oracle whose clock moves. With a
+  frozen clock its output is exact, and the wire suite asserts two reads a real second apart agree.
+- **Performance.** `MatchAndRenderTemplate` measured **1.184 µs** with the scope in place against the
+  **1.21 µs** recorded in `docs/parity/performance.md` — no regression on the default path, which is the
+  one a host that never sets a clock pays for.
+- **Regression cases:** `TenantClockTests` (10 wire cases incl. tenant isolation, JWT agreement, the
+  journal keeping real time, both refusals, and the untouched default), `ClockOverrideTests` (7) and
+  `ClockStoreTests` (9). **Stryker 100 %** on `ClockOverride` and `InMemoryClockStore`.

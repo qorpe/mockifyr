@@ -42,6 +42,7 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
     private readonly IResourceStore? _resources;
     private readonly IResourceIdGenerator? _resourceIds;
     private readonly ResourceOptions _resourceOptions;
+    private readonly IClockResolver? _clock;
 
     public TemplatingResponseRenderer(
         IEnumerable<TemplateHelperExtension>? extraHelpers = null,
@@ -50,7 +51,8 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         IResourceStore? resources = null,
         IResourceIdGenerator? resourceIds = null,
         ResourceOptions? resourceOptions = null,
-        IResponseBodyFiles? bodyFiles = null)
+        IResponseBodyFiles? bodyFiles = null,
+        IClockResolver? clock = null)
     {
         _bodyFiles = bodyFiles ?? new NoResponseBodyFiles();
         _handlebars = HandlebarsFactory.Create(extraHelpers);
@@ -60,10 +62,21 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         _resources = resources;
         _resourceIds = resourceIds;
         _resourceOptions = resourceOptions ?? new ResourceOptions();
+        _clock = clock;
     }
 
     /// <inheritdoc />
     public CanonicalResponse Render(ResponseDefinition definition, RenderContext context)
+    {
+        // Publish this tenant's instant for the whole render (#290), so `now`, the date helpers and a
+        // minted JWT all agree with each other — a response whose body said one time and whose token
+        // said another would be worse than no clock control at all. Null when no resolver is wired,
+        // which leaves every helper on the real clock.
+        using var clock = RenderClock.Use(_clock?.UtcNow(context.Tenant));
+        return RenderCore(definition, context);
+    }
+
+    private CanonicalResponse RenderCore(ResponseDefinition definition, RenderContext context)
     {
         // Environment substitution runs FIRST, and deliberately ahead of the transformer guard below:
         // a stub that never opted into `response-template` still gets its {{key}} references resolved.

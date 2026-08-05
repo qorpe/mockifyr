@@ -39,6 +39,13 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<InMemoryEnvironmentStore>();
         services.AddSingleton<IEnvironmentStore>(sp => sp.GetRequiredService<InMemoryEnvironmentStore>());
         services.AddSingleton<IEnvironmentResolver>(sp => sp.GetRequiredService<InMemoryEnvironmentStore>());
+        // Tenant clock (#290): one instance serves the admin store and the serve-path resolver, so a
+        // frozen clock applies to the very next request. In-memory by design — a restart is how you
+        // get back to real time, and a host that came back still believing it is 2027 would be a bug
+        // report rather than a feature.
+        services.AddSingleton<InMemoryClockStore>();
+        services.AddSingleton<IClockStore>(sp => sp.GetRequiredService<InMemoryClockStore>());
+        services.AddSingleton<IClockResolver>(sp => sp.GetRequiredService<InMemoryClockStore>());
         services.AddSingleton<IRequestJournal, InMemoryRequestJournal>();
         // Admin audit trail (#247): off unless the host is started with --audit, which replaces this
         // registration. Registered here rather than only in the host so every composition that maps
@@ -109,11 +116,13 @@ public static class MockifyrServiceCollectionExtensions
             resources: sp.GetRequiredService<IResourceStore>(),
             resourceIds: sp.GetRequiredService<IResourceIdGenerator>(),
             resourceOptions: sp.GetRequiredService<ResourceOptions>(),
-            bodyFiles: sp.GetRequiredService<IResponseBodyFiles>()));
+            bodyFiles: sp.GetRequiredService<IResponseBodyFiles>(),
+            clock: sp.GetRequiredService<IClockResolver>()));
 
         // Serve-event listeners: the built-in webhook plus any user extensions.
         services.AddSingleton<IServeEventTemplateRenderer>(sp =>
-            new WebhookTemplateRenderer(sp.GetRequiredService<IEnvironmentResolver>()));
+            new WebhookTemplateRenderer(
+                sp.GetRequiredService<IEnvironmentResolver>(), sp.GetRequiredService<IClockResolver>()));
         // OutboundOptions is resolved optionally: a host that registers one (MockifyrHost, from the
         // --webhook-host-fallback flag) is honoured, and one that does not keeps the defaults. The
         // factory runs at resolution time, after every registration, so ordering does not matter.

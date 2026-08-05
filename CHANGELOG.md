@@ -8,6 +8,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- **Tenant clock control** (#290). `PUT /__admin/clock` freezes a tenant at an instant
+  (`{"frozenAt": "2027-01-01T00:00:00Z"}`) or shifts it (`{"offsetSeconds": 86400}`); `DELETE` returns
+  it to real time. Response templating, the date helpers, minted JWTs and webhook templates all read
+  the tenant's clock, so a token that expires in an hour is testable without waiting an hour. The
+  request journal, the audit trail and the message inbox keep real time — they record what actually
+  happened. In-memory and per tenant; a host that sets no clock is unaffected.
+
 ## Released
 
 ### [v1.7.0](https://github.com/qorpe/mockifyr/releases/tag/v1.7.0) — 2026-08-04

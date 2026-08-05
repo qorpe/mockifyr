@@ -30,7 +30,7 @@ internal static class DateHelpers
     {
         if (arguments.Length == 0 || arguments[0] is not DateTimeOffset instant)
         {
-            return DateTimeOffset.UtcNow;
+            return RenderClock.UtcNow;
         }
 
         var offset = instant.Offset;
@@ -53,7 +53,7 @@ internal static class DateHelpers
     // docs/parity/g2-response.md). timezone= and truncate= are deferred.
     private static object Now(Arguments arguments)
     {
-        var instant = DateTimeOffset.UtcNow;
+        var instant = RenderClock.UtcNow;
 
         var offset = Hash(arguments, "offset");
         if (offset is not null)
@@ -86,7 +86,7 @@ internal static class DateHelpers
         }
 
         // Falls back to the current time on an unparseable date — racy, so never asserted.
-        return DateTimeOffset.UtcNow;
+        return RenderClock.UtcNow;
     }
 
     // --- date ---------------------------------------------------------------------------------
@@ -94,7 +94,7 @@ internal static class DateHelpers
     private static object FormatDate(Arguments arguments)
     {
         // A non-date argument (e.g. a bare string) falls back to now — racy, not asserted.
-        var instant = arguments.Length > 0 && arguments[0] is DateTimeOffset value ? value : DateTimeOffset.UtcNow;
+        var instant = arguments.Length > 0 && arguments[0] is DateTimeOffset value ? value : RenderClock.UtcNow;
 
         var offset = Hash(arguments, "offset");
         if (offset is not null)
