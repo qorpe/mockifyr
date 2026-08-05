@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Added
+## Released
+
+### [v1.8.0](https://github.com/qorpe/mockifyr/releases/tag/v1.8.0) — 2026-08-05
+
+#### Added
 
 - **Contract conformance** (#287). `POST /__admin/openapi/verify` checks a tenant's stubs against an
   OpenAPI document and reports what disagrees: stubs answering operations the specification no longer
@@ -32,8 +36,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   the tenant's clock, so a token that expires in an hour is testable without waiting an hour. The
   request journal, the audit trail and the message inbox keep real time — they record what actually
   happened. In-memory and per tenant; a host that sets no clock is unaffected.
-
-## Released
 
 ### [v1.7.0](https://github.com/qorpe/mockifyr/releases/tag/v1.7.0) — 2026-08-04
 
