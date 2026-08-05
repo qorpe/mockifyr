@@ -207,3 +207,42 @@ other recording, and a snapshot shows only the asking tenant's captures.
 
 Still deferred: record `filters`, `allowNonProxied`, `__files` extraction, transformers on generated
 stubs.
+
+
+## Drift against reality — `POST /__admin/recordings/verify` (#287, post-1.0)
+
+- **Group / item:** post-roadmap platform feature, the second slice of #287 — **self-tested**.
+- **The question this answers.** Verifying against a specification asks whether the stubs match the
+  *document*. This asks the harder one: whether they match the **upstream that is running right now**.
+  A document can be stale too; a recording taken against the live service cannot be.
+- **Shape.** With a recording session live, `POST /__admin/recordings/verify` walks every captured
+  exchange, finds the stub that *would* have answered that request, and reports where the two disagree:
+  `noStub`, `statusDiffers`, `fieldMissing`, `fieldUnexpected`, `typeDiffers`.
+- **Structural, never literal.** Values differ between environments and between minutes — an id, a
+  timestamp, a total. Comparing them would bury the findings that matter under noise nobody can act on,
+  so what is compared is the *shape*: which fields exist and what type each one is. Asserted with a
+  case whose ids, timestamps and totals all differ and which reports nothing.
+- **The same selection the host serves by.** `StubEngine.FindMatch` was extracted from `Handle` rather
+  than reimplemented, so drift detection sees the same candidate narrowing, scenario eligibility,
+  signature gate, decrypted view, priority and recency the server uses. A diagnostic based on subtly
+  different matching would be a confident report about a host that does not exist. The extraction is a
+  pure refactor — `Handle` calls it, and the full suite proves the behaviour did not move.
+- **It serves nothing.** No journal entry, no scenario transition, no listener, no rendering. Rendering
+  in particular is deliberately skipped: a `state` directive would quietly create or delete sandbox
+  documents, and a diagnostic with side effects is a trap. The *declared* body is compared instead, and
+  a templated one is skipped — the same silence the specification check keeps, for the same reason.
+- **An array is compared by its first element.** Comparing every element reports the same difference
+  once per row, which turns one finding into a hundred; an empty array on either side says nothing
+  about shape at all.
+- **Validation.** `ResponseDriftTests` (25 unit cases) and `RecordingDriftTests` (7 wire cases against a
+  **second live Mockifyr host** standing in for the upstream — a real HTTP server over a real socket,
+  which the host under test cannot distinguish from any other). Among them: a field the upstream grew,
+  a changed status, an endpoint with no stub at all, tenant isolation, and the assertion that verifying
+  twice leaves the journal and the scenario state exactly as they were.
+- **Stryker: 92.5 %, 4 survivors, all analysed:**
+  - Two on the early-return inside the body walk: a *performance* guard only — the caller already clamps
+    with `Take(MaxBodyFindings)`, so the output is identical either way.
+  - The `_ => "nothing"` arm of the type namer: unreachable, because the only `JsonValueKind.Undefined`
+    a caller could produce is guarded before it gets there.
+  - Emptying the `catch (JsonException)` body: cannot compile — the method would have no return path
+    (CS0161) — so this is a reporting artefact rather than a live gap.

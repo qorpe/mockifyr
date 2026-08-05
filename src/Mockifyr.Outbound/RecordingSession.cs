@@ -71,6 +71,25 @@ public sealed class RecordingSession
         }
     }
 
+    /// <summary>
+    /// The exchanges captured so far, as they happened (#287). Used by drift detection to ask whether
+    /// the stubs already authored would have answered the way the real upstream just did.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately the raw exchanges rather than the generated stubs: the generated form has already
+    /// been shaped for authoring (deduplicated, chained into scenarios), and a drift report needs what
+    /// the upstream actually returned.
+    /// </remarks>
+    public IReadOnlyList<(CanonicalRequest Request, CanonicalResponse Response)> Captured(TenantId tenant)
+    {
+        lock (_gate)
+        {
+            return _byTenant.TryGetValue(tenant, out var state)
+                ? [.. state.Exchanges.Select(e => (e.Request, e.Response))]
+                : [];
+        }
+    }
+
     /// <summary>Returns the stubs generated from this tenant's captures so far, without stopping.</summary>
     public IReadOnlyList<string> Snapshot(TenantId tenant)
     {

@@ -92,41 +92,9 @@ public sealed class StubEngine
     /// </summary>
     public StubResolution Handle(TenantId tenant, CanonicalRequest request)
     {
-        var input = new MatchInput { Request = request };
-        // ISOLATION: only this tenant's stubs are visible. The store may narrow these to the ones that
-        // could match (#265); it never decides the match, and a store without an index returns
-        // everything, so behaviour is identical either way.
-        var stubs = _stubStore.GetCandidates(tenant, request);
-
-        var scored = new List<(StubMapping Stub, MatchResult Result, int Index)>(stubs.Count);
-        for (var i = 0; i < stubs.Count; i++)
+        var winner = FindMatch(tenant, request);
+        if (winner is not null)
         {
-            var stub = stubs[i];
-            if (!IsEligible(tenant, stub))
-            {
-                continue;
-            }
-
-            // Encrypted-payload stubs (G20a) match against a decrypted view; every other stub keeps
-            // the very same MatchInput instance, so the default path is untouched.
-            // Signature requirement (G20c): an unsigned or badly signed request cannot match a stub
-            // that demands a signature. It fails closed — including when no verifier is registered.
-            if (!_signatures.Satisfied(request, stub.Request.Signature))
-            {
-                continue;
-            }
-
-            var stubInput = stub.Request.Decrypt is null || _decryption.IsEmpty
-                ? input
-                : new MatchInput { Request = _decryption.For(request, stub.Request.Decrypt) };
-            scored.Add((stub, Evaluate(stub.Request, stubInput), i));
-        }
-
-        var exact = scored.Where(x => x.Result.IsExactMatch).ToList();
-        if (exact.Count > 0)
-        {
-            // Lower priority wins; ties broken by recency (last added wins).
-            var winner = exact.OrderBy(x => x.Stub.Priority).ThenByDescending(x => x.Index).First().Stub;
             // Templating sees the same decrypted view the winner matched against (G20a), so
             // {{jsonPath request.body …}} can correlate with what the client actually sent.
             var renderRequest = _decryption.For(request, winner.Request.Decrypt);
@@ -166,6 +134,59 @@ public sealed class StubEngine
         DispatchServeEvent(tenant, request, matchedStub: null, response: null);
 
         return new StubResolution { Matched = false, NearMisses = nearMisses };
+    }
+
+    /// <summary>
+    /// The stub that would answer this request, or null when none would — <b>without serving it</b>:
+    /// nothing is journaled, no scenario advances, no listener fires, no response is rendered.
+    /// </summary>
+    /// <remarks>
+    /// Extracted from <see cref="Handle"/> rather than reimplemented so that anything asking "what
+    /// would this host answer" — drift detection against a recording (#287) among them — uses exactly
+    /// the rules the host serves by: candidate narrowing, scenario eligibility, the signature gate,
+    /// the decrypted view, priority, and recency. A diagnostic based on subtly different matching
+    /// would be a confident report about a host that does not exist.
+    /// </remarks>
+    public StubMapping? FindMatch(TenantId tenant, CanonicalRequest request)
+    {
+        var input = new MatchInput { Request = request };
+        // ISOLATION: only this tenant's stubs are visible. The store may narrow these to the ones that
+        // could match (#265); it never decides the match, and a store without an index returns
+        // everything, so behaviour is identical either way.
+        var stubs = _stubStore.GetCandidates(tenant, request);
+
+        var exact = new List<(StubMapping Stub, int Index)>();
+        for (var i = 0; i < stubs.Count; i++)
+        {
+            var stub = stubs[i];
+            if (!IsEligible(tenant, stub))
+            {
+                continue;
+            }
+
+            // Encrypted-payload stubs (G20a) match against a decrypted view; every other stub keeps
+            // the very same MatchInput instance, so the default path is untouched.
+            // Signature requirement (G20c): an unsigned or badly signed request cannot match a stub
+            // that demands a signature. It fails closed — including when no verifier is registered.
+            if (!_signatures.Satisfied(request, stub.Request.Signature))
+            {
+                continue;
+            }
+
+            var stubInput = stub.Request.Decrypt is null || _decryption.IsEmpty
+                ? input
+                : new MatchInput { Request = _decryption.For(request, stub.Request.Decrypt) };
+
+            if (Evaluate(stub.Request, stubInput).IsExactMatch)
+            {
+                exact.Add((stub, i));
+            }
+        }
+
+        // Lower priority wins; ties broken by recency (last added wins).
+        return exact.Count == 0
+            ? null
+            : exact.OrderBy(x => x.Stub.Priority).ThenByDescending(x => x.Index).First().Stub;
     }
 
     private bool IsEligible(TenantId tenant, StubMapping stub)
