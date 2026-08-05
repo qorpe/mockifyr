@@ -10,6 +10,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **Near-miss diagnostics** (#288). `GET /__admin/requests/{id}/near-misses` explains why a journaled
+  request matched nothing — per attribute, in the mapping JSON's own vocabulary (`urlPath`,
+  `headers['X-Api-Key']`, `bodyPatterns[0]`), with what the request actually carried there and the
+  stub's own request block beside it. `POST /__admin/near-misses/request` answers the same question for
+  a request you have not sent yet. The served 404 is unchanged.
 - **Tenant clock control** (#290). `PUT /__admin/clock` freezes a tenant at an instant
   (`{"frozenAt": "2027-01-01T00:00:00Z"}`) or shifts it (`{"offsetSeconds": 86400}`); `DELETE` returns
   it to real time. Response templating, the date helpers, minted JWTs and webhook templates all read

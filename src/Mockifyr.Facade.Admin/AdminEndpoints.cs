@@ -271,6 +271,49 @@ public static class AdminEndpoints
             return Results.Ok();
         });
 
+        // Near-miss diagnostics (#288). Deliberately an admin query rather than a 404 body: the served
+        // response stays byte-identical to what the differential suite proves, and computing a
+        // diagnostic never touches the serve path.
+        admin.MapGet("/requests/{id}/near-misses", async (string id, HttpRequest request, ISender sender) =>
+        {
+            if (!Guid.TryParse(id, out var eventId))
+            {
+                return Results.NotFound();
+            }
+
+            var tenant = TenantOf(request);
+            var found = await sender.Send(new GetServeEventQuery(eventId, tenant));
+            if (found.Value is not { } serveEvent)
+            {
+                return Results.NotFound();
+            }
+
+            var misses = await sender.Send(new FindNearMissesQuery(serveEvent.Request, tenant));
+            return Results.Json(new
+            {
+                wasMatched = serveEvent.MatchedStub is not null,
+                nearMisses = misses.Value.Select(NearMissJson),
+            });
+        });
+
+        admin.MapPost("/near-misses/request", async (HttpRequest request, ISender sender) =>
+        {
+            CanonicalRequest candidate;
+            try
+            {
+                candidate = ReadCandidateRequest(await ReadBody(request));
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+            {
+                return Results.Json(
+                    new { errors = new[] { new { code = "NearMiss.InvalidBody", message = "Expected {method, url, headers?, body?}." } } },
+                    statusCode: 422);
+            }
+
+            var result = await sender.Send(new FindNearMissesQuery(candidate, TenantOf(request)));
+            return Results.Json(new { nearMisses = result.Value.Select(NearMissJson) });
+        });
+
         // Tenant clock control (#290). Deliberately not a mapping-JSON concept: a stub says what it
         // renders, the tenant says what time it is.
         admin.MapGet("/clock", async (HttpRequest request, ISender sender) =>
@@ -1084,6 +1127,50 @@ public static class AdminEndpoints
         return hasOffset
             ? new ClockOverride(null, TimeSpan.FromSeconds(offset.GetDouble()))
             : ClockOverride.RealTime;
+    }
+
+    /// <summary>
+    /// One near miss as the wire sees it. The stub's own request block rides along as <c>expected</c>:
+    /// the attribute names are the mapping JSON's own vocabulary, so a reader can find the line that
+    /// disagreed without every matcher having to describe itself.
+    /// </summary>
+    private static object NearMissJson(NearMiss near) => new
+    {
+        stubId = near.Stub.Id,
+        distance = near.Distance,
+        expected = (FullMapping(near.Stub) as JsonObject)?["request"],
+        attributes = near.Attributes.Select(a => new { attribute = a.Attribute, matched = a.Matched, actual = a.Actual }),
+    };
+
+    /// <summary>
+    /// Reads the hypothetical request a caller wants explained. Only the parts a stub can match on —
+    /// asking for a near miss is asking "what would happen if I sent this".
+    /// </summary>
+    private static CanonicalRequest ReadCandidateRequest(string body)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        var method = root.TryGetProperty("method", out var m) ? m.GetString() : null;
+        var url = root.TryGetProperty("url", out var u) ? u.GetString() : null;
+        if (string.IsNullOrWhiteSpace(method) || string.IsNullOrWhiteSpace(url))
+        {
+            throw new InvalidOperationException("method and url are required.");
+        }
+
+        var headers = new List<KeyValuePair<string, string>>();
+        if (root.TryGetProperty("headers", out var headerObject)
+            && headerObject.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var property in headerObject.EnumerateObject())
+            {
+                headers.Add(new KeyValuePair<string, string>(property.Name, property.Value.GetString() ?? string.Empty));
+            }
+        }
+
+        var payload = root.TryGetProperty("body", out var b) ? b.GetString() : null;
+        return CanonicalRequestBuilder.Build(
+            method!, url!, headers, payload is null ? null : System.Text.Encoding.UTF8.GetBytes(payload));
     }
 
     private static object ClockJson(ClockOverride clock) => new

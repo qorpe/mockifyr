@@ -220,6 +220,18 @@ public sealed class CountRequestsHandler(StubEngine engine) : IQueryHandler<Coun
     }
 }
 
+/// <summary>
+/// Ranks the stubs closest to a request and explains, attribute by attribute, where each one parted
+/// company with it (#288).
+/// </summary>
+public sealed class FindNearMissesHandler(StubEngine engine)
+    : IQueryHandler<FindNearMissesQuery, Result<IReadOnlyList<NearMiss>>>
+{
+    public ValueTask<Result<IReadOnlyList<NearMiss>>> Handle(
+        FindNearMissesQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(engine.FindNearMisses(query.Tenant, query.Request, detailed: true)));
+}
+
 /// <summary>Lists the journaled requests that matched no stub.</summary>
 public sealed class FindUnmatchedRequestsHandler(StubEngine engine)
     : IQueryHandler<FindUnmatchedRequestsQuery, Result<IReadOnlyList<CanonicalRequest>>>

@@ -4,8 +4,11 @@ using Mockifyr.Core;
 namespace Mockifyr.Matching;
 
 /// <summary>Applies a value matcher to a named request header.</summary>
-public sealed class HeaderMatcher(string name, IValueMatcher value) : IMatcher
+public sealed class HeaderMatcher(string name, IValueMatcher value) : IMatcher, INamedTargetMatcher
 {
+    /// <inheritdoc />
+    public string TargetName => name;
+
     /// <inheritdoc />
     public MatchResult Match(MatchInput input)
     {
@@ -16,8 +19,11 @@ public sealed class HeaderMatcher(string name, IValueMatcher value) : IMatcher
 }
 
 /// <summary>Applies a value matcher to a named query parameter.</summary>
-public sealed class QueryMatcher(string name, IValueMatcher value) : IMatcher
+public sealed class QueryMatcher(string name, IValueMatcher value) : IMatcher, INamedTargetMatcher
 {
+    /// <inheritdoc />
+    public string TargetName => name;
+
     /// <inheritdoc />
     public MatchResult Match(MatchInput input)
     {
@@ -32,8 +38,11 @@ public sealed class QueryMatcher(string name, IValueMatcher value) : IMatcher
 /// <c>application/x-www-form-urlencoded</c> request body is parsed into parameters the same way a query
 /// string is; a non-form body yields none.
 /// </summary>
-public sealed class FormParameterMatcher(string name, IValueMatcher value) : IMatcher
+public sealed class FormParameterMatcher(string name, IValueMatcher value) : IMatcher, INamedTargetMatcher
 {
+    /// <inheritdoc />
+    public string TargetName => name;
+
     private static readonly ILookup<string, string> Empty =
         Array.Empty<KeyValuePair<string, string>>().ToLookup(pair => pair.Key, pair => pair.Value);
 
@@ -71,8 +80,11 @@ public sealed class FormParameterMatcher(string name, IValueMatcher value) : IMa
 }
 
 /// <summary>Applies a value matcher to a named cookie.</summary>
-public sealed class CookieMatcher(string name, IValueMatcher value) : IMatcher
+public sealed class CookieMatcher(string name, IValueMatcher value) : IMatcher, INamedTargetMatcher
 {
+    /// <inheritdoc />
+    public string TargetName => name;
+
     /// <inheritdoc />
     public MatchResult Match(MatchInput input)
     {
