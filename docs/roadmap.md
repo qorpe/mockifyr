@@ -663,9 +663,15 @@ Stryker on the pure logic. Recorded in `docs/parity/g21-broker.md`.
   matching mapping contributes (a fan-out is a real broker pattern), and an unmatched message is
   acknowledged rather than parked. 31 unit + 7 integration cases; **Stryker 89.80 %** with three
   analyzed equivalents.
-- [ ] **G21d — AMQP** behind the same `IBrokerPublisher` contract, once the shape has survived contact
-  with slice 3. The image-size revisit point (ADR 0013) is tied to this: a second client is what would
-  make the facade split buy something measurable.
+- [x] **G21d — AMQP** behind the same `IBrokerPublisher` contract (`--amqp-uri`, `--amqp-subscribe`).
+  The design bet paid: the publisher implements the existing contract unchanged and everything above
+  it — mappings, templates, matchers, inbox, tenancy, admin routes — needed no transport-specific
+  code. Two translations are stated rather than assumed: `"topic": "exchange/routing.key"` (a
+  slash-free topic uses the default exchange, so one dialect means the obvious thing on both), and a
+  partition key becoming `MessageId` since AMQP has no counterpart. A host may run both, with a
+  `kafka:`/`amqp:` topic prefix naming one. 12 unit + 8 integration cases against a real RabbitMQ;
+  **Stryker 6/7** with one proven-equivalent survivor. The ADR's image-size trigger fired and the
+  measurement overruled it — `RabbitMQ.Client` is 0.33 MB, pure managed. **G21 complete.**
 
 Two silent gaps found after G21a/b shipped, by running the released image rather than by a failing
 test (1.10.1): a `publish` action on a host with no broker did nothing and said nothing, and a failed

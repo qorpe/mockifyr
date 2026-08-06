@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — 2026-08-05. Supersedes nothing. Extends ADR 0009 (message mocking) rather than replacing
+Accepted — 2026-08-05; all four slices shipped 2026-08-06. Supersedes nothing. Extends ADR 0009 (message mocking) rather than replacing
 it, and follows ADR 0010's rule that a channel gets its own editing surface rather than being bent
 into the HTTP one.
 
@@ -161,6 +161,15 @@ mutation-tested to the usual bar.
 
   **Revisit when:** AMQP (slice 4) adds a second client, or the image crosses 600 MB. At that point the
   split buys something measurable rather than tidiness.
+
+  **Revisited at slice 4 — and the answer is still no.** The trigger fired as written; the measurement
+  says it should not have been a trigger. `RabbitMQ.Client` is **0.33 MB**, pure managed, with no
+  native library for any platform — three orders of magnitude smaller than the Kafka client, and
+  invisible against a 556 MB image. The second transport costs less than the rounding on `du`.
+
+  The condition that still stands is the absolute one: **if the image crosses 600 MB**, split. A
+  transport that carries native code for six RIDs is what would get it there, not another managed
+  client.
 - **Testcontainers for Kafka is slow.** The differential suite already takes minutes; a broker suite
   will add more, and it belongs behind the same Docker-required gate.
 - **`MessageEnvelope` grows a channel whose fields do not all apply.** Accepted, per above.
@@ -185,4 +194,27 @@ Each is shippable on its own, in this order:
    Delivers verification, and is where consumer-group and offset decisions get tested.
 3. **Serve on consume** — `brokerMappings`: an inbound message matches and produces outbound ones.
    The largest slice, and the one that needs the other two working first.
-4. **AMQP** behind the same contract, once the shape has survived contact with slice 3.
+4. **AMQP** behind the same contract, once the shape has survived contact with slice 3. **Shipped.**
+   The shape did survive: `AmqpPublisher` implements `IBrokerPublisher` unchanged, and the mappings,
+   templates, inbox, tenancy and admin routes above it needed **no transport-specific code at all** —
+   which is what "design for the harder shape first" was supposed to buy.
+
+   Two translations had to be stated rather than assumed, because AMQP does not have the concepts the
+   dialect was written against:
+
+   - **A topic is not an AMQP concept.** `"topic": "exchange/routing.key"` addresses an exchange;
+     a topic with no slash uses the **default exchange** with the topic as the routing key, which
+     delivers straight to a queue of that name. So `{"topic":"orders.events"}` means the obvious thing
+     on both transports — the alternative, a second field, would have split one dialect into two.
+   - **A partition key has no AMQP counterpart.** `key` becomes the message's `MessageId`: the closest
+     standard property, and one a consumer can actually read. Dropping it silently was the other
+     option and is the kind of quiet gap 1.10.1 exists to punish.
+
+   A host may configure **both** transports. A topic then names one with a `kafka:` or `amqp:` prefix,
+   and an unprefixed topic goes to Kafka. This is a prefix rather than a `broker` field because a
+   field would have to be added to the mapping model in Core, to the mapping-JSON reader, and to both
+   publish actions — four places, to express what is part of the destination. Kafka topic names cannot
+   contain a colon, so nothing legal is shadowed, and a host with one transport never meets the
+   convention at all.
+
+   **G21 is complete.**

@@ -220,8 +220,69 @@ operator sees.
   (no matcher on this path can read a method or URL — that is why they are placeholders), and
   `First()` → `FirstOrDefault()` over a `GroupBy` group, which is never empty.
 
-### Deferred (the remaining slice of ADR 0013)
+## Slice 4 — AMQP
 
-AMQP. Not written; the ADR holds its shape, and the image-size revisit point is tied to it. The
-dashboard's Messages screen shows broker messages already — it reads the same inbox — but has no
-channel filter for them yet, and broker mappings have no editing surface on the dashboard.
+- **Group / item:** G21d — self-tested; the second transport behind the same `IBrokerPublisher`,
+  with `--amqp-uri` and `--amqp-subscribe`.
+- **The design bet paid off, and that is the finding.** ADR 0013 said to build for Kafka first
+  *because* it is the harder shape — partitions, consumer groups, offsets — so that AMQP would fit
+  inside rather than the reverse. It did: `AmqpPublisher` implements the existing contract unchanged,
+  and the mappings, templates, matchers, inbox, tenancy and admin routes above it needed **no
+  transport-specific code at all**. The slice is a publisher, a consumer and a router.
+- **Two translations had to be stated, because AMQP lacks the concepts the dialect was written
+  against.** Both are the kind of thing that is a silent gap if assumed:
+  - **A topic is not an AMQP concept.** `"topic": "exchange/routing.key"` addresses an exchange; a
+    topic with no slash uses the **default exchange** with the topic as the routing key, which
+    delivers straight to a queue of that name. `{"topic":"orders.events"}` therefore means the obvious
+    thing on both transports. Only the first slash splits — a slash is legal inside a routing key, and
+    losing part of one would route a message somewhere quietly wrong.
+  - **A partition key has no AMQP counterpart.** `key` becomes the message's `MessageId` — the closest
+    standard property, and one a consumer can read. Silently dropping it was the alternative, and is
+    exactly the shape of gap 1.10.1 exists to punish.
+- **The queue stands in for the topic on the way in**, so one `whenTopic` matcher works on both
+  transports, and the delivery tag stands in for the offset — the same kind of fact about where a
+  message sits in what the consumer has been handed.
+- **AMQP header values are typed**, and the client hands byte arrays for strings. They are decoded on
+  capture; storing them raw would ask a matcher to match against `System.Byte[]`.
+- **`prefetchCount: 1` and manual ack.** Ordering within a queue is the only ordering AMQP offers, and
+  a prefetch window would let a later message be served before an earlier one. The ordering guarantee
+  is the same as Kafka's: **capture, serve, then acknowledge**.
+- **Queues are declared on connect, and a failed connection retries.** A mock that required the system
+  under test to have created its queues first would make test ordering a deployment concern, and a
+  capture loop that gave up once would need a restart to recover from a broker that was merely slow to
+  start.
+- **Two transports on one host.** A topic can name one with a `kafka:` or `amqp:` prefix; an
+  unprefixed topic goes to Kafka. A prefix rather than a `broker` field, because a field would have to
+  be added to the mapping model in Core, to the mapping-JSON reader and to both publish actions —
+  four places, to express what is part of the destination. Kafka topic names cannot contain a colon,
+  so nothing legal is shadowed, and a host with one transport never meets the convention. A prefix
+  naming a transport the host does not have falls back rather than failing, so a mapping stays
+  portable between a Kafka-only and an AMQP-only host.
+- **Image size: the ADR's own trigger fired and the measurement overruled it.** `RabbitMQ.Client` is
+  **0.33 MB**, pure managed, no native library for any platform — three orders of magnitude below the
+  Kafka client and invisible against a 556 MB image. Recorded in ADR 0013 rather than left as a
+  deviation.
+- **Validation.** 12 unit cases over the pure decisions (the topic split, including only-first-slash,
+  leading and trailing slashes; routing with one and two transports; a prefix stripped before the
+  transport sees it; a topic that merely *looks* like a prefix left alone) and 8 integration cases
+  against a **real RabbitMQ container** driven by the official client — publish from an HTTP stub,
+  capture into the inbox, serve on consume with the slice-3 mapping shape unchanged, an unmatched
+  message not parking the queue, tenant addressing, an exchange-and-routing-key topic reaching a bound
+  queue, an unreachable broker recorded without taking the response down, and a `publish` action no
+  longer warning on an AMQP-only host.
+
+  **Stryker: 6 of 7 tested mutants** killed on `BrokerRouter`. The survivor is provably equivalent:
+  `_kafka ?? _fallback` where `_fallback = _kafka ?? _amqp` is *always* `_fallback`, so the `kafka:`
+  prefix cannot change a destination today — it is documentation that becomes load-bearing the moment
+  a third transport exists. The AMQP publisher's connection handling is not mutation-tested, because
+  mutating an I/O wrapper from a unit project measures the mocks; the container suite is what proves
+  it.
+
+**G21 is complete.**
+
+### Not here, and said so
+
+AMQP is the last transport ADR 0013 planned. Still out: **schema registries** (Avro/Protobuf — the
+mapping model treats a body as text), **transactions and exactly-once** (the honest position is
+at-least-once, stated), and a **dashboard surface** — the Messages screen shows broker messages
+because it reads the same inbox, but has no channel filter, and broker mappings are API-only.

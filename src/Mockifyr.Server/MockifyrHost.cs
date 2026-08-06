@@ -580,23 +580,23 @@ public static class MockifyrHost
             }
         }
 
-        // Broker channel (ADR 0013, slice 1): opt-in publishing. Nothing is connected without the flag,
-        // so a host that mocks no events pays nothing — no producer, no background threads, no
-        // connection attempt at startup.
+        // Broker channel (ADR 0013): opt-in, per transport. Nothing is connected without a flag, so a
+        // host that mocks no events pays nothing — no producer, no background threads, no connection
+        // attempt at startup.
         var kafka = builder.Configuration["kafka-bootstrap"];
-        if (!string.IsNullOrWhiteSpace(kafka))
+        var amqp = builder.Configuration["amqp-uri"];
+        if (!string.IsNullOrWhiteSpace(kafka) || !string.IsNullOrWhiteSpace(amqp))
         {
-            builder.Services.AddSingleton<Facade.Broker.IBrokerPublisher>(
-                _ => new Facade.Broker.KafkaPublisher(kafka));
+            // One publisher seam over however many transports were configured. With a single broker
+            // the router is a pass-through, so nothing about writing a stub changes; with two, a topic
+            // can name where it goes (slice 4).
+            builder.Services.AddSingleton<Facade.Broker.IBrokerPublisher>(_ => new Facade.Broker.BrokerRouter(
+                string.IsNullOrWhiteSpace(kafka) ? null : new Facade.Broker.KafkaPublisher(kafka),
+                string.IsNullOrWhiteSpace(amqp) ? null : new Facade.Broker.AmqpPublisher(amqp)));
             builder.Services.AddSingleton<IServeEventListener>(sp => new Facade.Broker.PublishServeEventListener(
                 sp.GetRequiredService<Facade.Broker.IBrokerPublisher>(),
                 sp.GetRequiredService<IServeEventTemplateRenderer>()));
-            Console.WriteLine($"mockifyr: publishing to Kafka at '{kafka}' for stubs that declare a publish action.");
 
-            // Capture (ADR 0013, slice 2): only with topics to listen to. A host that publishes but
-            // subscribes to nothing starts no consumer and joins no group.
-            var topics = (builder.Configuration["kafka-subscribe"] ?? string.Empty)
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             // Serve on consume (ADR 0013, slice 3): the mappings an inbound message is matched against.
             // Registered whenever a broker is configured, so the admin routes exist as soon as they
             // could do anything — a stub you can post but that will never be evaluated is a trap.
@@ -606,18 +606,47 @@ public static class MockifyrHost
                 new Templating.MessageTemplateRenderer(
                     sp.GetService<IEnvironmentResolver>(), sp.GetService<IClockResolver>())));
 
-            if (topics.Length > 0)
+            if (!string.IsNullOrWhiteSpace(kafka))
             {
-                var group = builder.Configuration["kafka-group"] is { Length: > 0 } g ? g : "mockifyr";
-                builder.Services.AddSingleton(new Facade.Broker.BrokerCaptureOptions(kafka, topics, group));
-                builder.Services.AddHostedService(sp => new Facade.Broker.KafkaCaptureService(
-                    sp.GetRequiredService<Facade.Broker.BrokerCaptureOptions>(),
-                    sp.GetRequiredService<IMessageSink>(),
-                    clock: null,
-                    sp.GetRequiredService<Facade.Broker.BrokerMappingPlanner>(),
-                    sp.GetRequiredService<Facade.Broker.IBrokerPublisher>()));
-                Console.WriteLine(
-                    $"mockifyr: capturing {string.Join(", ", topics)} into the message inbox as consumer group '{group}'.");
+                Console.WriteLine($"mockifyr: publishing to Kafka at '{kafka}' for stubs that declare a publish action.");
+
+                // Capture (ADR 0013, slice 2): only with topics to listen to. A host that publishes but
+                // subscribes to nothing starts no consumer and joins no group.
+                var topics = (builder.Configuration["kafka-subscribe"] ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (topics.Length > 0)
+                {
+                    var group = builder.Configuration["kafka-group"] is { Length: > 0 } g ? g : "mockifyr";
+                    builder.Services.AddSingleton(new Facade.Broker.BrokerCaptureOptions(kafka, topics, group));
+                    builder.Services.AddHostedService(sp => new Facade.Broker.KafkaCaptureService(
+                        sp.GetRequiredService<Facade.Broker.BrokerCaptureOptions>(),
+                        sp.GetRequiredService<IMessageSink>(),
+                        clock: null,
+                        sp.GetRequiredService<Facade.Broker.BrokerMappingPlanner>(),
+                        sp.GetRequiredService<Facade.Broker.IBrokerPublisher>()));
+                    Console.WriteLine(
+                        $"mockifyr: capturing {string.Join(", ", topics)} into the message inbox as consumer group '{group}'.");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(amqp))
+            {
+                Console.WriteLine("mockifyr: publishing to AMQP for stubs that declare a publish action.");
+
+                var queues = (builder.Configuration["amqp-subscribe"] ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (queues.Length > 0)
+                {
+                    builder.Services.AddSingleton(new Facade.Broker.AmqpCaptureOptions(amqp, queues));
+                    builder.Services.AddHostedService(sp => new Facade.Broker.AmqpCaptureService(
+                        sp.GetRequiredService<Facade.Broker.AmqpCaptureOptions>(),
+                        sp.GetRequiredService<IMessageSink>(),
+                        clock: null,
+                        sp.GetRequiredService<Facade.Broker.BrokerMappingPlanner>(),
+                        sp.GetRequiredService<Facade.Broker.IBrokerPublisher>()));
+                    Console.WriteLine(
+                        $"mockifyr: consuming {string.Join(", ", queues)} from AMQP into the message inbox.");
+                }
             }
         }
 

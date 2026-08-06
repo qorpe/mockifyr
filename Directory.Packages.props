@@ -29,6 +29,7 @@
     <!-- The broker channel (ADR 0013). Apache-2.0, and referenced only by Mockifyr.Facade.Broker so a
          host that configures no broker still never loads it. -->
     <PackageVersion Include="Confluent.Kafka" Version="2.6.1" />
+    <PackageVersion Include="RabbitMQ.Client" Version="7.0.0" />
     <!-- gRPC facade (G13). Google.Protobuf drives generic protobuf <-> JSON via the descriptor;
          Grpc.AspNetCore hosts the gRPC endpoint. Used only inside Mockifyr.Facade.Grpc. -->
     <PackageVersion Include="Google.Protobuf" Version="3.35.1" />
@@ -74,6 +75,7 @@
     <!-- The broker channel's integration harness (ADR 0013): a real Kafka, driven by the official
          client, because a mock broker proving a mock works would prove nothing. -->
     <PackageVersion Include="Testcontainers.Kafka" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
     <!-- gRPC client to drive the G13 differential against both sides. -->
     <PackageVersion Include="Grpc.Net.Client" Version="2.80.0" />
 
