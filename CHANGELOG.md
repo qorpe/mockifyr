@@ -8,20 +8,22 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Fixed
+## Released
+
+### [v1.13.0](https://github.com/qorpe/mockifyr/releases/tag/v1.13.0) — 2026-08-06
+
+#### Fixed
 
 - **`?channel=broker` filtered nothing.** `GET /__admin/messages` and `/count` returned every message
   in the inbox for the broker channel, because the filter recognised only `email` and `sms` and
   treated anything else as "no filter". Present since 1.10.0.
 
-### Added
+#### Added
 
 - **The broker channel on the dashboard.** The Messages screen gains a **Broker** filter beside Email
   and SMS, a channel label on each row, and a detail panel that names a broker message by its topic
   and shows its partition key — a message addressed to a topic has no recipients, so the sender→
   recipient line it used to render described a delivery that never happened. Six locales.
-
-## Released
 
 ### [v1.12.0](https://github.com/qorpe/mockifyr/releases/tag/v1.12.0) — 2026-08-06
 

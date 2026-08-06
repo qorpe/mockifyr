@@ -1,9 +1,11 @@
 <Project>
 
   <PropertyGroup>
-    <!-- The product version, in one place. /__admin/health reports it, so it must be bumped with the
-         release (alongside ui/package.json) rather than left to drift. -->
-    <Version>1.12.0</Version>
+    <!-- The product version, in ONE place: /__admin/health reports it and the dashboard's Settings
+         screen reads it from there, so this is the only number a release bumps. ui/package.json
+         carries its own unrelated version that nothing displays; it drifted from this years ago and
+         the instruction to keep them in step was describing work with no effect. -->
+    <Version>1.13.0</Version>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
