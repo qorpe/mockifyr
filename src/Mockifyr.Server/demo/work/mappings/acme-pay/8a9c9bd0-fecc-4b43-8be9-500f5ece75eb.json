@@ -1,1 +1,0 @@
-{"name":"create payments","request":{"method":"POST","urlPath":"/payments"},"response":{"status":201,"headers":{"Location":"/payments/{{state.id}}"},"body":"{{state.body}}","state":{"operation":"create","collection":"payments"}},"id":"8a9c9bd0-fecc-4b43-8be9-500f5ece75eb","uuid":"8a9c9bd0-fecc-4b43-8be9-500f5ece75eb"}
