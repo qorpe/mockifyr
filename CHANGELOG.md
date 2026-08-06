@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Added
+## Released
+
+### [v1.11.0](https://github.com/qorpe/mockifyr/releases/tag/v1.11.0) — 2026-08-06
+
+#### Added
 
 - **Serve on consume** (#291, ADR 0013 slice 3). A `brokerMappings` stub matches an inbound broker
   message and publishes the messages it declares, so Mockifyr can stand in for an event-driven
@@ -18,8 +22,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   `message.body`, `message.topic`, `message.key` and `message.headers.<name>`, and resolve the tenant's
   environment keys and clock. Every matching mapping contributes — a fan-out is a real broker pattern —
   and an unmatched message is captured and acknowledged rather than parked.
-
-## Released
 
 ### [v1.10.1](https://github.com/qorpe/mockifyr/releases/tag/v1.10.1) — 2026-08-06
 
