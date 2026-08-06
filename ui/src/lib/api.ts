@@ -240,7 +240,7 @@ export async function deleteMessageMapping(tenant: string, id: string): Promise<
 }
 
 // Captured messages (G18, ADR 0009): the tenant-scoped inbox the SMTP/SMS facades write into.
-export type MessageChannel = 'email' | 'sms'
+export type MessageChannel = 'email' | 'sms' | 'broker'
 
 export interface CapturedMessage {
   id: string
