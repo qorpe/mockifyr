@@ -2,6 +2,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Mockifyr.Core\Mockifyr.Core.csproj" />
+    <!-- The matching and templating the broker mappings reuse (ADR 0013 slice 3) — the same pair the
+         WebSocket facade takes for message-mappings. Neither is a facade, so the arrows still point
+         inward: a broker stub is new syntax around semantics the oracle already pinned. -->
+    <ProjectReference Include="..\Mockifyr.Adapters.MappingJson\Mockifyr.Adapters.MappingJson.csproj" />
+    <ProjectReference Include="..\Mockifyr.Templating\Mockifyr.Templating.csproj" />
     <!-- The broker client lives here and nowhere else (ADR 0013), exactly as MimeKit lives in the SMTP
          facade. Confluent.Kafka is Apache-2.0, so it is compatible with shipping. -->
     <PackageReference Include="Confluent.Kafka" />

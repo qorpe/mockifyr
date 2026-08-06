@@ -28,7 +28,11 @@ public sealed record BrokerCaptureOptions(string BootstrapServers, IReadOnlyList
 /// </para>
 /// </remarks>
 public sealed class KafkaCaptureService(
-    BrokerCaptureOptions options, IMessageSink sink, TimeProvider? clock = null) : BackgroundService
+    BrokerCaptureOptions options,
+    IMessageSink sink,
+    TimeProvider? clock = null,
+    BrokerMappingPlanner? planner = null,
+    IBrokerPublisher? publisher = null) : BackgroundService
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
@@ -93,9 +97,16 @@ public sealed class KafkaCaptureService(
                     [.. (result.Message.Headers ?? []).Select(h => new KeyValuePair<string, string>(
                         h.Key, System.Text.Encoding.UTF8.GetString(h.GetValueBytes() ?? [])))]);
 
-                sink.Accept(BrokerMessageFactory.TenantOf(record), BrokerMessageFactory.Build(record, _clock.GetUtcNow()));
+                var tenant = BrokerMessageFactory.TenantOf(record);
+                sink.Accept(tenant, BrokerMessageFactory.Build(record, _clock.GetUtcNow()));
 
-                // Only now: the message is visible in the inbox, so acknowledging it cannot lose it.
+                // Serve on consume (slice 3): what the tenant's broker mappings say this message
+                // produces. Captured first and served second, so a message is in the inbox — and
+                // therefore assertable — even if a mapping's template or the broker itself fails.
+                Serve(tenant, record, stoppingToken);
+
+                // Only now: the message is captured and anything it produces has been dispatched, so
+                // acknowledging it cannot lose either half. ADR 0013 states this ordering.
                 try
                 {
                     consumer.Commit(result);
@@ -113,6 +124,39 @@ public sealed class KafkaCaptureService(
         finally
         {
             consumer.Close();
+        }
+    }
+
+    /// <summary>Publishes whatever the tenant's broker mappings say this message produces.</summary>
+    /// <remarks>
+    /// Synchronous by choice: the offset must not be committed until the reply has been dispatched, and
+    /// a fire-and-forget send would acknowledge a message whose reply is still in a buffer. Ordering is
+    /// per partition and this consumes one message at a time, so nothing is serialised that was not
+    /// already.
+    /// </remarks>
+    private void Serve(TenantId tenant, ConsumedRecord record, CancellationToken cancellationToken)
+    {
+        if (planner is null || publisher is null)
+        {
+            return;
+        }
+
+        foreach (var message in planner.Plan(tenant, record))
+        {
+            try
+            {
+                publisher
+                    .PublishAsync(message.Topic, message.Key, message.Body, message.Headers, cancellationToken)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // A broker that will not take the reply must not stop this host from consuming the
+                // next message: the alternative is one bad topic stalling a partition, which ADR 0013
+                // rules out for the same reason it does not park unmatched messages.
+                planner.Failures.Add(new PlanFailure(message.Topic, exception.Message));
+            }
         }
     }
 }

@@ -635,3 +635,38 @@ Deferred edges (tracked from day one in `docs/parity/g19-sandbox.md`): durable r
 persistence via the G16 seam, GraphQL SDL / AsyncAPI import, per-key scenario isolation, OpenAPI
 *export* of authored stubs. Out of scope by decision (ADR 0011): developer portal,
 self-registration, billing, OAuth issuance, hosted SaaS.
+
+## G21 — The broker channel (ADR 0013)
+
+The integration sandbox was HTTP-shaped: a team could mock the call that *starts* a payment and not
+the event that reports it *settled* — the half that is hardest to test, because it has no synchronous
+reply to assert on. Kafka first, because it is the harder shape (partitions, consumer groups,
+offsets); designing for it means AMQP fits inside rather than the reverse. Everything is opt-in: a
+host without `--kafka-bootstrap` builds no producer, joins no group and connects to nothing.
+
+No oracle exists — the reference engine has no broker concept — so validation follows the G18/G19
+precedent: a **real broker in a Testcontainer** driven by the **official client**, plus unit tests and
+Stryker on the pure logic. Recorded in `docs/parity/g21-broker.md`.
+
+- [x] **G21a — publish on match** (#301). A `publish` post-serve action beside `webhook`: a stub
+  answers `201` *and* emits. Templated topic/key/body/headers, delivery recorded on the journal entry
+  either way. The ADR's image-size trigger fired (+20 MB measured) and the recorded judgement is that
+  the split it prescribed is not worth taking yet, with the number and the revisit condition written
+  down rather than the deviation being silent.
+- [x] **G21b — capture** (#302). `--kafka-subscribe` lands what the system under test publishes in the
+  tenant's message inbox, so `/__admin/messages` and its verify surface answer for broker messages
+  with no new API — one inbox, as the ADR decided. Offsets commit after the inbox write.
+- [x] **G21c — serve on consume** (#291). `brokerMappings`: an inbound message matches and produces
+  outbound ones. `whenTopic`/`whenHeaders`/`whenMessage` reuse the existing value and body matchers, so
+  a broker stub is new syntax around oracle-verified semantics; replies template against
+  `message.body`/`topic`/`key`/`headers.*` and resolve the tenant's environments and clock. Every
+  matching mapping contributes (a fan-out is a real broker pattern), and an unmatched message is
+  acknowledged rather than parked. 31 unit + 7 integration cases; **Stryker 89.80 %** with three
+  analyzed equivalents.
+- [ ] **G21d — AMQP** behind the same `IBrokerPublisher` contract, once the shape has survived contact
+  with slice 3. The image-size revisit point (ADR 0013) is tied to this: a second client is what would
+  make the facade split buy something measurable.
+
+Two silent gaps found after G21a/b shipped, by running the released image rather than by a failing
+test (1.10.1): a `publish` action on a host with no broker did nothing and said nothing, and a failed
+publish recorded that it failed but not what it was carrying. Both closed; both recorded.

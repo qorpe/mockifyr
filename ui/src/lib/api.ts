@@ -104,6 +104,7 @@ interface RawMapping {
   protocol?: string
   request?: {
     method?: string; url?: string; urlPath?: string; urlPattern?: string; urlPathPattern?: string
+    urlPathTemplate?: string
     decrypt?: unknown; signature?: unknown
   }
   response?: { proxyBaseUrl?: string; status?: number; protect?: unknown; sign?: unknown }
@@ -115,7 +116,7 @@ const isProtocol = (p: string | undefined): p is Protocol =>
 
 function projectMapping(m: RawMapping): Stub {
   const req = m.request ?? {}
-  const url = req.url ?? req.urlPath ?? req.urlPattern ?? req.urlPathPattern ?? '/'
+  const url = req.url ?? req.urlPath ?? req.urlPathTemplate ?? req.urlPattern ?? req.urlPathPattern ?? '/'
   return {
     id: m.id ?? m.uuid ?? crypto.randomUUID(),
     name: typeof m.name === 'string' && m.name.trim() ? m.name : null,
@@ -505,7 +506,7 @@ function projectCaptured(m: RawMapping): CapturedStub {
   const req = m.request ?? {}
   return {
     method: (req.method ?? 'ANY').toUpperCase(),
-    url: req.url ?? req.urlPath ?? req.urlPattern ?? req.urlPathPattern ?? '/',
+    url: req.url ?? req.urlPath ?? req.urlPathTemplate ?? req.urlPattern ?? req.urlPathPattern ?? '/',
     raw: JSON.stringify(m, null, 2),
   }
 }
