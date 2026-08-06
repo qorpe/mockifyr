@@ -102,6 +102,51 @@ public sealed class BrokerCaptureWireTests(KafkaFixture fixture) : IClassFixture
     }
 
     [Fact]
+    public async Task The_channel_filter_actually_excludes_the_other_channels()
+    {
+        // This is the test the one above SHOULD have been. Counting broker messages in an inbox that
+        // holds only broker messages gives the same answer whether the filter works or does nothing —
+        // and for two releases it did nothing: an unrecognised channel name fell through to "no
+        // filter", so ?channel=broker returned every message in the inbox.
+        await using var app = await StartAsync();
+        using var client = Client(app);
+
+        await ProduceAsync(_topic, """{"type":"OrderSettled"}""");
+        await WaitForMessageAsync(client);
+
+        // A real second channel: the Twilio profile captures an SMS into the same inbox. Whether the
+        // filter discriminates is only visible once the inbox is genuinely mixed.
+        using var sent = await client.PostAsync(
+            "/2010-04-01/Accounts/AC00000000000000000000000000000000/Messages.json",
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["To"] = "+905550000000",
+                ["From"] = "+15005550006",
+                ["Body"] = "Your code is 123456",
+            }));
+        Assert.True(sent.IsSuccessStatusCode);
+
+        Assert.Equal(2, await CountAsync(client, channel: null));
+        Assert.Equal(1, await CountAsync(client, "broker"));
+        Assert.Equal(1, await CountAsync(client, "sms"));
+        Assert.Equal(0, await CountAsync(client, "email"));
+
+        // And the list agrees with the count — two surfaces answering differently about the same
+        // filter is its own bug.
+        var listed = await MessagesAsync(client);
+        Assert.Equal(
+            listed.Count(m => m.GetProperty("channel").GetString() == "broker"),
+            await CountAsync(client, "broker"));
+    }
+
+    private static async Task<int> CountAsync(HttpClient client, string? channel)
+    {
+        var query = channel is null ? string.Empty : $"?channel={channel}";
+        using var document = JsonDocument.Parse(await client.GetStringAsync($"/__admin/messages/count{query}"));
+        return document.RootElement.GetProperty("count").GetInt32();
+    }
+
+    [Fact]
     public async Task A_host_that_subscribes_to_nothing_captures_nothing()
     {
         await using var app = await StartAsync(subscribe: false);
@@ -168,10 +213,12 @@ public sealed class BrokerCaptureWireTests(KafkaFixture fixture) : IClassFixture
 
     private async Task<WebApplication> StartAsync(bool subscribe = true)
     {
+        // The SMS profile is on so a test can put a second channel in the inbox with one HTTP call —
+        // a filter that is only ever exercised against one channel is not exercised at all.
         string[] args = subscribe
-            ? ["--port", "0", "--kafka-bootstrap", fixture.Container.GetBootstrapAddress(),
+            ? ["--port", "0", "--sms-profile", "twilio", "--kafka-bootstrap", fixture.Container.GetBootstrapAddress(),
                "--kafka-subscribe", _topic, "--kafka-group", $"g-{Guid.NewGuid():N}"]
-            : ["--port", "0", "--kafka-bootstrap", fixture.Container.GetBootstrapAddress()];
+            : ["--port", "0", "--sms-profile", "twilio", "--kafka-bootstrap", fixture.Container.GetBootstrapAddress()];
 
         var app = MockifyrHost.Build(args);
         await app.StartAsync();

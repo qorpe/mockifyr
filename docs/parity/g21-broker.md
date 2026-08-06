@@ -280,6 +280,26 @@ operator sees.
 
 **G21 is complete.**
 
+## A filter that filtered nothing, for two releases (1.13.0)
+
+`GET /__admin/messages?channel=broker` returned **every** message in the inbox, and
+`/count?channel=broker` counted them all. The parser mapped `email` and `sms` and fell through to
+`null` — "no filter" — for anything else, so a channel added to the model and forgotten here filters
+nothing *while looking like it filtered*.
+
+The interesting part is why the tests said it was fine. `Verification_works_on_captured_messages_with_no_new_api`
+counted broker messages in an inbox holding **only** broker messages — where "filtered correctly" and
+"did not filter at all" give the identical answer. It was a green test asserting nothing.
+
+The replacement puts a real second channel in the inbox (the Twilio profile, one HTTP call) and
+asserts all four counts plus that the list and the count agree. It fails against the old parser —
+verified by reverting the fix and watching it go red — which is the only evidence that a regression
+test is a regression test.
+
+**The rule this leaves behind:** a filter test on a single-valued collection tests nothing. The same
+shape found the two-way channel ternary in the admin API during slice 2; this is the third time a
+"there are only two of these" assumption has cost something in this group.
+
 ### Not here, and said so
 
 AMQP is the last transport ADR 0013 planned. Still out: **schema registries** (Avro/Protobuf — the

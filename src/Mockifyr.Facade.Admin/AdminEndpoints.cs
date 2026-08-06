@@ -1562,11 +1562,22 @@ public static class AdminEndpoints
     // in, so the dashboard can display and faithfully round-trip an edit (not just see an id).
     // ---- Captured messages (G18a) --------------------------------------------------------------
 
+    /// <summary>
+    /// The <c>?channel=</c> filter. Null means no filter — which is why every channel that exists must
+    /// be listed here: an unrecognised name falls through to "show everything", so a channel that was
+    /// added to the model and forgotten here filters nothing while looking like it filtered.
+    /// </summary>
+    /// <remarks>
+    /// That is exactly what happened to <c>broker</c> between 1.10.0 and 1.12.0. The wire test that
+    /// should have caught it counted messages in an inbox holding only broker messages, where "filtered
+    /// correctly" and "did not filter at all" give the same answer. A filter test needs a mixed inbox.
+    /// </remarks>
     private static MessageChannel? ChannelOf(HttpRequest request) =>
         request.Query["channel"].FirstOrDefault()?.ToLowerInvariant() switch
         {
             "email" => MessageChannel.Email,
             "sms" => MessageChannel.Sms,
+            "broker" => MessageChannel.Broker,
             _ => null,
         };
 

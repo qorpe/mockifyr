@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-table'
 import {
   ArrowUpDown, Check, ChevronLeft, ChevronRight, Clock, Copy, Inbox, Mail, MessageSquareText,
-  Paperclip, RefreshCw, Rows2, Rows3, SlidersHorizontal, Trash2,
+  Paperclip, RadioTower, RefreshCw, Rows2, Rows3, SlidersHorizontal, Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn, formatDateTime, timeAgo } from '@/lib/utils'
@@ -70,6 +70,7 @@ export function MessagesPage() {
   const counts = useMemo(() => ({
     email: all.filter((m) => m.channel === 'email').length,
     sms: all.filter((m) => m.channel === 'sms').length,
+    broker: all.filter((m) => m.channel === 'broker').length,
   }), [all])
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['messages', tenant] })
@@ -92,9 +93,18 @@ export function MessagesPage() {
   const columns = useMemo<ColumnDef<CapturedMessage>[]>(() => [
     {
       accessorKey: 'channel', header: () => t('messages.channel'),
-      cell: ({ getValue }) => getValue<MessageChannel>() === 'email'
-        ? <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-info"><Mail className="size-3.5" />{t('messages.email')}</span>
-        : <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-warning"><MessageSquareText className="size-3.5" />{t('messages.sms')}</span>,
+      // A switch, never a ternary. The admin API projected this channel with a two-way ternary and
+      // would have labelled every broker message "sms" — the same shape of bug is one line away here.
+      cell: ({ getValue }) => {
+        const channelValue = getValue<MessageChannel>()
+        if (channelValue === 'email') {
+          return <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-info"><Mail className="size-3.5" />{t('messages.email')}</span>
+        }
+        if (channelValue === 'broker') {
+          return <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-violet"><RadioTower className="size-3.5" />{t('messages.broker')}</span>
+        }
+        return <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-warning"><MessageSquareText className="size-3.5" />{t('messages.sms')}</span>
+      },
     },
     {
       accessorKey: 'to', header: () => t('messages.to'),
@@ -164,11 +174,12 @@ export function MessagesPage() {
     <div className="mx-auto max-w-[1360px]">
       {/* Channel switcher — the Journal's All/Unmatched pill, one visual language. */}
       <div className="mb-6 inline-flex gap-1 rounded-xl bg-muted p-1">
-        {([null, 'email', 'sms'] as const).map((c) => (
+        {([null, 'email', 'sms', 'broker'] as const).map((c) => (
           <button key={c ?? 'all'} onClick={() => setChannel(c)}
             className={cn('inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors',
               channel === c ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-            {c === 'email' ? <Mail className="size-4" /> : c === 'sms' ? <MessageSquareText className="size-4" /> : null}
+            {c === 'email' ? <Mail className="size-4" /> : c === 'sms' ? <MessageSquareText className="size-4" />
+              : c === 'broker' ? <RadioTower className="size-4" /> : null}
             {c === null ? t('stubs.all') : t(`messages.${c}`)}
             <span className="tabular-nums text-faint">{c === null ? all.length : counts[c]}</span>
           </button>
@@ -262,6 +273,14 @@ export function MessagesPage() {
   )
 }
 
+/** What names a message at a glance: its subject, its recipient, or — for a broker — its topic. */
+function headline(message: CapturedMessage, t: (key: string) => string): string {
+  if (message.subject) return message.subject
+  if (message.channel === 'sms') return message.to[0] ?? '—'
+  if (message.channel === 'broker') return message.from || '—'
+  return t('messages.noSubject')
+}
+
 /** Row-click detail, in the Journal's sheet pattern: mail = Preview/Text/Details tabs; SMS = the thread. */
 function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
   message: CapturedMessage | null
@@ -280,10 +299,20 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
             {/* The subject and the from→to line copy on hover — both travel into tests and bug
                 reports constantly (#194 polish). */}
             <div className="border-b border-border px-6 py-4">
-              <HoverCopy className="text-base font-semibold"
-                text={message.subject ?? (message.channel === 'sms' ? message.to[0] : t('messages.noSubject'))} />
-              <HoverCopy className="mt-0.5 text-sm text-muted-foreground"
-                text={`${message.from || '—'} → ${message.to.join(', ')}`} />
+              <HoverCopy className="text-base font-semibold" text={headline(message, t)} />
+              {/* A broker message has no recipients — it is addressed to a topic, not to anybody —
+                  so an arrow pointing at nothing would describe a delivery that never happened. Its
+                  headline is already the topic, so this line carries the partition key instead, and
+                  disappears when the producer set none rather than printing an empty label. */}
+              {message.channel === 'broker'
+                ? message.meta.key && (
+                    <HoverCopy className="mt-0.5 text-sm text-muted-foreground"
+                      text={`${t('messages.key')}: ${message.meta.key}`} />
+                  )
+                : (
+                    <HoverCopy className="mt-0.5 text-sm text-muted-foreground"
+                      text={`${message.from || '—'} → ${message.to.join(', ')}`} />
+                  )}
             </div>
             {message.channel === 'sms' ? (
               <SmsThread list={thread} locale={locale} onDelete={onDelete} />
