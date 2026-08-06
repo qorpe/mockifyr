@@ -65,4 +65,61 @@ public sealed class G12gDashboardTests : IAsyncLifetime
         var mocked = await _client.GetAsync("/api/anything");
         Assert.Equal(HttpStatusCode.NotFound, mocked.StatusCode);
     }
+
+    [Fact]
+    public async Task The_shell_is_never_served_from_a_stale_browser_cache()
+    {
+        // A cached `index.html` can load a bundle older than the host it is talking to — one that
+        // predates a capability like the OIDC login gate — and then fail in ways that look like a
+        // server bug. Revalidating the shell on every load is what stops that, and it is cheap: the
+        // shell is a few hundred bytes and its hashed assets still cache forever.
+        using var index = await _client!.GetAsync("/__mockifyr/");
+        Assert.Equal("no-cache", index.Headers.CacheControl?.ToString());
+
+        // The SPA fallback is the same document and must carry the same rule — a client route is how
+        // most people actually arrive at the dashboard.
+        using var route = await _client.GetAsync("/__mockifyr/stubs");
+        Assert.Equal("no-cache", route.Headers.CacheControl?.ToString());
+    }
+
+    [Fact]
+    public async Task A_hashed_asset_is_cached_forever_because_its_name_changes_when_it_does()
+    {
+        using var asset = await _client!.GetAsync("/__mockifyr/assets/app.js");
+
+        Assert.Equal("public, max-age=31536000, immutable", asset.Headers.CacheControl?.ToString());
+    }
+
+    [Fact]
+    public async Task Nothing_outside_assets_is_marked_immutable()
+    {
+        // The asymmetry is the whole design, and it is the dangerous half: `immutable` on a file whose
+        // name does NOT change with its content pins a stale copy in somebody's browser for a year,
+        // with no way to reach it. Only Vite's content-hashed `assets/` output earns it.
+        File.WriteAllText(Path.Combine(_dir, "favicon.ico"), "not really an icon");
+
+        using var icon = await _client!.GetAsync("/__mockifyr/favicon.ico");
+
+        Assert.Equal(HttpStatusCode.OK, icon.StatusCode);
+        Assert.Equal("no-cache", icon.Headers.CacheControl?.ToString());
+        Assert.DoesNotContain("immutable", icon.Headers.CacheControl?.ToString() ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task A_path_that_merely_starts_with_the_word_assets_is_not_treated_as_hashed()
+    {
+        // "assets-old/…" starts with "assets" and is not the hashed output directory. Matching the
+        // slash is what keeps a hand-placed file from being pinned for a year by accident.
+        Directory.CreateDirectory(Path.Combine(_dir, "assets-old"));
+        File.WriteAllText(Path.Combine(_dir, "assets-old", "legacy.js"), "// hand-placed");
+
+        using var legacy = await _client!.GetAsync("/__mockifyr/assets-old/legacy.js");
+
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+
+        // Asserted as an equality, not as "does not contain immutable": with no header at all that
+        // weaker form passes for the wrong reason, which is how a test survives the very change it
+        // exists to pin. Caught by reverting the fix and watching this one stay green.
+        Assert.Equal("no-cache", legacy.Headers.CacheControl?.ToString());
+    }
 }

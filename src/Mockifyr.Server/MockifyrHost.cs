@@ -981,11 +981,20 @@ public static class MockifyrHost
                 if (file is { Exists: true, IsDirectory: false })
                 {
                     context.Response.ContentType = contentTypes.TryGetContentType(path!, out var ct) ? ct : "application/octet-stream";
+                    // Hashed assets are immutable by construction; everything else (icons, manifest)
+                    // must revalidate so a redeployed dashboard is picked up on the next load.
+                    context.Response.Headers.CacheControl = path!.StartsWith("assets/", StringComparison.Ordinal)
+                        ? "public, max-age=31536000, immutable"
+                        : "no-cache";
                     await context.Response.SendFileAsync(file);
                     return;
                 }
 
+                // The SPA shell must never be served from a stale browser cache: an old bundle can
+                // predate the host's capabilities (e.g. the OIDC login gate) and fail in silently
+                // confusing ways. no-cache forces revalidation on every load.
                 context.Response.ContentType = "text/html";
+                context.Response.Headers.CacheControl = "no-cache";
                 await context.Response.SendFileAsync(provider.GetFileInfo("index.html"));
             });
         }

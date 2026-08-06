@@ -246,3 +246,28 @@ stubs.
     a caller could produce is guarded before it gets there.
   - Emptying the `catch (JsonException)` body: cannot compile — the method would have no return path
     (CS0161) — so this is a reporting artefact rather than a live gap.
+
+## Dashboard caching — a stale shell is a bug report about the wrong thing (post-1.13.0)
+
+The `--dashboard` endpoint served `index.html` with no cache directive, so a browser was free to keep
+it. That is not a performance detail: the shell decides which bundle runs, and a cached one can be
+**older than the host it is talking to**. A bundle predating the OIDC login gate, talking to a host
+that has one, fails in ways that look like a server fault — which is the expensive kind of bug,
+because the evidence points away from the cause.
+
+- **The shell and every unhashed file revalidate** (`no-cache`). The cost is one conditional request
+  for a few hundred bytes.
+- **Vite's `assets/` output is `immutable` for a year**, which it *earns*: its filenames carry a
+  content hash, so the name cannot survive a content change.
+- **The asymmetry is the dangerous half.** `immutable` on a file whose name does not change with its
+  content pins a stale copy in somebody's browser for a year with no way to reach it. Matching
+  `assets/` **with the slash** is what keeps a hand-placed `assets-old/` from being pinned by accident.
+
+**Validation.** Four cases in `G12gDashboardTests`, each verified to fail with the fix reverted. Doing
+that check found one of them passing for the wrong reason: `DoesNotContain("immutable")` is trivially
+true when there is no header at all, so it survived the very change it existed to pin. It is an
+equality assertion now.
+
+The general form, which has now cost something twice in two days (see `g21-broker.md` on the channel
+filter): **an assertion that a bad value is absent passes when nothing is there.** Assert the value
+you want, not the value you fear.
