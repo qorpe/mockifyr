@@ -160,8 +160,68 @@ The general lesson, third time it has paid: **the released artifact is a test su
 signing it and having a green suite says the code does what the tests say; running it says what an
 operator sees.
 
-### Deferred (the remaining slices of ADR 0013)
+## Slice 3 — serve on consume
 
-Serve-on-consume (`brokerMappings`) and AMQP. Neither is written; the ADR holds their shape. The
+- **Group / item:** G21c — self-tested; an inbound message matches a mapping and produces outbound
+  ones, which is what turns "I can emit an event" into "I can stand in for an event-driven component".
+- **Shape.** `brokerMappings`, registered at `POST /__admin/broker-mappings` and listed, deleted and
+  reset there, in the shape ADR 0013 named:
+
+  ```json
+  {"whenTopic":{"equalTo":"orders.commands"},
+   "whenMessage":[{"matchesJsonPath":{"expression":"$.type","equalTo":"SettleOrder"}}],
+   "whenHeaders":{"source":{"equalTo":"erp"}},
+   "publish":[{"topic":"orders.events","key":"{{jsonPath message.body '$.orderId'}}","body":"…"}]}
+  ```
+
+- **Nothing new was invented for matching, and that is the point.** `whenTopic` and `whenHeaders` are
+  read through the request-pattern reader as header matchers, `whenMessage` as body matchers. So
+  `equalTo`, `matches`, `contains`, `equalToJson`, `matchesJsonPath`, `equalToXml` and the rest arrive
+  with the semantics the oracle already pinned on the HTTP side — a broker stub is **new syntax around
+  old, verified behaviour**, and a matcher added to the dialect tomorrow works here the day it lands.
+  The adapter is a purpose-built `CanonicalRequest` (topic as a reserved pseudo-header, message headers
+  as headers, payload as body) whose method and URL are placeholders no matcher on this path reads.
+- **Every matching mapping contributes, not just the first.** This is the one place the broker channel
+  departs from HTTP serving on purpose: a fan-out — one command producing an event *and* an audit
+  record from two separate stubs — is a real broker pattern, and first-match-wins would make it
+  inexpressible without merging unrelated mappings. HTTP can send one response; a broker can emit any
+  number.
+- **A message's reply can name where it came from.** Templates see `message.body`, `message.topic`,
+  `message.key` and `message.headers.<name>`. Without the last three the correlation has to be
+  hand-carried into every stub's body, which is the kind of thing people get subtly wrong once and then
+  everywhere. Destination topics are templated too, so content-based routing is one mapping rather than
+  one per destination.
+- **Environments and the tenant clock apply.** `MessageTemplateRenderer` gained optional
+  `IEnvironmentResolver`/`IClockResolver` — a broker reply resolving `{{key}}` differently from an HTTP
+  response in the same tenant would be a puzzle, not a feature. Both are optional, so the WebSocket
+  facade that constructs it with neither behaves exactly as before.
+- **Ordering with capture.** Captured **first**, served **second**, offset committed **after both**. A
+  message that produced a reply must still be assertable afterwards, or debugging a mapping means
+  guessing what arrived; and the ADR's at-least-once statement needs the commit to be last.
+- **A broken template drops its own message and no other**, and is recorded in a bounded failure log
+  rather than swallowed. A typo in an audit stub must not stop the event the system under test is
+  waiting for — and `publish` shipped silent once already (1.10.1), which is why "recorded" is not
+  optional here.
+- **A message matching nothing is acknowledged, not parked**, per the ADR. Asserted by producing an
+  unmatched message *before* a matched one: if the first stalled the partition the second would never
+  be served.
+- **Publishing the reply is synchronous inside the consume loop.** A fire-and-forget send would let the
+  offset commit while the reply was still in a producer buffer. Nothing is serialised that was not
+  already — the consumer handles one message at a time and ordering is per partition.
+- **Validation.** 31 unit cases over the pure model and planner (trigger composition, topic as a value
+  matcher, fan-out, tenant isolation, tombstones surviving planning, six wrong-shaped registration
+  fields ignored rather than throwing) and 7 integration cases against a **real Kafka container** whose
+  replies are read back with the **official client** — because the question is not "did we plan a
+  message" but "did the system under test receive one". **Stryker: 89.80 %** on `BrokerMapping` +
+  `BrokerMappingPlanner`; it found three real coverage gaps first — a wrong-typed `key`, a non-object
+  `headers`, and a tombstone whose null body was pinned at read time but not through planning.
+
+  Three survivors, all equivalent: the `"MESSAGE"` and `"/"` placeholders in the synthetic request
+  (no matcher on this path can read a method or URL — that is why they are placeholders), and
+  `First()` → `FirstOrDefault()` over a `GroupBy` group, which is never empty.
+
+### Deferred (the remaining slice of ADR 0013)
+
+AMQP. Not written; the ADR holds its shape, and the image-size revisit point is tied to it. The
 dashboard's Messages screen shows broker messages already — it reads the same inbox — but has no
-channel filter for them yet.
+channel filter for them yet, and broker mappings have no editing surface on the dashboard.

@@ -597,13 +597,25 @@ public static class MockifyrHost
             // subscribes to nothing starts no consumer and joins no group.
             var topics = (builder.Configuration["kafka-subscribe"] ?? string.Empty)
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            // Serve on consume (ADR 0013, slice 3): the mappings an inbound message is matched against.
+            // Registered whenever a broker is configured, so the admin routes exist as soon as they
+            // could do anything — a stub you can post but that will never be evaluated is a trap.
+            builder.Services.AddSingleton(new Facade.Broker.BrokerMappingStore());
+            builder.Services.AddSingleton(sp => new Facade.Broker.BrokerMappingPlanner(
+                sp.GetRequiredService<Facade.Broker.BrokerMappingStore>(),
+                new Templating.MessageTemplateRenderer(
+                    sp.GetService<IEnvironmentResolver>(), sp.GetService<IClockResolver>())));
+
             if (topics.Length > 0)
             {
                 var group = builder.Configuration["kafka-group"] is { Length: > 0 } g ? g : "mockifyr";
                 builder.Services.AddSingleton(new Facade.Broker.BrokerCaptureOptions(kafka, topics, group));
                 builder.Services.AddHostedService(sp => new Facade.Broker.KafkaCaptureService(
                     sp.GetRequiredService<Facade.Broker.BrokerCaptureOptions>(),
-                    sp.GetRequiredService<IMessageSink>()));
+                    sp.GetRequiredService<IMessageSink>(),
+                    clock: null,
+                    sp.GetRequiredService<Facade.Broker.BrokerMappingPlanner>(),
+                    sp.GetRequiredService<Facade.Broker.IBrokerPublisher>()));
                 Console.WriteLine(
                     $"mockifyr: capturing {string.Join(", ", topics)} into the message inbox as consumer group '{group}'.");
             }
@@ -685,6 +697,13 @@ public static class MockifyrHost
         // WebSocket `filePath` message bodies (G15g) resolve from the conventional <root-dir>/__files directory.
         var filesDirectory = string.IsNullOrWhiteSpace(rootDir) ? null : Path.Combine(rootDir, "__files");
         app.UseMockifyrWebSockets(filesDirectory);
+
+        // Broker mappings (ADR 0013, slice 3): registered only when a broker is configured, so the
+        // routes exist exactly when a mapping posted to them could be evaluated.
+        if (app.Services.GetService<Facade.Broker.BrokerMappingStore>() is { } brokerMappings)
+        {
+            Facade.Broker.BrokerMappingEndpoints.UseMockifyrBrokerMappings(app, brokerMappings);
+        }
 
         // SMS provider profile (G18d, ADR 0009): opt-in via --sms-profile twilio. Mounted ahead of the
         // mock-serving fallback, but a hand-written stub on the same URL still wins (the middleware
