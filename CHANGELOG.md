@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Changed
+## Released
+
+### [v1.10.1](https://github.com/qorpe/mockifyr/releases/tag/v1.10.1) — 2026-08-06
+
+#### Changed
 
 - **A `publish` action on a host with no broker is now reported instead of being silent.** Such a stub
   served its response and emitted nothing, which is indistinguishable from a broker outage — and the
@@ -20,8 +24,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   reported `"key": null, "body": null` on any failure, so a template mistake and an unreachable broker
   looked identical after the fact. Both are recorded now. Nulls remain for the one case where they are
   a fact: rendering itself failed, so there was never a message.
-
-## Released
 
 ### [v1.10.0](https://github.com/qorpe/mockifyr/releases/tag/v1.10.0) — 2026-08-06
 
