@@ -1,1 +1,0 @@
-{"name":"read payments","request":{"method":"GET","urlPathTemplate":"/payments/{paymentId}"},"response":{"status":200,"state":{"operation":"read","collection":"payments","id":"{{request.pathSegments.[1]}}"},"headers":{"Content-Type":"application/json"},"body":"{{state.body}}"},"id":"d1ab52b7-dff0-4f08-a5f6-2aeb89f13e08","uuid":"d1ab52b7-dff0-4f08-a5f6-2aeb89f13e08"}

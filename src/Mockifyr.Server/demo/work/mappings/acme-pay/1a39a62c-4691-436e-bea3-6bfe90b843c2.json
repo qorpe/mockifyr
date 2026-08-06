@@ -1,1 +1,0 @@
-{"name":"Payment status \u2014 settled (after the first poll)","scenarioName":"payment-PAY-1001","requiredScenarioState":"Settled","request":{"method":"GET","urlPath":"/api/payments/PAY-1001/status"},"response":{"status":200,"jsonBody":{"id":"PAY-1001","status":"settled"}},"id":"1a39a62c-4691-436e-bea3-6bfe90b843c2","uuid":"1a39a62c-4691-436e-bea3-6bfe90b843c2"}

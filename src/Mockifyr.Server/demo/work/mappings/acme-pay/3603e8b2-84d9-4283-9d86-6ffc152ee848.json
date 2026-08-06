@@ -1,1 +1,0 @@
-{"name":"Token endpoint \u2014 issued/expires from the tenant clock","request":{"method":"GET","urlPath":"/api/token"},"response":{"status":200,"transformers":["response-template"],"jsonBody":{"issuedAt":"{{now}}","expiresAt":"{{now offset=\u00271 hours\u0027}}"}},"id":"3603e8b2-84d9-4283-9d86-6ffc152ee848","uuid":"3603e8b2-84d9-4283-9d86-6ffc152ee848"}

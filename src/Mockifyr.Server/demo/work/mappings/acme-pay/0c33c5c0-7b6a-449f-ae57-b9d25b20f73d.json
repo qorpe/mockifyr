@@ -1,1 +1,0 @@
-{"name":"gRPC Greeter.SayHello","request":{"method":"POST","urlPath":"/mockifyr.grpc.test.Greeter/SayHello","bodyPatterns":[{"equalToJson":"{ \u0022name\u0022: \u0022Ada\u0022 }"}]},"response":{"status":200,"jsonBody":{"message":"Hello Ada \u2014 served by a Mockifyr stub"}},"id":"0c33c5c0-7b6a-449f-ae57-b9d25b20f73d","uuid":"0c33c5c0-7b6a-449f-ae57-b9d25b20f73d"}

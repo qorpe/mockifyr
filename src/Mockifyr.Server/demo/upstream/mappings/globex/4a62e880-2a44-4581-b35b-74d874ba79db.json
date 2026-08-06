@@ -1,1 +1,0 @@
-{"request":{"method":"GET","urlPath":"/billing/invoices/INV-2041"},"response":{"status":200,"headers":{"Content-Type":"application/json"},"body":"{\u0022id\u0022:\u0022INV-2041\u0022,\u0022amount\u0022:420.0,\u0022status\u0022:\u0022paid\u0022,\u0022settlementBatch\u0022:\u0022B-77\u0022}"},"id":"4a62e880-2a44-4581-b35b-74d874ba79db","uuid":"4a62e880-2a44-4581-b35b-74d874ba79db"}

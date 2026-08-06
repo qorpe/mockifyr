@@ -1,1 +1,0 @@
-{"name":"delete payments","request":{"method":"DELETE","urlPathTemplate":"/payments/{paymentId}"},"response":{"status":204,"state":{"operation":"delete","collection":"payments","id":"{{request.pathSegments.[1]}}"}},"id":"63dcab44-5e4a-4e95-bcde-230092ab292a","uuid":"63dcab44-5e4a-4e95-bcde-230092ab292a"}

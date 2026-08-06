@@ -1,1 +1,0 @@
-{"Id":"PAY-1003","Collection":"payments","Body":"{ \u0022id\u0022: \u0022PAY-1003\u0022, \u0022amount\u0022: 1200,  \u0022currency\u0022: \u0022EUR\u0022, \u0022status\u0022: \u0022authorized\u0022 }","CreatedAt":"2026-08-05T21:34:46.755259+00:00","UpdatedAt":"2026-08-05T21:34:46.755259+00:00","Version":1}

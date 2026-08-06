@@ -1,1 +1,0 @@
-{"name":"update payments","request":{"method":"PUT","urlPathTemplate":"/payments/{paymentId}"},"response":{"status":200,"state":{"operation":"update","collection":"payments","id":"{{request.pathSegments.[1]}}"},"headers":{"Content-Type":"application/json"},"body":"{{state.body}}"},"id":"c373fc17-38f1-4961-88da-a51c2978d014","uuid":"c373fc17-38f1-4961-88da-a51c2978d014"}
