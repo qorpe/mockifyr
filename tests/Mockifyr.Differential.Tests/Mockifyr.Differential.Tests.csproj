@@ -15,6 +15,7 @@
     <!-- Real Redis container for the G16d persistence differential. -->
     <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="Testcontainers.Kafka" />
+    <PackageReference Include="Testcontainers.RabbitMq" />
     <PackageReference Include="Confluent.Kafka" />
     <!-- Real SMTP client for the G18b self-test (WireMock has no SMTP — no oracle exists). -->
     <PackageReference Include="MailKit" />

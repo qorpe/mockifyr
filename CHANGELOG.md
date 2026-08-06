@@ -8,6 +8,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- **AMQP / RabbitMQ** (#291, ADR 0013 slice 4 — the broker channel is complete). `--amqp-uri` and
+  `--amqp-subscribe` give the second transport behind the same seam: publishing from a stub, capture
+  into the message inbox, and serve on consume, all with the mapping shape and admin routes slice 3
+  shipped and no transport-specific matching. `"topic": "exchange/routing.key"` addresses an exchange;
+  a topic with no slash uses the default exchange, so `{"topic":"orders.events"}` means the same thing
+  on both transports. A partition key becomes the message's `MessageId`, since AMQP has no
+  counterpart. A host may configure both brokers, and a `kafka:` or `amqp:` topic prefix then names
+  one — an unprefixed topic goes to Kafka.
+
 ## Released
 
 ### [v1.11.0](https://github.com/qorpe/mockifyr/releases/tag/v1.11.0) — 2026-08-06

@@ -10,6 +10,9 @@
     <!-- The broker client lives here and nowhere else (ADR 0013), exactly as MimeKit lives in the SMTP
          facade. Confluent.Kafka is Apache-2.0, so it is compatible with shipping. -->
     <PackageReference Include="Confluent.Kafka" />
+    <!-- AMQP, the second transport behind the same IBrokerPublisher (ADR 0013 slice 4).
+         RabbitMQ.Client is dual Apache-2.0 / MPL-2.0, so it is compatible with shipping. -->
+    <PackageReference Include="RabbitMQ.Client" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 

@@ -12,11 +12,12 @@
 
 **Enterprise API mocking and integration sandbox platform — self-hosted, multi-protocol, one container.**
 
-Mock any API your systems depend on (HTTP · gRPC · GraphQL · WebSocket · email/SMS) and hand your
+Mock any API your systems depend on (HTTP · gRPC · GraphQL · WebSocket · email/SMS · Kafka/AMQP) and hand your
 partners a sandbox: per-tenant test data, API keys with quotas, and stateful CRUD generated straight
 from an OpenAPI spec. Under the hood: a transport-agnostic request-matching and response engine with
 first-class multi-tenancy, pluggable persistence, and thin facades — in-process library · HTTP
-server · admin REST — plus message mocking with a tenant-scoped inbox and one-call OTP verification.
+server · admin REST — plus message mocking with a tenant-scoped inbox and one-call OTP verification,
+and a broker channel where a stub can answer *and* emit an event, or reply to one with another.
 Clean-room codebase with its own IP and no third-party mock-engine dependencies.
 
 📖 **[Documentation → mockifyr.qorpe.com](https://mockifyr.qorpe.com)** — guides, the full CLI
@@ -119,6 +120,11 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--smtp-port <n>` | capture real SMTP mail into the tenant-scoped message inbox (`/__admin/messages`); the AUTH username names the tenant |
 | `--sms-profile twilio` | emulate Twilio's send-message API: realistic responses the official SDK accepts, every SMS captured into the message inbox |
 | `--message-limit <n>` | per-tenant message inbox bound (default 1000, oldest evicted first) |
+| `--kafka-bootstrap <servers>` | connect to Kafka, so stubs can publish events and broker mappings can serve them |
+| `--kafka-subscribe <topics>` | comma-separated topics to capture into the message inbox and match broker mappings against |
+| `--kafka-group <id>` | consumer group for capture (default `mockifyr`) — two replicas share a subscription |
+| `--amqp-uri <uri>` | the same, over AMQP / RabbitMQ |
+| `--amqp-subscribe <queues>` | comma-separated queues to consume |
 | `--tenant-credential <tenant>:<user>:<pass>` | repeatable — an admin credential scoped to ONE tenant; it cannot address another by renaming `X-Mockifyr-Tenant` (403). `--admin-user` stays the system scope |
 | `--block-outbound-routes` | while the admin API is unauthenticated, refuse the routes that act on the network (start recording, outbound trust, Git) with **403** — an open host cannot be turned into a forward proxy |
 | `--decrypt-key <base64>` | 256-bit key enabling payload cryptography: a stub's `"decrypt"` block makes encrypted request fields matchable/templatable (the journal keeps the ciphertext), and its `"protect"` block encrypts named response fields — or the whole body — on the way out |
