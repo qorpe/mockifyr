@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Added
+## Released
+
+### [v1.12.0](https://github.com/qorpe/mockifyr/releases/tag/v1.12.0) — 2026-08-06
+
+#### Added
 
 - **AMQP / RabbitMQ** (#291, ADR 0013 slice 4 — the broker channel is complete). `--amqp-uri` and
   `--amqp-subscribe` give the second transport behind the same seam: publishing from a stub, capture
@@ -18,8 +22,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   on both transports. A partition key becomes the message's `MessageId`, since AMQP has no
   counterpart. A host may configure both brokers, and a `kafka:` or `amqp:` topic prefix then names
   one — an unprefixed topic goes to Kafka.
-
-## Released
 
 ### [v1.11.0](https://github.com/qorpe/mockifyr/releases/tag/v1.11.0) — 2026-08-06
 
