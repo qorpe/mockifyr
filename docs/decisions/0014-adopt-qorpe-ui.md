@@ -34,9 +34,17 @@ BACK to the kit repo as issues rather than forked around.
   panels); the CodeMirror editor moves to `@qorpe/ui/json-editor` behind a thin
   app wrapper that binds i18n once. Locals deleted: facet-filter, search-box,
   tooltip, dropdown-menu, json-editor.
+- M3 (delivered): every form select becomes the family Select — the ELEVEN
+  `NativeSelect` sites across the stub editor, channel editors, the test-request
+  dialog and the messages behaviors panel. react-hook-form sites go through a
+  15-line `SelectField` Controller bridge (the kit's own D4 pattern); plain-state
+  sites call the kit Select directly. `NativeSelect` is deleted: the OS popup that
+  never matched the app's own menus is gone, and every select now carries an
+  accessible name, the family listbox, the audible keyboard walk, disabled
+  options and the viewport flip.
 - Still local BY DESIGN: the messages/journal sheets (custom interactive headers —
   fed back as the kit's next gap: a header slot), confirm-dialog, context-menu,
-  field/NativeSelect (M3: forms onto kit Select/Field), tabs, domain visuals.
+  Input/Textarea/Label, tabs, domain visuals.
 - Kit gaps fed back so far: 0.1.1 `FacetFilter compact/className` +
   `SearchBox className` (shipped), 0.1.2 `Sheet maxWidth` (shipped), next: a
   Sheet custom-header slot.
