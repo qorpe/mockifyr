@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { fetchAuditEntries, fetchHealth } from '@/lib/api'
 import { useUi } from '@/components/providers'
 import { Input } from '@/components/ui/field'
-import { EmptyState } from '@/components/ui/empty-state'
+import { EmptyState } from '@qorpe/ui'
 
 /**
  * The admin audit trail (#247): who changed what in this tenant, newest first. Read-only by design —

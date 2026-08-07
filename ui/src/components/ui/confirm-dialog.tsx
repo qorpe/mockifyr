@@ -1,5 +1,5 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { Button } from '@/components/ui/button'
+import { Button } from '@qorpe/ui'
 
 /**
  * A small centered confirmation dialog for irreversible actions (delete). Cancel, Escape, and an

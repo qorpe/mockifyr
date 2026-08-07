@@ -16,8 +16,8 @@ import { TenantSwitcher } from './tenant-switcher'
 import {
   DropdownMenu, DropdownMenuCheckItem, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Switch } from '@/components/ui/switch'
+} from '@qorpe/ui'
+import { Switch } from '@qorpe/ui'
 
 interface NavItem { to: string; key: string; icon: React.ComponentType<{ className?: string }>; badge?: string }
 
@@ -204,7 +204,7 @@ function PreferencesMenu({ collapsed }: { collapsed: boolean }) {
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             {LOCALES.map((l) => (
-              <DropdownMenuCheckItem key={l.code} selected={l.code === locale} onSelect={() => setLocale(l.code)}>
+              <DropdownMenuCheckItem key={l.code} checked={l.code === locale} onSelect={() => setLocale(l.code)}>
                 {l.name}
               </DropdownMenuCheckItem>
             ))}
