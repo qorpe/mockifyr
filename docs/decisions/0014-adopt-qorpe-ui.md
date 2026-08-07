@@ -28,9 +28,17 @@ BACK to the kit repo as issues rather than forked around.
 - M1 (this change): Button, Switch, EmptyState, DropdownMenu (CheckItem is a real
   `menuitemcheckbox` now) swap to the kit; `index.css` drops from 159 lines to 21;
   the duplicate `StatusChip` in http-view dies in favour of `badges.StatusCode`.
-- M2 (next): forms move onto the kit Select/Field (the four `NativeSelect` sites),
-  sheet/tooltip/confirm rework onto kit twins.
-- Kit gaps fed back for 0.1.1: `FacetFilter` needs `compact` + `className`,
-  `SearchBox` needs `className`.
+- M2 (delivered): FacetFilter/SearchBox swap onto kit 0.1.1's adopter-feedback
+  additions; tooltips rework onto the kit wrapper; the stub-editor and ws-detail
+  sheets ride the kit Sheet (0.1.2's `maxWidth` was fed back for the wide/narrow
+  panels); the CodeMirror editor moves to `@qorpe/ui/json-editor` behind a thin
+  app wrapper that binds i18n once. Locals deleted: facet-filter, search-box,
+  tooltip, dropdown-menu, json-editor.
+- Still local BY DESIGN: the messages/journal sheets (custom interactive headers —
+  fed back as the kit's next gap: a header slot), confirm-dialog, context-menu,
+  field/NativeSelect (M3: forms onto kit Select/Field), tabs, domain visuals.
+- Kit gaps fed back so far: 0.1.1 `FacetFilter compact/className` +
+  `SearchBox className` (shipped), 0.1.2 `Sheet maxWidth` (shipped), next: a
+  Sheet custom-header slot.
 - The i18n strings the kit needs arrive via its labels props from this app's
   i18next — the kit itself stays framework-free.

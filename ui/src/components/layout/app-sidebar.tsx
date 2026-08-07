@@ -11,13 +11,12 @@ import { useUi } from '@/components/providers'
 import { clearAdminAuth, fetchJournal, fetchMessages, fetchScenarios, fetchStubs, hasAdminAuth } from '@/lib/api'
 import { LOCALES } from '@/lib/i18n'
 import { BrandMark } from '@/components/ui/brand-mark'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { TenantSwitcher } from './tenant-switcher'
 import {
   DropdownMenu, DropdownMenuCheckItem, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@qorpe/ui'
-import { Switch } from '@qorpe/ui'
+import { Switch, Tooltip } from '@qorpe/ui'
 
 interface NavItem { to: string; key: string; icon: React.ComponentType<{ className?: string }>; badge?: string }
 
@@ -68,8 +67,7 @@ export function AppSidebar() {
   }
 
   return (
-    <TooltipProvider delayDuration={0}>
-      <nav className="flex h-full w-full select-none flex-col overflow-hidden">
+    <nav className="flex h-full w-full select-none flex-col overflow-hidden">
         {/* Header: collapsed → expand button on top, logo below; expanded → logo row with toggle at the end */}
         {collapsed ? (
           <div className="shrink-0 px-2 pb-1 pt-[18px]">
@@ -133,8 +131,7 @@ export function AppSidebar() {
           <TenantSwitcher collapsed={collapsed} />
           <PreferencesMenu collapsed={collapsed} />
         </div>
-      </nav>
-    </TooltipProvider>
+    </nav>
   )
 }
 
@@ -170,9 +167,8 @@ function NavRow({ item, collapsed, label, badge }: { item: NavItem; collapsed: b
 
   if (!collapsed) return link
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+    <Tooltip label={label} side="right">
+      {link}
     </Tooltip>
   )
 }
@@ -246,9 +242,8 @@ function IconButton({ label, to, onClick, children }: { label: string; to?: stri
     <button onClick={onClick} aria-label={label} className="mx-auto flex h-9 w-10 items-center justify-center rounded-lg transition-colors hover:bg-muted">{children}</button>
   )
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{inner}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+    <Tooltip label={label} side="right">
+      {inner}
     </Tooltip>
   )
 }

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { StatusCode } from './badges'
-import { JsonField } from '@/components/ui/json-editor'
+import { JsonField } from '@/components/ui/json-field'
 
 /** A header name/value pair as displayed in request/response views. */
 export interface HeaderPairView { name: string; value: string }

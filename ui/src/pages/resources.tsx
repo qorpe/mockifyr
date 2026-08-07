@@ -13,7 +13,7 @@ import { Button } from '@qorpe/ui'
 import { Input, Label, Textarea } from '@/components/ui/field'
 import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { JsonEditor } from '@/components/ui/json-editor'
+import { JsonEditor } from '@/components/ui/json-field'
 
 const PAGE_SIZE = 50
 

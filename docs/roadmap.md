@@ -677,4 +677,4 @@ Two silent gaps found after G21a/b shipped, by running the released image rather
 test (1.10.1): a `publish` action on a host with no broker did nothing and said nothing, and a failed
 publish recorded that it failed but not what it was carrying. Both closed; both recorded.
 
-- [x] Adopt the published @qorpe/ui kit — M1 drop-ins (Button/Switch/EmptyState/DropdownMenu, tokens contract, StatusChip dedup); M2 (forms + sheet/tooltip/confirm) tracked in ADR 0014.
+- [x] Adopt the published @qorpe/ui kit — M1 drop-ins + M2 (facet/search/tooltip/sheet/json-editor on kit 0.1.2; five locals deleted); M3 (forms onto kit Select/Field, confirm/context) tracked in ADR 0014.

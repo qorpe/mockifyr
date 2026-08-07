@@ -11,9 +11,7 @@ import { cn, formatDateTime, timeAgo } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import { fetchJournal, resetJournal, type JournalEntry } from '@/lib/api'
 import { MethodChip } from '@/components/ui/badges'
-import { Button } from '@qorpe/ui'
-import { FacetFilter } from '@/components/ui/facet-filter'
-import { SearchBox } from '@/components/ui/search-box'
+import { Button, FacetFilter, SearchBox } from '@qorpe/ui'
 import { EmptyState } from '@qorpe/ui'
 import { JournalArt } from '@/components/ui/illustrations'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -171,7 +169,7 @@ export function JournalPage() {
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-          <SearchBox value={search} onCommit={setSearch} placeholder={t('journal.filter')} />
+          <SearchBox value={search} onCommit={setSearch} label={t('journal.filter')} clearLabel={t('common.clear')} placeholder={t('journal.filter')} />
           <FacetFilter label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
             onToggle={(v) => setSelected((s) => toggleSelection(s, 'method', v))} onClear={() => setSelected((s) => clearFacet(s, 'method'))} clearLabel={t('common.clear')} />
           <FacetFilter label={t('journal.status')} options={statusOptions} selected={selected.status ?? EMPTY_SET}

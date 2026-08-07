@@ -10,13 +10,11 @@ import {
   fetchEnvironments, fetchRecordingStatus, importMappings, snapshotRecording, startRecording, stopRecording, type CapturedStub,
 } from '@/lib/api'
 import { MethodChip } from '@/components/ui/badges'
-import { Button } from '@qorpe/ui'
+import { Button, FacetFilter, SearchBox } from '@qorpe/ui'
 import { EmptyState } from '@qorpe/ui'
 import { RecordingsArt } from '@/components/ui/illustrations'
 import { Input } from '@/components/ui/field'
-import { JsonField } from '@/components/ui/json-editor'
-import { FacetFilter } from '@/components/ui/facet-filter'
-import { SearchBox } from '@/components/ui/search-box'
+import { JsonField } from '@/components/ui/json-field'
 import {
   applyFilters, clearFacet, type FacetDef, facetOptions, type Selections, toggleSelection,
 } from '@/lib/faceted'
@@ -137,7 +135,7 @@ export function RecordingsPage() {
           <span className="text-xs text-muted-foreground tabular-nums">· {captured.length}</span>
           {captured.length > 0 && (
             <div className="ms-auto flex flex-wrap items-center gap-2">
-              <SearchBox value={search} onCommit={setSearch} placeholder={t('stubs.filter')} />
+              <SearchBox value={search} onCommit={setSearch} label={t('stubs.filter')} clearLabel={t('common.clear')} placeholder={t('stubs.filter')} />
               <FacetFilter label={t('stubs.method')} options={methodOptions} selected={selected.method ?? EMPTY_SET}
                 onToggle={(v) => setSelected((s) => toggleSelection(s, 'method', v))} onClear={() => setSelected((s) => clearFacet(s, 'method'))} clearLabel={t('common.clear')} />
               <Button variant="primary" size="sm" onClick={() => importStubs.mutate(captured)} disabled={importStubs.isPending}>

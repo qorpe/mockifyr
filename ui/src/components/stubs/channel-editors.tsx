@@ -7,7 +7,7 @@ import { fetchGrpcDescriptors, importOpenApi, saveMessageMapping, saveStub } fro
 import { useUi } from '@/components/providers'
 import { Button } from '@qorpe/ui'
 import { Input, Label, NativeSelect } from '@/components/ui/field'
-import { JsonEditor, JsonField } from '@/components/ui/json-editor'
+import { JsonEditor, JsonField } from '@/components/ui/json-field'
 import { Switch } from '@qorpe/ui'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StubEditorForm } from '@/components/stubs/stub-editor'

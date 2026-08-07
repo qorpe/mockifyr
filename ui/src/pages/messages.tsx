@@ -17,8 +17,7 @@ import {
   messageAttachmentUrl, type MessageBehaviors, type MessageChannel, resetMessageBehaviors, resetMessages,
   saveMessageBehaviors,
 } from '@/lib/api'
-import { Button } from '@qorpe/ui'
-import { SearchBox } from '@/components/ui/search-box'
+import { Button, SearchBox } from '@qorpe/ui'
 import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -193,7 +192,7 @@ export function MessagesPage() {
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-          <SearchBox value={search} onCommit={setSearch} placeholder={t('messages.filter')} />
+          <SearchBox value={search} onCommit={setSearch} label={t('messages.filter')} clearLabel={t('common.clear')} placeholder={t('messages.filter')} />
           <Button variant="outline" className="ms-auto" onClick={() => setBehaviorsOpen(true)}>
             <SlidersHorizontal />{t('messages.behaviors')}
           </Button>
