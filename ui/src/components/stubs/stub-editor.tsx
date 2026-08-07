@@ -10,13 +10,13 @@ import { useUi } from '@/components/providers'
 import { fetchEnvironments, importMappings, saveStub, type Stub } from '@/lib/api'
 import { BODY_OPS, BODY_SUB_OPS, emptyStub, FAULTS, fromMapping, MATCH_OPS, stubSchema, suggestName, toJson, URL_MATCH, type StubForm } from '@/lib/stub-schema'
 import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
-import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
+import { Sheet } from '@qorpe/ui'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ProtocolChip } from '@/components/ui/badges'
 import { Input, Label, NativeSelect, Textarea } from '@/components/ui/field'
 import { Switch } from '@qorpe/ui'
 import { Button } from '@qorpe/ui'
-import { JsonField } from '@/components/ui/json-editor'
+import { JsonField } from '@/components/ui/json-field'
 import { HelpersButton } from '@/components/templating/helpers-dialog'
 import { TestRequestDialog, type TestSeed } from '@/components/stubs/test-request-dialog'
 
@@ -62,11 +62,8 @@ export function StubEditor({ open, onOpenChange, editing, onSaved, initialTab = 
   const title = editing ? t('editor.editTitle') : importing ? t('editor.importTitle') : t('editor.newTitle')
   const description = importing ? t('editor.importDesc') : t('stubs.subtitle')
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent>
-        <SheetHeader title={title} description={description} />
+    <Sheet open={open} onOpenChange={onOpenChange} title={title} description={description}>
         <StubEditorForm editing={editing} initialTab={initialTab} onSaved={() => { onSaved(); onOpenChange(false) }} onCancel={() => onOpenChange(false)} />
-      </SheetContent>
     </Sheet>
   )
 }

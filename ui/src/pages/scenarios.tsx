@@ -6,11 +6,9 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import { fetchScenarios, resetScenarios, setScenarioState, type Scenario } from '@/lib/api'
-import { Button } from '@qorpe/ui'
+import { Button, FacetFilter, SearchBox } from '@qorpe/ui'
 import { EmptyState } from '@qorpe/ui'
 import { ScenariosArt } from '@/components/ui/illustrations'
-import { FacetFilter } from '@/components/ui/facet-filter'
-import { SearchBox } from '@/components/ui/search-box'
 import {
   applyFilters, clearFacet, type FacetDef, facetOptions, type Selections, toggleSelection,
 } from '@/lib/faceted'
@@ -61,7 +59,7 @@ export function ScenariosPage() {
 
       {!isLoading && scenarios.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <SearchBox value={search} onCommit={setSearch} placeholder={t('common.search')} />
+          <SearchBox value={search} onCommit={setSearch} label={t('common.search')} clearLabel={t('common.clear')} placeholder={t('common.search')} />
           <FacetFilter label={t('scenarios.currentState')} options={stateOptions} selected={selected.state ?? EMPTY_SET}
             onToggle={(v) => setSelected((s) => toggleSelection(s, 'state', v))} onClear={() => setSelected((s) => clearFacet(s, 'state'))} clearLabel={t('common.clear')} />
         </div>

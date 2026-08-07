@@ -9,7 +9,7 @@ import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
 import { Button } from '@qorpe/ui'
 import { Input, NativeSelect } from '@/components/ui/field'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { JsonField } from '@/components/ui/json-editor'
+import { JsonField } from '@/components/ui/json-field'
 import { BodyView, HeadersView, StatusChip } from '@/components/ui/http-view'
 
 /** What the runner is seeded with — the editor's current (possibly unsaved) request half. */

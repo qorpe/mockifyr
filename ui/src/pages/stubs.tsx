@@ -10,14 +10,11 @@ import { deleteMessageMapping, deleteStub, fetchEnvironments, fetchMessageMappin
 import { buildStubTree, countStubs, type StubTreeNode } from '@/lib/stub-tree'
 import { CryptoChips, MethodChip, ProtocolChip, StatusCode } from '@/components/ui/badges'
 import { NewStubWorkspace } from '@/components/stubs/channel-editors'
-import { JsonEditor } from '@/components/ui/json-editor'
-import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
+import { JsonEditor } from '@/components/ui/json-field'
+import { Sheet, Tooltip, FacetFilter, SearchBox } from '@qorpe/ui'
 import { Button } from '@qorpe/ui'
-import { FacetFilter } from '@/components/ui/facet-filter'
-import { SearchBox } from '@/components/ui/search-box'
 import { EmptyState } from '@qorpe/ui'
 import { PickArt, StubsArt } from '@/components/ui/illustrations'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { applyFilters, clearFacet, countSelected, type FacetDef, facetOptions, type Selections, toggleSelection } from '@/lib/faceted'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-menu'
@@ -226,28 +223,26 @@ export function StubsPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-semibold">{t('nav.stubs')}</h1>
             <span className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">{stubs.length}</span>
-            <TooltipProvider delayDuration={300}>
-              <div className="ms-auto flex gap-0.5">
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="ghost" size="iconSm" aria-label={t('stubs.expandAll')} onClick={() => setAllOpen(true)} disabled={!filtered.length}><ChevronsUpDown /></Button>
-                </TooltipTrigger><TooltipContent>{t('stubs.expandAll')}</TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="ghost" size="iconSm" aria-label={t('stubs.collapseAll')} onClick={() => setAllOpen(false)} disabled={!filtered.length}><ChevronsDownUp /></Button>
-                </TooltipTrigger><TooltipContent>{t('stubs.collapseAll')}</TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="ghost" size="iconSm" aria-label={t('stubs.export')} onClick={() => void exportAll()} disabled={!stubs.length}><Download /></Button>
-                </TooltipTrigger><TooltipContent>{t('stubs.export')}</TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="ghost" size="iconSm" aria-label={t('stubs.import')} onClick={() => openBlank('json')}><Import /></Button>
-                </TooltipTrigger><TooltipContent>{t('stubs.import')}</TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger asChild>
-                  <Button variant="ghost" size="iconSm" aria-label={t('stubs.newStub')} onClick={() => openBlank('form')}><Plus /></Button>
-                </TooltipTrigger><TooltipContent>{t('stubs.newStub')}</TooltipContent></Tooltip>
-              </div>
-            </TooltipProvider>
+            <div className="ms-auto flex gap-0.5">
+              <Tooltip label={t('stubs.expandAll')}>
+                <Button variant="ghost" size="iconSm" aria-label={t('stubs.expandAll')} onClick={() => setAllOpen(true)} disabled={!filtered.length}><ChevronsUpDown /></Button>
+              </Tooltip>
+              <Tooltip label={t('stubs.collapseAll')}>
+                <Button variant="ghost" size="iconSm" aria-label={t('stubs.collapseAll')} onClick={() => setAllOpen(false)} disabled={!filtered.length}><ChevronsDownUp /></Button>
+              </Tooltip>
+              <Tooltip label={t('stubs.export')}>
+                <Button variant="ghost" size="iconSm" aria-label={t('stubs.export')} onClick={() => void exportAll()} disabled={!stubs.length}><Download /></Button>
+              </Tooltip>
+              <Tooltip label={t('stubs.import')}>
+                <Button variant="ghost" size="iconSm" aria-label={t('stubs.import')} onClick={() => openBlank('json')}><Import /></Button>
+              </Tooltip>
+              <Tooltip label={t('stubs.newStub')}>
+                <Button variant="ghost" size="iconSm" aria-label={t('stubs.newStub')} onClick={() => openBlank('form')}><Plus /></Button>
+              </Tooltip>
+            </div>
           </div>
           {/* flex-none: the tree header is a flex column, so SearchBox's own flex-1 would collapse its height. */}
-          <SearchBox value={search} onCommit={setSearch} placeholder={t('stubs.filter')} className="flex-none bg-background" />
+          <SearchBox value={search} onCommit={setSearch} label={t('stubs.filter')} clearLabel={t('common.clear')} placeholder={t('stubs.filter')} className="flex-none bg-background" />
           {/* One joined segmented group, flush with the search box: three equal cells, shared inner
               borders, rounded only at the outer ends — no gaps, no wrapping. */}
           <div className="grid w-full grid-cols-3">
@@ -352,17 +347,12 @@ export function StubsPage() {
       {menu && <TabContextMenu menu={menu} tabs={tabs} onClose={() => setMenu(null)} closeTab={closeTab} closeMany={closeMany} togglePin={togglePin} />}
 
       {/* WebSocket message-mapping detail: registration JSON as posted, read-only, with delete. */}
-      <Sheet open={wsOpen !== null} onOpenChange={(o) => { if (!o) setWsOpen(null) }}>
-        <SheetContent>
-          <SheetHeader title={t('channels.wsDetail')} description={wsOpen?.trigger} />
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {wsOpen && <JsonEditor value={JSON.stringify(wsOpen.raw, null, 2)} readOnly className="min-h-64" />}
-          </div>
-          <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
-            <Button variant="ghost" onClick={() => setWsOpen(null)}>{t('editor.cancel')}</Button>
-            <Button variant="danger" onClick={() => { if (wsOpen) void removeWs(wsOpen.id) }}>{t('stubs.delete')}</Button>
-          </div>
-        </SheetContent>
+      <Sheet open={wsOpen !== null} onOpenChange={(o) => { if (!o) setWsOpen(null) }} title={t('channels.wsDetail')} description={wsOpen?.trigger}>
+        {wsOpen && <JsonEditor value={JSON.stringify(wsOpen.raw, null, 2)} readOnly className="min-h-64" />}
+        <div className="mt-4 flex justify-end gap-2 border-t border-border pt-3">
+          <Button variant="ghost" onClick={() => setWsOpen(null)}>{t('editor.cancel')}</Button>
+          <Button variant="danger" onClick={() => { if (wsOpen) void removeWs(wsOpen.id) }}>{t('stubs.delete')}</Button>
+        </div>
       </Sheet>
 
       <ConfirmDialog
