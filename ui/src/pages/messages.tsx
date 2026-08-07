@@ -22,7 +22,8 @@ import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
-import { Input, Label, NativeSelect } from '@/components/ui/field'
+import { Input, Label } from '@/components/ui/field'
+import { Select } from '@qorpe/ui'
 
 // "26 B" for tiny payloads, "1.4 KB" above — a 26-byte attachment must not read as "0.0 KB".
 const formatSize = (bytes: number) => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`)
@@ -554,11 +555,13 @@ function BehaviorsSheet({ open, onOpenChange, tenant }: { open: boolean; onOpenC
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t('messages.smtpFault')}</Label>
-                <NativeSelect value={form.smtpFault} onChange={(e) => setForm({ ...form, smtpFault: e.target.value as MessageBehaviors['smtpFault'] })}>
-                  <option value="none">{t('messages.faultNone')}</option>
-                  <option value="reject">{t('messages.faultReject')}</option>
-                  <option value="drop">{t('messages.faultDrop')}</option>
-                </NativeSelect>
+                <Select aria-label={t('messages.smtpFault')} value={form.smtpFault}
+                  onChange={(v) => setForm({ ...form, smtpFault: v as MessageBehaviors['smtpFault'] })}
+                  options={[
+                    { value: 'none', label: t('messages.faultNone') },
+                    { value: 'reject', label: t('messages.faultReject') },
+                    { value: 'drop', label: t('messages.faultDrop') },
+                  ]} />
               </div>
               <div>
                 <Label>{t('messages.smtpDelay')}</Label>

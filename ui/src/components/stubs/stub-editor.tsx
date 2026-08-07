@@ -13,7 +13,8 @@ import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
 import { Sheet } from '@qorpe/ui'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ProtocolChip } from '@/components/ui/badges'
-import { Input, Label, NativeSelect, Textarea } from '@/components/ui/field'
+import { Input, Label, Textarea } from '@/components/ui/field'
+import { SelectField, selectOptions } from '@/components/ui/select-field'
 import { Switch } from '@qorpe/ui'
 import { Button } from '@qorpe/ui'
 import { JsonField } from '@/components/ui/json-field'
@@ -249,10 +250,10 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
             {/* Request */}
             <Section title={t('editor.request')}>
               <div className="grid grid-cols-[110px_1fr] gap-3">
-                <div><Label>{t('stubs.method')}</Label><NativeSelect {...register('method')}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY'].map((m) => <option key={m}>{m}</option>)}</NativeSelect></div>
+                <div><Label>{t('stubs.method')}</Label><SelectField control={control} name="method" label={t('stubs.method')} options={selectOptions(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'ANY'])} /></div>
                 <div><Label>{t('editor.urlMatch')}</Label>
                   <div className="grid grid-cols-[130px_1fr] gap-2">
-                    <NativeSelect {...register('urlMatchType')}>{URL_MATCH.map((u) => <option key={u} value={u}>{u}</option>)}</NativeSelect>
+                    <SelectField control={control} name="urlMatchType" label={t('editor.urlMatch')} options={selectOptions(URL_MATCH)} />
                     <Input {...register('urlValue')} placeholder="/api/v2/…" className={cn('font-mono', errors.urlValue && 'border-danger')} />
                   </div>
                   <FieldError msg={errors.urlValue?.message} />
@@ -261,7 +262,7 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
               <Rows label={t('editor.headerMatchers')} fields={headers.fields} onAdd={() => headers.append({ name: '', operator: 'equalTo', value: '' })} onRemove={headers.remove}
                 render={(i) => (<>
                   <Input {...register(`headers.${i}.name`)} placeholder="Header" />
-                  <NativeSelect {...register(`headers.${i}.operator`)}>{MATCH_OPS.map((o) => <option key={o}>{o}</option>)}</NativeSelect>
+                  <SelectField control={control} name={`headers.${i}.operator`} label={t('editor.headerMatchers')} options={selectOptions(MATCH_OPS)} />
                   <Input {...register(`headers.${i}.value`)} placeholder={t('editor.value')} />
                 </>)} />
               <Rows label={t('editor.bodyMatchers')} fields={bodyPatterns.fields} onAdd={() => bodyPatterns.append({ operator: 'equalToJson', value: '', subOperator: '', subValue: '' })} onRemove={bodyPatterns.remove}
@@ -271,11 +272,11 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
                   const op = watch(`bodyPatterns.${i}.operator`)
                   const isPath = op === 'matchesJsonPath' || op === 'matchesXPath'
                   return (<>
-                    <NativeSelect {...register(`bodyPatterns.${i}.operator`)}>{BODY_OPS.map((o) => <option key={o}>{o}</option>)}</NativeSelect>
+                    <SelectField control={control} name={`bodyPatterns.${i}.operator`} label={t('editor.bodyMatchers')} options={selectOptions(BODY_OPS)} />
                     {isPath ? (
                       <div className="grid grid-cols-[minmax(0,1.3fr)_120px_minmax(0,1fr)] gap-2">
                         <Input {...register(`bodyPatterns.${i}.value`)} placeholder={op === 'matchesXPath' ? '//node' : '$.path.to.field'} className="font-mono" />
-                        <NativeSelect {...register(`bodyPatterns.${i}.subOperator`)}>{BODY_SUB_OPS.map((o) => <option key={o} value={o}>{o || t('editor.none')}</option>)}</NativeSelect>
+                        <SelectField control={control} name={`bodyPatterns.${i}.subOperator`} label={t('editor.bodyMatchers')} options={BODY_SUB_OPS.map((o) => ({ value: o, label: o || t('editor.none') }))} />
                         <Input {...register(`bodyPatterns.${i}.subValue`)} placeholder={t('editor.value')} className="font-mono" />
                       </div>
                     ) : (
@@ -330,7 +331,7 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
             <Section title={t('editor.behavior')}>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>{t('editor.delay')}</Label><Input type="number" {...register('fixedDelayMs')} placeholder="0" className={cn(errors.fixedDelayMs && 'border-danger')} /><FieldError msg={errors.fixedDelayMs?.message} /></div>
-                <div><Label>{t('editor.fault')}</Label><NativeSelect {...register('fault')}>{FAULTS.map((f) => <option key={f} value={f}>{f || t('editor.none')}</option>)}</NativeSelect></div>
+                <div><Label>{t('editor.fault')}</Label><SelectField control={control} name="fault" label={t('editor.fault')} options={FAULTS.map((f) => ({ value: f, label: f || t('editor.none') }))} /></div>
               </div>
               <div>
                 <Label>{t('editor.proxy')}</Label><Input {...register('proxyBaseUrl')} placeholder="https://upstream.example.com" className="font-mono" />
@@ -347,7 +348,7 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
             <Section title={t('editor.webhook')}>
               <p className="-mt-1 text-xs text-muted-foreground">{t('editor.webhookHint')}</p>
               <div className="grid grid-cols-[110px_1fr_120px] gap-3">
-                <div><Label>{t('stubs.method')}</Label><NativeSelect {...register('webhookMethod')}>{['POST', 'PUT', 'GET', 'DELETE', 'PATCH'].map((m) => <option key={m}>{m}</option>)}</NativeSelect></div>
+                <div><Label>{t('stubs.method')}</Label><SelectField control={control} name="webhookMethod" label={t('stubs.method')} options={selectOptions(['POST', 'PUT', 'GET', 'DELETE', 'PATCH'])} /></div>
                 <div>
                   <Label>{t('editor.webhookUrl')}</Label><Input {...register('webhookUrl')} placeholder="https://callback.example.com/hook" className="font-mono" />
                   <EnvPreview url={watch('webhookUrl')} environments={environments} t={t} />

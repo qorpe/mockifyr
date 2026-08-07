@@ -7,7 +7,9 @@ import { cn } from '@/lib/utils'
 import { TENANT_HEADER } from '@/lib/tenants'
 import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
 import { Button } from '@qorpe/ui'
-import { Input, NativeSelect } from '@/components/ui/field'
+import { Input } from '@/components/ui/field'
+import { Select } from '@qorpe/ui'
+import { selectOptions } from '@/components/ui/select-field'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { JsonField } from '@/components/ui/json-field'
 import { BodyView, HeadersView, StatusChip } from '@/components/ui/http-view'
@@ -186,9 +188,8 @@ export function TestRequestDialog({ open, onOpenChange, seed, tenant, environmen
               <p className="text-xs leading-relaxed text-muted-foreground">{t('test.hint')}</p>
 
               <div className="flex items-start gap-2">
-                <NativeSelect value={method} onChange={(e) => setMethod(e.target.value)} className="w-[110px] shrink-0 font-mono">
-                  {METHODS.map((m) => <option key={m}>{m}</option>)}
-                </NativeSelect>
+                <Select aria-label={t('stubs.method')} value={method} onChange={setMethod}
+                  options={selectOptions(METHODS)} className="w-[110px] shrink-0 font-mono" />
                 <div className="min-w-0 flex-1">
                   <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="/api/v2/…" className="font-mono" autoFocus />
                   {(urlPreview.changed || urlPreview.unknown.length > 0) && (
