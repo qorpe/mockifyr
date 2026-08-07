@@ -9,9 +9,9 @@ import {
   resetResources, seedResourceCollection, type ResourceDoc,
 } from '@/lib/api'
 import { useUi } from '@/components/providers'
-import { Button } from '@/components/ui/button'
+import { Button } from '@qorpe/ui'
 import { Input, Label, Textarea } from '@/components/ui/field'
-import { EmptyState } from '@/components/ui/empty-state'
+import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { JsonEditor } from '@/components/ui/json-editor'
 

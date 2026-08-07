@@ -17,9 +17,9 @@ import {
   messageAttachmentUrl, type MessageBehaviors, type MessageChannel, resetMessageBehaviors, resetMessages,
   saveMessageBehaviors,
 } from '@/lib/api'
-import { Button } from '@/components/ui/button'
+import { Button } from '@qorpe/ui'
 import { SearchBox } from '@/components/ui/search-box'
-import { EmptyState } from '@/components/ui/empty-state'
+import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'

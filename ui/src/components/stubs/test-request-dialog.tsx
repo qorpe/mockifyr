@@ -6,7 +6,7 @@ import { AlertTriangle, Copy, FlaskConical, Plus, Send, Terminal, WandSparkles, 
 import { cn } from '@/lib/utils'
 import { TENANT_HEADER } from '@/lib/tenants'
 import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
-import { Button } from '@/components/ui/button'
+import { Button } from '@qorpe/ui'
 import { Input, NativeSelect } from '@/components/ui/field'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { JsonField } from '@/components/ui/json-editor'

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Braces, Filter, Network, Puzzle } from 'lucide-react'
 import { SearchBox } from '@/components/ui/search-box'
-import { EmptyState } from '@/components/ui/empty-state'
+import { EmptyState } from '@qorpe/ui'
 import { ExtensionsArt } from '@/components/ui/illustrations'
 
 // The Extensions screen documents the engine's built-in capabilities and extension seams. These are

@@ -10,8 +10,8 @@ import {
   fetchEnvironments, fetchRecordingStatus, importMappings, snapshotRecording, startRecording, stopRecording, type CapturedStub,
 } from '@/lib/api'
 import { MethodChip } from '@/components/ui/badges'
-import { Button } from '@/components/ui/button'
-import { EmptyState } from '@/components/ui/empty-state'
+import { Button } from '@qorpe/ui'
+import { EmptyState } from '@qorpe/ui'
 import { RecordingsArt } from '@/components/ui/illustrations'
 import { Input } from '@/components/ui/field'
 import { JsonField } from '@/components/ui/json-editor'

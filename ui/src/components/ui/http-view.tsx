@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { StatusCode } from './badges'
 import { JsonField } from '@/components/ui/json-editor'
 
 /** A header name/value pair as displayed in request/response views. */
@@ -10,16 +11,9 @@ function prettyBody(body: string): string {
   try { return JSON.stringify(JSON.parse(body), null, 2) } catch { return body }
 }
 
-function statusTone(status: number): string {
-  if (status >= 500) return 'text-danger bg-danger-bg border-danger-border'
-  if (status >= 400) return 'text-warning bg-warning-bg border-warning-border'
-  return 'text-success bg-success-bg border-success-border'
-}
-
+/** ONE status-code chip per app (B-series dedup): the badges implementation is it. */
 export function StatusChip({ status }: { status: number }) {
-  return (
-    <span className={cn('inline-flex shrink-0 rounded-md border px-2 py-0.5 font-mono text-[11px] font-bold', statusTone(status))}>{status}</span>
-  )
+  return <StatusCode code={status} />
 }
 
 export function HeadersView({ headers, label }: { headers: HeaderPairView[]; label: string }) {

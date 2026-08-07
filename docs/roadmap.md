@@ -676,3 +676,5 @@ Stryker on the pure logic. Recorded in `docs/parity/g21-broker.md`.
 Two silent gaps found after G21a/b shipped, by running the released image rather than by a failing
 test (1.10.1): a `publish` action on a host with no broker did nothing and said nothing, and a failed
 publish recorded that it failed but not what it was carrying. Both closed; both recorded.
+
+- [x] Adopt the published @qorpe/ui kit — M1 drop-ins (Button/Switch/EmptyState/DropdownMenu, tokens contract, StatusChip dedup); M2 (forms + sheet/tooltip/confirm) tracked in ADR 0014.
