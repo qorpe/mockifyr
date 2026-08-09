@@ -23,8 +23,19 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release
 
+      # --logger trx so a failure keeps its NAME. The console logger prints a summary and lets the
+      # detail scroll past, which is how an intermittent red once cost a diagnosis: all that survived
+      # was "1 failed" (#320).
       - name: Test (unit)
-        run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Differential"
+        run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Differential" --logger "trx" --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-unit
+          path: TestResults/
+          if-no-files-found: ignore
 
   benchmarks:
     name: Engine benchmarks
@@ -207,6 +218,16 @@ jobs:
       # discarded anyway. Disabling it removes a second registry pull (the one that flaked) without
       # touching what the tests validate.
       - name: Differential tests (real WireMock via Testcontainers)
-        run: dotnet test tests/Mockifyr.Differential.Tests -c Release
+        run: dotnet test tests/Mockifyr.Differential.Tests -c Release --logger "trx" --results-directory TestResults
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
+
+      # Uploaded on success too: a suite that is green in aggregate can still hold the run where a
+      # flake did NOT fire, and comparing the two is how the next one gets characterised.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-differential
+          path: TestResults/
+          if-no-files-found: ignore

@@ -147,3 +147,25 @@ oracle and will use alternative validation. Each slice states its method.
 - **Regression cases:** `G15dWebSocketTests` (echo round-trip; `equalTo` routing) +
   `G15eWebSocketBroadcastTests` (admin `channels/send`; broadcast `channelTarget`) +
   `G15gWebSocketConnectFileTests` (connect-time unsolicited send; `filePath` body) — 6 self-tests.
+
+## Broadcast reaches the channels the server has registered (#325)
+
+An admin broadcast (`POST /__admin/channels/send`) and a `channelTarget: broadcast` send both go to the
+channels in the registry. A client's `ConnectAsync` returns when the **client** finishes its handshake;
+the server adds the channel only after `AcceptWebSocketAsync()` returns. Between those two moments the
+client believes it is connected and the registry does not know it exists, so a broadcast in that window
+skips it.
+
+**This is a property of the protocol, not a defect to fix.** No amount of server-side care removes the
+gap between a client's handshake completing and the server's accept returning, and an operator
+broadcasting to a client that connected microseconds earlier has no way to know whether it made it.
+Stated here rather than left for somebody to discover from a message that never arrived.
+
+It cost a diagnosis first. `G15eWebSocketBroadcastTests` connected two clients and broadcast
+immediately, which failed intermittently — once on a pull request that changed only `CHANGELOG.md` and
+a version number. The tests now make registration **observable**: an echo mapping answers a probe, and
+the endpoint registers the channel *before* entering its receive loop, so a reply is proof. Ten
+consecutive runs green.
+
+The rejected alternative was a sleep. It would have hidden the race rather than closed it, and charged
+every future run the time it took to hide it — while still failing on a slow enough machine.
