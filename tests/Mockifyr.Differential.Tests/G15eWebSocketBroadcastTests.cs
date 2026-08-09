@@ -24,8 +24,9 @@ public sealed class G15eWebSocketBroadcastTests
         await host.StartAsync();
         var http = HttpAddress(host);
 
-        using var a = await ConnectAsync(http, "/ch");
-        using var b = await ConnectAsync(http, "/ch");
+        await RegisterReadyEchoAsync(http);
+        using var a = await ConnectRegisteredAsync(http, "/ch");
+        using var b = await ConnectRegisteredAsync(http, "/ch");
 
         using (var admin = new HttpClient { BaseAddress = http })
         using (var content = new StringContent("""{"message":{"body":{"data":"broadcast-hello"}}}""", Encoding.UTF8, "application/json"))
@@ -61,8 +62,9 @@ public sealed class G15eWebSocketBroadcastTests
             (await admin.PostAsync("/__admin/message-mappings", content)).EnsureSuccessStatusCode();
         }
 
-        using var a = await ConnectAsync(http, "/room");
-        using var b = await ConnectAsync(http, "/room");
+        await RegisterReadyEchoAsync(http);
+        using var a = await ConnectRegisteredAsync(http, "/room");
+        using var b = await ConnectRegisteredAsync(http, "/room");
 
         await SendAsync(a, "shout");
 
@@ -78,6 +80,55 @@ public sealed class G15eWebSocketBroadcastTests
             .First(a => a.StartsWith("http://", StringComparison.Ordinal))
             .Replace("[::]", "127.0.0.1").Replace("0.0.0.0", "127.0.0.1");
         return new Uri(address);
+    }
+
+    /// <summary>The probe a client sends to learn that the server has registered its channel.</summary>
+    private const string ReadyProbe = "__mockifyr-ready";
+
+    /// <summary>What the echo mapping answers it with.</summary>
+    private const string ReadyReply = "__mockifyr-registered";
+
+    /// <summary>
+    /// Registers an echo mapping used only to observe channel registration. Its trigger is a literal
+    /// nothing else in these tests sends, so it cannot collide with the messages under test.
+    /// </summary>
+    private static async Task RegisterReadyEchoAsync(Uri http)
+    {
+        const string mapping =
+            """
+            {
+              "trigger": { "type": "message", "message": { "body": { "equalTo": "__mockifyr-ready" } } },
+              "actions": [ { "type": "send", "message": { "body": { "data": "__mockifyr-registered" } } } ]
+            }
+            """;
+
+        using var admin = new HttpClient { BaseAddress = http };
+        using var content = new StringContent(mapping, Encoding.UTF8, "application/json");
+        (await admin.PostAsync("/__admin/message-mappings", content)).EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Connects, then waits until the server has actually registered the channel.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ClientWebSocket.ConnectAsync</c> returns when the <b>client</b> finishes the handshake. The
+    /// server adds the channel to its registry only after <c>AcceptWebSocketAsync()</c> returns, so
+    /// between those two moments the client believes it is connected and a broadcast would skip it.
+    /// That window is what made these tests fail intermittently (#325).
+    /// </para>
+    /// <para>
+    /// The endpoint registers the channel <b>before</b> entering its receive loop, so a reply to the
+    /// probe is proof of registration. Sleeping instead would hide the race rather than close it, and
+    /// would cost every run the time it takes to hide it.
+    /// </para>
+    /// </remarks>
+    private static async Task<ClientWebSocket> ConnectRegisteredAsync(Uri http, string path)
+    {
+        var client = await ConnectAsync(http, path);
+        await SendAsync(client, ReadyProbe);
+        Assert.Equal(ReadyReply, await ReceiveAsync(client));
+        return client;
     }
 
     private static async Task<ClientWebSocket> ConnectAsync(Uri http, string path)
