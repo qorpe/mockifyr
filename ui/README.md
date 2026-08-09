@@ -7,17 +7,21 @@ matching/serving; the .NET side is untouched by this project.
 ## Stack
 
 - **React 19 + TypeScript + Vite**
-- **Tailwind CSS v4** with a token-first design system (`src/index.css`)
-- **shadcn/ui**-style components on **Radix** primitives (`src/components/ui/`)
+- **[`@qorpe/ui`](https://www.npmjs.com/package/@qorpe/ui)** — the qorpe family kit: tokens,
+  primitives and composites, pinned exact and gated for freshness in CI
+- **Tailwind CSS v4**, configured by the kit's `tokens.css` (this app adds only `--brand`)
 - **React Router**, **react-i18next** (6 locales incl. RTL), **lucide-react** icons
 
 ## Design system
 
-All colors/radii are CSS variables in `src/index.css`. Re-skinning a tenant (or lifting this into
-the omercelik.dev starter pack) is a one-file change — override `--primary` and, if wanted, the
-neutral ramp. The accent default is near-black; dark mode is class-driven (`.dark`). Semantic status
-colors (success/warning/danger/info/violet) are deliberately separate from the accent. The shell,
-sidebar collapse/tooltip behavior, and rounded scroll-surface mirror the Praxis design language.
+**The standard is not here.** This dashboard composes the family kit, so the rules live with the
+package: [`docs/ui-standard.md` in qorpe/ui](https://github.com/qorpe/ui/blob/main/docs/ui-standard.md),
+with the component inventory generated from its barrel. What this repo decided — which components
+came from here, which stayed local, and why — is [ADR 0014](../docs/decisions/0014-adopt-qorpe-ui.md).
+
+`src/index.css` is 21 lines: it imports the kit's `tokens.css` and adds `--brand` (the logo blue,
+deliberately outside the kit ramp). Re-skinning stays a one-file change. Dark mode is class-driven
+(`.dark`); the semantic status ramp is separate from the accent — both are the kit's rules now.
 
 ## Develop
 

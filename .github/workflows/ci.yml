@@ -158,6 +158,18 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Kit freshness (@qorpe/ui)
+        # The dashboard composes the family kit; falling silently behind it is how one
+        # console drifts out of the family. Skips honestly when the registry is
+        # unreachable (air-gapped), red when the pin is genuinely stale.
+        working-directory: .
+        run: ./scripts/kit-freshness.sh
+
+      - name: Lint
+        # CLAUDE.md §3a demands tsc/lint/build for every UI change; CI ran only build,
+        # so the one gate that reads the code for smells was never actually a gate.
+        run: pnpm lint
+
       - name: Build (type-check + bundle)
         run: pnpm build
 

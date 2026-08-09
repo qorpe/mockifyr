@@ -42,9 +42,30 @@ BACK to the kit repo as issues rather than forked around.
   never matched the app's own menus is gone, and every select now carries an
   accessible name, the family listbox, the audible keyboard walk, disabled
   options and the viewport flip.
-- Still local BY DESIGN: the messages/journal sheets (custom interactive headers —
-  fed back as the kit's next gap: a header slot), confirm-dialog, context-menu,
-  Input/Textarea/Label, tabs, domain visuals.
+### What is still local, and WHY (audited 2026-08-09)
+
+"By design" without a reason is how a duplicate hides. Every local component now carries
+one, or a trigger that ends it:
+
+| Local | Kit twin? | Reason it stays — or the trigger that ends it |
+|---|---|---|
+| `journal/journal-detail`, `pages/messages` sheets | `Sheet` | Their headers are INTERACTIVE (hover-to-copy subject lines, channel-aware metadata). The kit's title is a string. Filed as the kit's next gap: a `header` slot ([qorpe/ui#29](https://github.com/qorpe/ui/issues/29)). **Trigger:** that slot ships. |
+| `ui/field` (Input/Textarea/Label) | `Field`, `Input`, `Textarea` | The kit's `Field` wires label+description+error as ONE anatomy; this app's forms label separately (`<Label>` above a grid of controls) and would need re-layout, not re-import. **Trigger:** the next form-heavy screen — it is built on the kit's `Field` and the old ones follow. |
+| `ui/tabs` | `TabStrip`/`TabPanel` | Radix Tabs here host ROUTED, lazily-mounted panels (stub editor Form/JSON, message detail); the kit's strip owns its own selection state. **Trigger:** the kit's strip grows a controlled-panel story, or these screens stop routing through tabs. |
+| `ui/confirm-dialog` | `Dialog` + `VerbButton` | The kit's confirm lives INSIDE `VerbButton` (confirm-before-verb); this app's destructive actions are not admin verbs over the `AdminResult` envelope, so the pattern does not fit yet. **Trigger:** the dashboard adopts the verb envelope. |
+| `ui/context-menu` | — (not promoted) | The kit deliberately did NOT take it: this implementation has no keyboard support, and shipping that into the family would export a defect. Written in the extraction RFC's D3. **Trigger:** a second consumer needs right-click menus → rebuild on Radix, in the kit. |
+| `layout/app-shell`, `layout/app-sidebar`, `layout/tenant-switcher`, `command-palette`, `login-gate`, `error-boundary` | `AppShell`, `PageHeader`, `CommandPalette` | **The real debt (~690 lines).** These predate the kit and were missed by M1–M3 because they are shell, not screens. The kit's `AppShell` takes nav items as props and would host this nav; the sidebar's live per-tenant count badges and the tenant switcher are mockifyr-domain and stay. **Trigger: M4** — one slice, visual-diffed against the current shell, because the shell is the one surface where a regression is felt on every screen. |
+| `ui/badges`, `ui/http-view`, `ui/illustrations`, `ui/brand-mark`, `stubs/*`, `templating/*` | — | Domain visuals: HTTP methods, protocols, status ramps, product art, brand. Adopting the kit is not a restyle; these are the app's own vocabulary (RFC D7: mechanism in the kit, taxonomy app-side). Permanent. |
+
+An audit on 2026-08-09 also found this repo still shipping a 448-line `docs/design-system.md`
+that declared itself the single source of truth and told the next project to "copy the
+primitives" — the exact habit the extraction ended. It is a pointer stub now, as is the
+dashboard README's design-system section. The standard lives in the kit, with the component
+inventory generated from its barrel.
+
+One standard violation survived the same way: `ui/sheet.tsx` kept a literal `bg-black/40`
+scrim after the kit's B1 turned that into `--overlay`. Fixed; the kit's rule ("a literal
+scrim or shadow in a component is a defect") now holds here too.
 - Kit gaps fed back so far: 0.1.1 `FacetFilter compact/className` +
   `SearchBox className` (shipped), 0.1.2 `Sheet maxWidth` (shipped), next: a
   Sheet custom-header slot.
