@@ -1,0 +1,82 @@
+# Full-Docker variant of the demo host — no .NET SDK needed on the machine.
+# Choices made for you: persistence = Postgres, admin auth = Basic (admin / demo123).
+#
+#   cd demo/compose && docker compose up --build
+#   Dashboard : http://localhost:8090/__mockifyr   (login: admin / demo123)
+#   Mock API  : http://localhost:8090
+#   Upstream  : http://localhost:9091              (the "real API" for the recording act)
+#
+# Ports are offset (+10/+1) so this can run NEXT TO the local ./demo/start.sh setup.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mockifyr
+      POSTGRES_PASSWORD: mockifyr
+      POSTGRES_DB: mockifyr
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mockifyr"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  mockifyr:
+    # Pinned release image — deliberately NOT :latest (a demo must not change under you;
+    # bump the pin consciously). To run the local working tree instead, swap `image:` for
+    #   build: { context: ../.. }
+    image: ghcr.io/qorpe/mockifyr:1.12.0
+    command:
+      - dotnet
+      - Mockifyr.Server.dll
+      - --port=8080
+      - --https-port=8443
+      - --dashboard=/app/dashboard
+      - --root-dir=/work
+      - --postgres=Host=postgres;Database=mockifyr;Username=mockifyr;Password=mockifyr
+      - --sms-profile=twilio
+      - --smtp-port=2525
+      - --sandbox-auth=true
+      - --audit=true
+      - --admin-user=admin
+      - --admin-pass=demo123
+    ports:
+      - "8090:8080"
+      - "2526:2525"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  upstream:
+    image: ghcr.io/qorpe/mockifyr:1.12.0
+    command:
+      - dotnet
+      - Mockifyr.Server.dll
+      - --port=8080
+      - --root-dir=/work
+    ports:
+      - "9091:8080"
+
+  # The demo screen + step executor, fully containerized: a Docker-only machine runs the
+  # complete demo at http://localhost:7789 — no .NET, node, jq or grpcurl on the host.
+  runner:
+    build:
+      context: .
+      dockerfile: runner.Dockerfile
+    working_dir: /repo
+    volumes:
+      - ../..:/repo
+    environment:
+      RUNNER_BIND: 0.0.0.0
+      MOCKIFYR_MAIN: http://mockifyr:8080
+      MOCKIFYR_UP: http://upstream:8080
+      MOCKIFYR_GRPC: mockifyr:8443
+      MOCKIFYR_SMTP_HOST: mockifyr
+      MOCKIFYR_SMTP_PORT: "2525"
+      MOCKIFYR_WS: ws://mockifyr:8080/stream
+      MOCKIFYR_BASIC: admin:demo123
+      PAGE_ENGINE_URL: http://localhost:8090/__admin/health
+    ports:
+      - "127.0.0.1:7789:7788"
+    depends_on:
+      - mockifyr
+      - upstream

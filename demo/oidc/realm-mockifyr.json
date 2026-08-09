@@ -1,0 +1,84 @@
+{
+  "realm": "mockifyr",
+  "enabled": true,
+  "registrationAllowed": false,
+  "users": [
+    {
+      "username": "demo",
+      "email": "demo@acme-payments.example",
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo123",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant": [
+          "acme-pay"
+        ]
+      }
+    },
+    {
+      "username": "globex",
+      "email": "ops@globex-retail.example",
+      "firstName": "Globex",
+      "lastName": "Ops",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "globex123",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant": [
+          "globex"
+        ]
+      }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "mockifyr-dashboard",
+      "name": "Mockifyr Dashboard",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:8080/*",
+        "http://127.0.0.1:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8080",
+        "http://127.0.0.1:8080"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

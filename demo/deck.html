@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mockifyr — Enterprise API Mock &amp; Integration Sandbox</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131824; --ink: #e8ecf3; --dim: #8b94a7;
+    --accent: #4f8cff; --accent2: #34d399; --warn: #f59e0b; --danger: #f87171;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--ink);
+    font: 400 clamp(14px, 1.6vw, 22px)/1.55 -apple-system, "Segoe UI", Inter, sans-serif; }
+  .slide { display: none; height: 100vh; padding: 6vh 8vw; flex-direction: column; justify-content: center; }
+  .slide.active { display: flex; }
+  .kicker { color: var(--accent); font-weight: 600; text-transform: uppercase;
+    letter-spacing: .14em; font-size: .62em; margin-bottom: 1.1em; }
+  h1 { font-size: 2.6em; font-weight: 700; letter-spacing: -.02em; line-height: 1.12; }
+  h2 { font-size: 1.9em; font-weight: 700; letter-spacing: -.015em; margin-bottom: .7em; }
+  .sub { color: var(--dim); font-size: 1.08em; margin-top: .8em; max-width: 34em; }
+  ul { list-style: none; margin-top: .4em; }
+  li { padding: .34em 0 .34em 1.4em; position: relative; max-width: 40em; }
+  li::before { content: "—"; position: absolute; left: 0; color: var(--accent); }
+  li b { color: #fff; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; align-items: start; }
+  .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2vw; align-items: stretch; }
+  .card { background: var(--panel); border: 1px solid #232b3d; border-radius: 14px; padding: 1.1em 1.3em; }
+  .card h3 { font-size: 1em; margin-bottom: .4em; color: #fff; }
+  .card p, .card li { font-size: .82em; color: var(--dim); }
+  .card .big { font-size: 1.7em; font-weight: 700; color: var(--accent2); font-family: var(--mono); }
+  code, .mono { font-family: var(--mono); font-size: .82em; background: #1a2233;
+    padding: .12em .42em; border-radius: 6px; color: #bcd3ff; white-space: nowrap; }
+  pre { background: #0e1420; border: 1px solid #232b3d; border-radius: 12px;
+    padding: 1em 1.2em; font-family: var(--mono); font-size: .72em; line-height: 1.6;
+    color: #bcd3ff; overflow-x: auto; margin-top: 1em; }
+  pre .c { color: #5b6478; } pre .g { color: var(--accent2); } pre .y { color: var(--warn); }
+  .foot { position: fixed; bottom: 2.2vh; right: 3vw; color: #3a4356; font-size: .6em; font-family: var(--mono); }
+  .tag { display: inline-block; font-size: .58em; font-family: var(--mono); border: 1px solid #2c3650;
+    color: var(--dim); border-radius: 999px; padding: .12em .7em; margin: .15em .3em .15em 0; }
+  .accent { color: var(--accent); } .green { color: var(--accent2); } .warn { color: var(--warn); }
+  .flow { display: flex; gap: .6em; flex-wrap: wrap; margin-top: 1.2em; }
+  .flow .step { background: var(--panel); border: 1px solid #232b3d; border-radius: 10px;
+    padding: .5em .9em; font-size: .72em; color: var(--dim); }
+  .flow .step b { color: #fff; display: block; font-size: 1.05em; }
+</style>
+</head>
+<body>
+
+<section class="slide active">
+  <div class="kicker">Live demo · v1.9</div>
+  <h1>Mockifyr</h1>
+  <p class="sub">An enterprise <b style="color:#fff">API mock &amp; integration sandbox</b> platform.
+  One engine — REST, callbacks, e-mail, SMS, gRPC, GraphQL, WebSocket, events — multi-tenant by construction,
+  and honest about whether your mock still tells the truth.</p>
+  <div style="margin-top:2em">
+    <span class="tag">.NET 10</span><span class="tag">zero-dependency core</span>
+    <span class="tag">multi-tenant</span><span class="tag">Apache-2.0</span>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The problem</div>
+  <h2>Integration environments are where sprints go to die</h2>
+  <ul>
+    <li>The real dependency is <b>shared, rate-limited, flaky</b> — or doesn't exist yet.</li>
+    <li>Hand-rolled mocks answer only the happy path — <b>no callbacks, no messages, no failures</b>.</li>
+    <li>Worst of all: a mock that <b>silently drifts</b> from the real API manufactures confidence.
+        Green builds, broken production.</li>
+  </ul>
+  <p class="sub">A mock is infrastructure. It should be provisioned, scoped, observed — and continuously
+  checked against the contract and against reality.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">What it is</div>
+  <h2>A pure engine, thin edges, tenants everywhere</h2>
+  <div class="cols">
+    <ul>
+      <li><b>Core engine</b>: matching + templating, zero external dependencies, no I/O.</li>
+      <li><b>Facades at the edge</b>: HTTP, Admin REST, gRPC, WebSocket, SMTP, SMS-provider, broker.
+          Transport never leaks inward.</li>
+      <li><b>Multi-tenancy is first-class</b>: every store and engine entry point takes a tenant —
+          forgetting scope is a <b>compile error</b>, not an incident.</li>
+      <li><b>Persistence seam</b>: in-memory, file, LiteDB, Postgres, Redis — same behavior on all.</li>
+    </ul>
+    <pre>tenant ──▶ facade (wire) ──▶ engine (pure) ──▶ stores (scoped)
+                 │                                  ▲
+                 └── post-serve: webhook / publish ─┘</pre>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Demo map</div>
+  <h2>One story: Acme Payments</h2>
+  <div class="flow">
+    <div class="step"><b>1 · Spec → sandbox</b>OpenAPI import, live CRUD, API keys &amp; quotas</div>
+    <div class="step"><b>2 · Matching</b>validation criteria + near-miss diagnostics</div>
+    <div class="step"><b>3 · Callbacks</b>answer 202, fire the webhook</div>
+    <div class="step"><b>4 · Messages</b>SMS · e-mail · OTP, one inbox</div>
+    <div class="step"><b>5 · Beyond HTTP</b>gRPC · GraphQL · WebSocket</div>
+    <div class="step"><b>6 · Scenarios</b>stateful flows</div>
+    <div class="step"><b>7 · Record &amp; drift</b>mock reality, catch it moving</div>
+    <div class="step"><b>8 · Time · chaos · contract</b>clock, degradation, conformance</div>
+  </div>
+  <p class="sub">Two tenants on one host: <code>acme-pay</code> is the star; <code>globex</code> proves
+  isolation and plays the recording story. Everything you'll see is scoped by tenant.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Act 1</div>
+  <h2>From API spec to shareable sandbox</h2>
+  <ul>
+    <li>Paste the OpenAPI document → <b>every operation becomes a stub</b>; resource-shaped paths
+        become <b>live CRUD</b> over a real document store.</li>
+    <li>Seed realistic data; documents survive restarts on every persistence backend.</li>
+    <li>Issue <code>mfk_</code> API keys — <b>one-time reveal</b>, salted-hash storage,
+        per-key hourly quotas.</li>
+    <li>The key <b>is</b> the tenant. Invalid key → honest 401. Over quota →
+        honest <b>429</b> with <code>X-RateLimit-*</code> + <code>Retry-After</code>.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Act 2</div>
+  <h2>Matching criteria — and <span class="accent">why didn't it match?</span></h2>
+  <div class="cols">
+    <ul>
+      <li>URL/method, headers, query, cookies; body: <code>equalToJson</code>,
+          <code>matchesJsonPath</code>, JSON Schema, XML/XPath, regex, logic combinators, priorities.</li>
+      <li>Responses are templated from the request — path segments, headers, body fields.</li>
+      <li>The 404 you serve is <b>byte-stable</b>; diagnosis lives on the admin surface.</li>
+    </ul>
+    <pre>$ demo near-miss
+"attributes": [
+  { "attribute": "urlPath",                <span class="g">"matched": true</span> },
+  { "attribute": "method",                 <span class="g">"matched": true</span> },
+  { "attribute": "headers['X-Partner-Key']", <span class="y">"matched": false</span>,
+    "actual": "WRONG" },
+  { "attribute": "bodyPatterns[0]",        <span class="g">"matched": true</span> } ]</pre>
+  </div>
+  <p class="sub">Named in the mapping JSON's own vocabulary — you can grep your own stub file for it.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Act 3</div>
+  <h2>Callbacks: answer now, call back later</h2>
+  <ul>
+    <li>The stub answers <b>202 immediately</b>; the webhook fires after a configurable delay,
+        templated from the original request.</li>
+    <li>Delivery is captured in the request journal: URL, payload, response, <code>delivered</code> —
+        or the error if the receiver was down.</li>
+    <li>The same post-serve seam <b>publishes to Kafka</b> (<code>publish</code> action): the sandbox
+        answers the request <i>and</i> emits the event — validated against a real broker container.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Act 4</div>
+  <h2>Messages: your app sends real mail &amp; SMS — nobody receives it</h2>
+  <ul>
+    <li><b>SMTP capture</b>: a real ESMTP listener; the AUTH username names the tenant.</li>
+    <li><b>Provider-shaped SMS</b>: the official SDK works unchanged — realistic responses,
+        realistic error codes, simulated provider failures.</li>
+    <li><b>One inbox</b> for e-mail, SMS — and broker messages — with a verify surface:
+        <code>GET /__admin/messages/otp</code> returns the code your E2E test needs.</li>
+    <li>Behaviors: SMTP faults/delay, provider errors, capture webhook, bounded inbox.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Act 5</div>
+  <h2>Beyond HTTP: same engine, other wires</h2>
+  <div class="cols3">
+    <div class="card"><h3>gRPC</h3>
+      <p>Upload a descriptor set → serving <b>hot-enables</b>, no restart. Unary + single-message
+      streaming, full codec (enums, maps, oneof, wrappers), real gRPC error statuses.
+      Tenant rides call metadata.</p></div>
+    <div class="card"><h3>GraphQL</h3>
+      <p>Match on query + variables + operationName. Queries are <b>AST-normalized</b> —
+      whitespace, field order, argument order are irrelevant. Templated data responses.</p></div>
+    <div class="card"><h3>WebSocket</h3>
+      <p>Message mappings: connect-time pushes, per-message triggers with the standard matcher set,
+      templated replies, tenant-scoped <b>broadcast</b>, admin server-push.</p></div>
+  </div>
+  <p class="sub">One stub list, one journal — protocol chips tell the channels apart.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Acts 6–7</div>
+  <h2>State you can steer · reality you can record</h2>
+  <div class="cols">
+    <ul>
+      <li><b>Scenarios</b>: stateful stub groups — <code>pending → settled</code>; inspect,
+          set, and rewind states from the dashboard.</li>
+      <li><b>Recording</b>: point at an upstream, drive traffic, snapshot → stubs.
+          Repeated calls become a <b>scenario chain</b> that replays the sequence.</li>
+    </ul>
+    <ul>
+      <li><b>Drift check</b>: with a session live, compare what the upstream <i>just returned</i>
+          against what your stubs <i>would answer</i>.</li>
+      <li>Structural, never literal — ids and timestamps don't drown findings:
+          <code>fieldMissing /settlementBatch</code>, <code>fieldUnexpected /currency</code>.</li>
+      <li>Serves nothing while it looks — same matcher, zero side effects.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Act 8</div>
+  <h2>Time, chaos — on your terms</h2>
+  <div class="cols">
+    <ul>
+      <li><b>Tenant clock</b>: freeze or shift the instant templates see —
+          test the token that "expires in an hour" without waiting an hour.</li>
+      <li>Journal, audit and inbox keep <b>real</b> time, by design.</li>
+    </ul>
+    <ul>
+      <li><b>Degradation profiles</b>: latency + error ratio + faults composed over every stub
+          of a tenant — <i>what if the whole dependency degrades?</i></li>
+      <li><b>Deterministic from a seed</b> the host always reports: a chaos run becomes
+          a regression test. The admin surface is never degraded.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Act 8 · conformance</div>
+  <h2>Three questions no mock usually answers</h2>
+  <div class="cols3">
+    <div class="card"><h3>Stubs vs contract</h3>
+      <p><code>openapi/verify</code> — which operations are uncovered, which stubs are undeclared,
+      which responses violate the schema.</p></div>
+    <div class="card"><h3>Reality vs stubs</h3>
+      <p><code>recordings/verify</code> — has the upstream drifted from what we mock,
+      since we recorded it?</p></div>
+    <div class="card"><h3>Traffic vs contract</h3>
+      <p><code>requests/verify</code> — did the <b>consumer</b> stay inside the contract?
+      The failure a permissive mock hides completely.</p></div>
+  </div>
+  <p class="sub">One engine, one set of ambiguity rules — three reports that cannot disagree
+  about which operation a path belongs to.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Why trust it</div>
+  <h2>Maturity is measured, not claimed</h2>
+  <div class="cols3">
+    <div class="card"><h3>Proven differentially</h3>
+      <p class="big">1122</p>
+      <p>tests green across four suites. Dialect behavior is pinned against the
+      <b>reference engine</b> running in Docker — never self-assessment.</p></div>
+    <div class="card"><h3>No oracle? Real clients</h3>
+      <p class="big">100%</p>
+      <p>mutation score on the message logic (Stryker). Mail, SMS and broker channels validated
+      with the official client libraries.</p></div>
+    <div class="card"><h3>Measured performance</h3>
+      <p class="big">392 ns</p>
+      <p>to match the last of 1000 stubs (was 29 µs). Templated response 699 µs → 1.21 µs.
+      Semantics pinned by the differential suite while optimizing.</p></div>
+  </div>
+  <ul style="margin-top:1.2em">
+    <li>Honest surfaces: import <b>warnings</b> for unsupported fields, a public
+        <b>deferred-edge register</b>, binding semver promises since 1.0.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Run it anywhere</div>
+  <h2>Enterprise posture, day one</h2>
+  <ul>
+    <li><b>Deploy</b>: non-root image, live/ready probes with drain, Helm chart whose security
+        posture is asserted in CI.</li>
+    <li><b>Supply chain</b>: SBOM, keyless signing, provenance, scanning.</li>
+    <li><b>Observe</b>: OpenTelemetry traces &amp; metrics, credential-free Prometheus scrape,
+        JSON logs, bounded label cardinality.</li>
+    <li><b>Secure</b>: admin auth (Basic / per-tenant credentials / <b>OIDC</b> + PKCE dashboard
+        sign-in), audit trail of every admin change, key rings with restart-free rotation,
+        payload crypto (JWE decrypt, response protect &amp; sign).</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Closing</div>
+  <h1>Mock the API.<br><span class="accent">Keep it honest.</span></h1>
+  <p class="sub">Spec → sandbox in a minute · every channel your integration touches ·
+  and three verify surfaces that tell you when the mock stops telling the truth.</p>
+  <div style="margin-top:2em">
+    <span class="tag">demo: localhost:8080/__mockifyr</span>
+    <span class="tag">docs: mockifyr.qorpe.com</span>
+  </div>
+</section>
+
+<div class="foot"><span id="pos">1</span>/<span id="total">?</span> · ←/→</div>
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  document.getElementById('total').textContent = slides.length;
+  let i = 0;
+  function go(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    document.getElementById('pos').textContent = i + 1;
+  }
+  addEventListener('keydown', e => {
+    if (['ArrowRight',' ','PageDown'].includes(e.key)) go(i + 1);
+    if (['ArrowLeft','PageUp'].includes(e.key)) go(i - 1);
+    if (e.key === 'Home') go(0);
+  });
+  addEventListener('click', e => go(i + (e.clientX > innerWidth / 2 ? 1 : -1)));
+</script>
+</body>
+</html>
