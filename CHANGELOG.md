@@ -10,6 +10,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Fixed
 
+- **CI now keeps the name of a failing test.** A run reported "1 failed" out of 416 and the name went
+  with it, so an intermittent failure could be neither fixed nor honestly dismissed. Test results are
+  written as TRX and uploaded on success and failure alike. The first flake it identified —
+  `G15eWebSocketBroadcastTests` racing the server's channel registration — is fixed with it (#320,
+  #325). Neither change affects the shipped product.
 - **The dashboard could load from a stale browser cache.** `index.html` carried no cache directive, so
   a browser could run a bundle older than the host it was talking to — one predating a capability such
   as the OIDC login gate — and fail in ways that read as a server bug. The shell and every unhashed
