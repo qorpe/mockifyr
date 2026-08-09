@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Braces, Filter, Network, Puzzle } from 'lucide-react'
-import { SearchBox } from '@/components/ui/search-box'
-import { EmptyState } from '@/components/ui/empty-state'
+import { EmptyState, SearchBox } from '@qorpe/ui'
 import { ExtensionsArt } from '@/components/ui/illustrations'
 
 // The Extensions screen documents the engine's built-in capabilities and extension seams. These are
@@ -48,7 +47,7 @@ export function ExtensionsPage() {
       </header>
 
       <div className="mb-4 flex max-w-md">
-        <SearchBox value={search} onCommit={setSearch} placeholder={t('common.search')} />
+        <SearchBox value={search} onCommit={setSearch} label={t('common.search')} clearLabel={t('common.clear')} placeholder={t('common.search')} />
       </div>
 
       {groups.length === 0 ? (

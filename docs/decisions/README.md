@@ -19,5 +19,6 @@ consequences.
 | [0011](0011-integration-sandbox-vertical.md) | Integration sandbox: stateful resources, OpenAPI import, access | Proposed |
 | [0012](0012-payload-cryptography.md) | Payload cryptography: field-level encryption, whole-body encryption, signing | Proposed |
 | [0013](0013-broker-channel.md) | The broker channel: messages that arrive on a topic, not on a socket | Proposed |
+| [0014](0014-adopt-qorpe-ui.md) | The dashboard composes from the published @qorpe/ui kit | Accepted |
 
 When adding a decision, use the next number and add a row to this table.

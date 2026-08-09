@@ -17,13 +17,13 @@ import {
   messageAttachmentUrl, type MessageBehaviors, type MessageChannel, resetMessageBehaviors, resetMessages,
   saveMessageBehaviors,
 } from '@/lib/api'
-import { Button } from '@/components/ui/button'
-import { SearchBox } from '@/components/ui/search-box'
-import { EmptyState } from '@/components/ui/empty-state'
+import { Button, SearchBox } from '@qorpe/ui'
+import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
-import { Input, Label, NativeSelect } from '@/components/ui/field'
+import { Input, Label } from '@/components/ui/field'
+import { Select } from '@qorpe/ui'
 
 // "26 B" for tiny payloads, "1.4 KB" above — a 26-byte attachment must not read as "0.0 KB".
 const formatSize = (bytes: number) => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`)
@@ -193,7 +193,7 @@ export function MessagesPage() {
 
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-surface">
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-          <SearchBox value={search} onCommit={setSearch} placeholder={t('messages.filter')} />
+          <SearchBox value={search} onCommit={setSearch} label={t('messages.filter')} clearLabel={t('common.clear')} placeholder={t('messages.filter')} />
           <Button variant="outline" className="ms-auto" onClick={() => setBehaviorsOpen(true)}>
             <SlidersHorizontal />{t('messages.behaviors')}
           </Button>
@@ -555,11 +555,13 @@ function BehaviorsSheet({ open, onOpenChange, tenant }: { open: boolean; onOpenC
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t('messages.smtpFault')}</Label>
-                <NativeSelect value={form.smtpFault} onChange={(e) => setForm({ ...form, smtpFault: e.target.value as MessageBehaviors['smtpFault'] })}>
-                  <option value="none">{t('messages.faultNone')}</option>
-                  <option value="reject">{t('messages.faultReject')}</option>
-                  <option value="drop">{t('messages.faultDrop')}</option>
-                </NativeSelect>
+                <Select aria-label={t('messages.smtpFault')} value={form.smtpFault}
+                  onChange={(v) => setForm({ ...form, smtpFault: v as MessageBehaviors['smtpFault'] })}
+                  options={[
+                    { value: 'none', label: t('messages.faultNone') },
+                    { value: 'reject', label: t('messages.faultReject') },
+                    { value: 'drop', label: t('messages.faultDrop') },
+                  ]} />
               </div>
               <div>
                 <Label>{t('messages.smtpDelay')}</Label>

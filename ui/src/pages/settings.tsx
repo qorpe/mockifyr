@@ -11,7 +11,7 @@ import {
   trustHost, uploadGrpcDescriptor,
 } from '@/lib/api'
 import { LOCALES } from '@/lib/i18n'
-import { Button } from '@/components/ui/button'
+import { Button } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/field'
 

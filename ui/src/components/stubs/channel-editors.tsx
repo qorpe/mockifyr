@@ -5,10 +5,12 @@ import { toast } from 'sonner'
 import { Braces, Cable, FileJson, Globe, Workflow } from 'lucide-react'
 import { fetchGrpcDescriptors, importOpenApi, saveMessageMapping, saveStub } from '@/lib/api'
 import { useUi } from '@/components/providers'
-import { Button } from '@/components/ui/button'
-import { Input, Label, NativeSelect } from '@/components/ui/field'
-import { JsonEditor, JsonField } from '@/components/ui/json-editor'
-import { Switch } from '@/components/ui/switch'
+import { Button } from '@qorpe/ui'
+import { Input, Label } from '@/components/ui/field'
+import { Select } from '@qorpe/ui'
+import { selectOptions } from '@/components/ui/select-field'
+import { JsonEditor, JsonField } from '@/components/ui/json-field'
+import { Switch } from '@qorpe/ui'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StubEditorForm } from '@/components/stubs/stub-editor'
 
@@ -194,9 +196,9 @@ function GrpcStubForm({ onSaved }: { onSaved: (saved: boolean) => void }) {
       <div>
         <Label>{t('channels.grpcMethod')}</Label>
         {methods.length > 0 ? (
-          <NativeSelect value={path || methods[0]?.path} onChange={(e) => { setPath(e.target.value); setOverride(null) }}>
-            {methods.map((m) => <option key={m.path} value={m.path}>{m.service}/{m.method}</option>)}
-          </NativeSelect>
+          <Select aria-label={t('channels.grpcMethod')} value={path || methods[0]?.path || ''}
+            onChange={(v) => { setPath(v); setOverride(null) }}
+            options={methods.map((m) => ({ value: m.path, label: `${m.service}/${m.method}` }))} />
         ) : (
           <>
             <Input value={path} placeholder="/pkg.Service/Method" onChange={(e) => { setPath(e.target.value); setOverride(null) }} />
@@ -259,9 +261,9 @@ function WsMappingForm({ onSaved }: { onSaved: (saved: boolean) => void }) {
         <div className="grid grid-cols-[8rem_1fr] gap-3">
           <div>
             <Label>{t('channels.wsMatcher')}</Label>
-            <NativeSelect value={op} onChange={(e) => { setOp(e.target.value); setOverride(null) }}>
-              {['equalTo', 'contains', 'matches', 'equalToJson', 'matchesJsonPath'].map((o) => <option key={o} value={o}>{o}</option>)}
-            </NativeSelect>
+            <Select aria-label={t('channels.wsMatcher')} value={op}
+              onChange={(v) => { setOp(v); setOverride(null) }}
+              options={selectOptions(['equalTo', 'contains', 'matches', 'equalToJson', 'matchesJsonPath'])} />
           </div>
           <div>
             <Label>{t('editor.value')}</Label>

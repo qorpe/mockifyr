@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Lock } from 'lucide-react'
 import { fetchHealth, verifyAdminAuth } from '@/lib/api'
 import { beginLogin, completeLoginIfRedirected } from '@/lib/oidc'
-import { Button } from '@/components/ui/button'
+import { Button } from '@qorpe/ui'
 import { Input, Label } from '@/components/ui/field'
 
 /**

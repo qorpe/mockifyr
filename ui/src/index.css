@@ -1,159 +1,21 @@
-@import "tailwindcss";
-
-/* Dark mode is class-driven (.dark on <html>), so a customer can force either theme. */
-@custom-variant dark (&:where(.dark, .dark *));
-
 /*
-  Design tokens — the single source of truth for the whole dashboard and the omercelik.dev
-  starter pack. Re-skinning a tenant is a one-file change: override --primary (and, if wanted,
-  the neutral ramp) and everything below re-themes. Accent default is near-black ("siyah").
-  Structure mirrors the Praxis design system; semantic status colors are intentionally separate
-  from the accent hue.
+  The dashboard's stylesheet since the @qorpe/ui adoption: the PUBLISHED kit's tokens
+  are the contract (one family: goldpath console, this dashboard, every qorpe product);
+  only the brand accent and the Tailwind source globs live here. Re-skinning stays a
+  one-file change: override --primary (kit) or --brand (ours) below.
 */
+@import "@qorpe/ui/tokens.css";
+
+/* The kit arrives prebuilt — Tailwind must scan its dist for the class names it uses. */
+@source "./";
+@source "../node_modules/@qorpe/ui/dist";
+
 :root {
-  --app: #ffffff;            /* outer frame — same tone as the sidebar */
-  --surface: #f5f5f7;        /* the rounded body area — a subtle grey so it separates from the white sidebar and lifts the white cards */
-  --background: #ffffff;     /* cards / panels */
-  --foreground: #18181b;     /* text primary */
-  --muted: #ececef;          /* segmented control / hover / chips — a touch darker than the surface so it reads on it */
-  --muted-foreground: #71717a;
-  --faint: #a1a1aa;
-  --border: #e6e6e9;
-  --border-strong: #d7d7db;
-  --input: #e6e6e9;
-  --ring: #18181b;
-
-  --primary: #18181b;        /* accent — actions · active · CTA (swap to re-skin) */
-  --primary-foreground: #ffffff;
-
-  /* Brand blue — the logo's eye, and the only place brand colour appears. Deliberately kept out of the
-     UI ramp: the palette stays zinc-monochrome, and this blue never competes with --info, which is a
-     near-identical informational state colour. */
+  /* Brand blue — the logo's eye, the only place brand colour appears. Deliberately
+     outside the kit ramp: the palette stays zinc-monochrome and this never competes
+     with --info. */
   --brand: #0a4ecf;
-  --accent: #f1f1f3;         /* soft fill: nav hover/active, secondary */
-  --accent-foreground: #18181b;
-
-  --sidebar: #ffffff;
-  --sidebar-foreground: #18181b;
-  --sidebar-accent: #f1f1f3;
-  --sidebar-accent-foreground: #18181b;
-
-  /* Semantic status ramp (badges/pills/method chips) — configurable, not the accent */
-  --success: #15803d; --success-bg: #f0fdf4; --success-border: #bbf7d0;
-  --warning: #b45309; --warning-bg: #fffbeb; --warning-border: #fde68a;
-  --danger:  #b91c1c; --danger-bg:  #fef2f2; --danger-border:  #fecaca;
-  --info:    #1d4ed8; --info-bg:    #eff6ff; --info-border:    #bfdbfe;
-  --violet:  #6d28d9; --violet-bg:  #f5f3ff; --violet-border:  #ddd6fe;
-
-  --radius: 0.625rem;
-  --shadow-surface: 0 1px 2px 0 rgb(24 24 27 / 0.04), 0 3px 14px 0 rgb(24 24 27 / 0.05);
 }
-
 .dark {
-  --app: #0a0a0c;
-  --surface: #101014;        /* the rounded body area — between the frame and the cards */
-  --background: #17171c;     /* cards / panels — lifted above the surface */
-  --foreground: #f4f4f5;
-  --muted: #202027;
-  --muted-foreground: #a1a1aa;
-  --faint: #71717a;
-  --border: #26262b;
-  --border-strong: #37373e;
-  --input: #26262b;
-  --ring: #d4d4d8;
-
-  --primary: #fafafa;
-  --primary-foreground: #18181b;
-
-  --brand: #5a8dff;          /* lifted so it holds against the dark page */
-  --accent: #202026;
-  --accent-foreground: #fafafa;
-
-  --sidebar: #0a0a0c;        /* identical to --app (as in light mode) so the sidebar melts into the frame instead of reading as its own panel */
-  --sidebar-foreground: #f4f4f5;
-  --sidebar-accent: #202026;
-  --sidebar-accent-foreground: #fafafa;
-
-  --success: #4ade80; --success-bg: #0c1f14; --success-border: #14532d;
-  --warning: #fbbf24; --warning-bg: #211803; --warning-border: #78350f;
-  --danger:  #f87171; --danger-bg:  #260d0d; --danger-border:  #7f1d1d;
-  --info:    #60a5fa; --info-bg:    #0b1830; --info-border:    #1e3a8a;
-  --violet:  #a78bfa; --violet-bg:  #17102b; --violet-border:  #4c1d95;
-
-  --shadow-surface: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --brand: #5a8dff; /* lifted so it holds against the dark page */
 }
-
-/* Map the tokens onto Tailwind's color/util namespace so `bg-primary`, `text-muted-foreground`,
-   `border-border`, `rounded-lg`, etc. all resolve from the tokens above. */
-@theme inline {
-  --color-app: var(--app);
-  --color-surface: var(--surface);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-faint: var(--faint);
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-success: var(--success);
-  --color-success-bg: var(--success-bg);
-  --color-success-border: var(--success-border);
-  --color-warning: var(--warning);
-  --color-warning-bg: var(--warning-bg);
-  --color-warning-border: var(--warning-border);
-  --color-danger: var(--danger);
-  --color-danger-bg: var(--danger-bg);
-  --color-danger-border: var(--danger-border);
-  --color-info: var(--info);
-  --color-info-bg: var(--info-bg);
-  --color-info-border: var(--info-border);
-  --color-violet: var(--violet);
-  --color-violet-bg: var(--violet-bg);
-  --color-violet-border: var(--violet-border);
-
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 10px);
-
-  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-    "PingFang SC", "Hiragino Sans", "Noto Sans", "Noto Sans Arabic", Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
-}
-
-* { border-color: var(--border); }
-html, body, #root { height: 100%; }
-body {
-  margin: 0;
-  background: var(--app);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;               /* the app-shell owns scrolling, never the page */
-}
-
-/* Auto-hiding scrollbar: invisible until the region is hovered/scrolled (the body surface only). */
-.scroll-area { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-.scroll-area:hover, .scroll-area:focus-within { scrollbar-color: var(--border-strong) transparent; }
-.scroll-area::-webkit-scrollbar { width: 11px; height: 11px; }
-.scroll-area::-webkit-scrollbar-thumb { background: transparent; border-radius: 9999px; border: 3px solid var(--background); }
-.scroll-area:hover::-webkit-scrollbar-thumb, .scroll-area:focus-within::-webkit-scrollbar-thumb { background: var(--border-strong); }
-.scroll-area::-webkit-scrollbar-track { background: transparent; }
-
-:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 6px; }
-/* Form fields carry their own subtle focus (a border tint), so drop the heavy global ring on them —
-   it reads as an ugly black box on inputs. Buttons/links keep the ring for keyboard accessibility. */
-input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; outline-offset: 0; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

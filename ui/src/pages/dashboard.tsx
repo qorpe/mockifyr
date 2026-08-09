@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useUi } from '@/components/providers'
 import { fetchHealth, fetchJournal, fetchScenarios, fetchStubs, persistenceLabel } from '@/lib/api'
 import { MethodChip } from '@/components/ui/badges'
-import { Button } from '@/components/ui/button'
+import { Button } from '@qorpe/ui'
 
 // Live tenant-scoped overview, read from /__admin. When no host answers, every query falls back to
 // representative sample data and the "sample" hint is shown — the numbers are never fabricated.
