@@ -8,7 +8,30 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Fixed
+## Released
+
+### [v1.14.0](https://github.com/qorpe/mockifyr/releases/tag/v1.14.0) — 2026-08-09
+
+#### Changed
+
+- **The dashboard now runs on the shared `@qorpe/ui` kit** (#315, #316, #317, #318 — ADR 0014).
+  Most of it is invisible on purpose: facets, search, tooltips, sheets, the JSON editor, buttons,
+  switches and empty states behave as they did, but come from one tested source instead of a copy
+  per project. Two things are visibly better:
+  - **Every form select is the application's own listbox**, not the operating system's popup that
+    never matched the surrounding menus. Each one carries an accessible name (the kit's type refuses
+    a nameless select), keyboard walking is announced properly, options can be disabled, and the list
+    flips when it would fall off the viewport.
+  - **The preferences menu's toggles are real checkbox menu items** rather than divs that looked like
+    them, so a screen reader reports their state.
+
+  The theme contract moved with them: the dashboard's own stylesheet went from 159 lines of tokens to
+  21, with only `--brand` still local. Domain visuals — method and status chips, illustrations,
+  branding — stayed local by decision; adopting a kit is not a restyle.
+
+  **Nothing about the mock engine, the admin API or the mapping dialect changed.**
+
+#### Fixed
 
 - **CI now keeps the name of a failing test.** A run reported "1 failed" out of 416 and the name went
   with it, so an intermittent failure could be neither fixed nor honestly dismissed. Test results are
@@ -20,8 +43,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   as the OIDC login gate — and fail in ways that read as a server bug. The shell and every unhashed
   file now revalidate (`no-cache`); Vite's content-hashed `assets/` output is marked `immutable`,
   which it earns because its name changes whenever its content does.
-
-## Released
 
 ### [v1.13.0](https://github.com/qorpe/mockifyr/releases/tag/v1.13.0) — 2026-08-06
 
