@@ -8,6 +8,14 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Fixed
+
+- **The dashboard could load from a stale browser cache.** `index.html` carried no cache directive, so
+  a browser could run a bundle older than the host it was talking to — one predating a capability such
+  as the OIDC login gate — and fail in ways that read as a server bug. The shell and every unhashed
+  file now revalidate (`no-cache`); Vite's content-hashed `assets/` output is marked `immutable`,
+  which it earns because its name changes whenever its content does.
+
 ## Released
 
 ### [v1.13.0](https://github.com/qorpe/mockifyr/releases/tag/v1.13.0) — 2026-08-06
