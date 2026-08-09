@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockifyr — Live Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EEF0F1; --paper-2:#F7F8F8; --ink:#131C24; --slate:#5A6873;
+    --rule:#C4CBD1; --rule-soft:#DDE2E5;
+    --flow:#0E6E70; --ui:#6B4FD8; --warn:#A8481D; --ok:#1B7A3D;
+    --termbg:#0E1116; --termtx:#C9D4DE;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --cond:"IBM Plex Sans Condensed","IBM Plex Sans",-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.6;
+    background-image:
+      linear-gradient(to right,rgba(19,28,36,.035) 1px,transparent 1px),
+      linear-gradient(to bottom,rgba(19,28,36,.035) 1px,transparent 1px);
+    background-size:28px 28px}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px 96px}
+
+  header{padding:48px 0 32px;border-bottom:1px solid var(--ink)}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--flow);margin:0 0 16px;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--rule);display:inline-block;
+    transition:background .3s}
+  @keyframes livePulse{
+    0%{box-shadow:0 0 0 0 rgba(27,122,61,.45)}
+    70%{box-shadow:0 0 0 8px rgba(27,122,61,0)}
+    100%{box-shadow:0 0 0 0 rgba(27,122,61,0)}}
+  .dot.on{background:var(--ok);animation:livePulse 1.8s ease-out infinite}
+  @keyframes deadBlink{0%,100%{opacity:1}50%{opacity:.35}}
+  .dot.off{background:#D64545;box-shadow:0 0 0 3px rgba(214,69,69,.15);
+    animation:deadBlink 1.1s ease-in-out infinite}
+  .hlabel.off{color:#D64545}
+  h1{font-family:var(--cond);font-weight:700;font-size:clamp(30px,6vw,48px);
+    line-height:1.05;margin:0 0 14px;letter-spacing:-.015em}
+  .thesis{font-size:clamp(15px,2.2vw,17px);max-width:64ch;margin:0 0 18px}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--slate);
+    display:flex;flex-wrap:wrap;gap:6px 20px}
+  .meta b{color:var(--ink);font-weight:500}
+
+  .sec-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--slate);
+    display:flex;align-items:center;gap:12px;margin:48px 0 20px}
+  .sec-label::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+  .layer{border-top:1px solid var(--ink);padding:24px 0 20px}
+  .layer:last-of-type{border-bottom:1px solid var(--ink)}
+  .lhead{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+  .lno{font-family:var(--mono);font-size:12px;color:var(--flow);letter-spacing:.1em}
+  .layer h2{font-family:var(--cond);font-size:clamp(20px,3.4vw,25px);margin:0;font-weight:700;letter-spacing:-.01em}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+    border:1px solid var(--rule);padding:2px 7px;color:var(--slate);white-space:nowrap}
+  .tag.v1{border-color:var(--flow);color:var(--flow)}
+  .tag.opt{border-color:var(--ui);color:var(--ui)}
+  .tag.warn{border-color:var(--warn);color:var(--warn)}
+  .lnote{color:var(--slate);font-size:14px;margin:0 0 14px;max-width:70ch}
+
+  .step{border:1px solid var(--ink);background:var(--paper-2);margin-bottom:10px;
+    transition:border-color .4s, box-shadow .4s}
+  .step.copied{border-color:var(--ok);box-shadow:0 0 0 3px rgba(27,122,61,.18);
+    transition:border-color .15s, box-shadow .15s}
+  .step.running{border-color:var(--flow);box-shadow:0 0 0 3px rgba(14,110,112,.15)}
+  .cmdline{display:flex;align-items:center;gap:10px;padding:10px 14px}
+  .cmdline code{flex:1;font-family:var(--mono);font-size:14px;font-weight:500;
+    color:var(--flow);white-space:pre;overflow-x:auto}
+  .btn{font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    border:1px solid var(--rule);background:transparent;color:var(--slate);
+    padding:5px 12px;cursor:pointer;white-space:nowrap}
+  .btn.run{border-color:var(--flow);color:#fff;background:var(--flow);font-weight:600}
+  .btn.run:hover{background:#0a5658}
+  .btn.run:disabled{opacity:.45;cursor:default}
+  .btn.copy:hover{border-color:var(--ink);color:var(--ink)}
+  .btn.copy.done{border-color:var(--ok);color:var(--ok)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{display:inline-block;width:10px;height:10px;border:2px solid rgba(255,255,255,.35);
+    border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;
+    vertical-align:-1px;margin-right:6px}
+  .result{border-top:1px dashed var(--rule);padding:8px 14px;font-size:13.5px}
+  .result::before{content:"Expected → ";font-family:var(--mono);font-size:10.5px;
+    letter-spacing:.1em;color:var(--slate)}
+  .result b{color:var(--ok);font-weight:600}
+  .result .mono{font-family:var(--mono);font-size:12.5px}
+
+  /* output terminal card */
+  .term{display:none;border-top:1px solid var(--ink);background:var(--termbg)}
+  .term.show{display:block}
+  .term-head{display:flex;align-items:center;gap:10px;padding:7px 14px;
+    border-bottom:1px solid #1D242E;cursor:pointer;user-select:none}
+  .term-head .chev{font-size:11px;color:#5A6873;transition:transform .2s;margin-right:2px}
+  .term.collapsed pre{display:none}
+  .term.collapsed .term-head{border-bottom:none}
+  .term.collapsed .chev{transform:rotate(-90deg)}
+  .term-head .lights{display:flex;gap:5px}
+  .term-head .lights i{width:9px;height:9px;border-radius:50%;display:block}
+  .term-head .lights i:nth-child(1){background:#F87171}
+  .term-head .lights i:nth-child(2){background:#E2B53E}
+  .term-head .lights i:nth-child(3){background:#4ADE80}
+  .term-head .st{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;margin-left:auto}
+  .term-head .st.ok{color:#4ADE80}
+  .term-head .st.err{color:#F87171}
+  .term pre{margin:0;padding:12px 16px;max-height:340px;overflow:auto;
+    font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--termtx);
+    white-space:pre-wrap;word-break:break-word}
+
+  .btn.detail{border-color:var(--rule)}
+  .btn.detail.open,.btn.detail:hover{border-color:var(--ui);color:var(--ui)}
+  .detailbox{display:none;border-top:1px solid var(--rule);background:rgba(107,79,216,.04);
+    padding:12px 14px;font-size:13.5px}
+  .detailbox.show{display:block}
+  .detailbox .row{margin-bottom:8px}
+  .detailbox .row:last-child{margin-bottom:0}
+  .detailbox .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+    color:var(--ui);display:block;margin-bottom:2px}
+  .detailbox a.deep{display:inline-block;font-family:var(--mono);font-size:12px;
+    color:var(--ui);text-decoration:none;border:1px solid rgba(107,79,216,.45);
+    padding:4px 12px;margin-top:2px}
+  .detailbox a.deep:hover{background:rgba(107,79,216,.1)}
+  .stopbtn{font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+    border:1px solid var(--warn);background:transparent;color:var(--warn);
+    padding:6px 14px;cursor:pointer;margin-left:8px;
+    display:inline-flex;align-items:center;gap:7px}
+  .stopbtn:hover{background:rgba(168,72,29,.08)}
+  .hbtn{font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+    border:1px solid var(--rule);background:transparent;color:var(--slate);
+    padding:6px 14px;cursor:pointer;margin-left:8px;
+    display:inline-flex;align-items:center;gap:7px}
+  .hbtn:hover{border-color:var(--flow);color:var(--flow)}
+  .hbtn.done{border-color:var(--ok);color:var(--ok)}
+  .hbtn .ic,.stopbtn .ic{font-size:15px;line-height:1}
+  .deadview{position:fixed;inset:0;background:var(--paper);display:none;
+    align-items:center;justify-content:center;z-index:99;flex-direction:column;gap:10px}
+  .deadview.show{display:flex}
+  .deadview h2{font-family:var(--cond);font-size:30px;margin:0}
+  .deadview p{font-family:var(--mono);font-size:13px;color:var(--slate)}
+  .screen{border:1px solid var(--ui);background:rgba(107,79,216,.05);margin-bottom:10px;padding:11px 14px}
+  .screen .where{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;
+    color:var(--ui);display:block;margin-bottom:3px}
+  .screen p{margin:0;font-size:14px}
+  .screen p b{font-weight:600}
+  .screen code{font-family:var(--mono);font-size:12.5px;background:rgba(107,79,216,.1);padding:1px 6px}
+  .screen a{color:var(--ui)}
+
+  .caution{border-left:2px solid var(--warn);padding:6px 0 6px 14px;
+    font-size:13.5px;color:var(--warn);margin:14px 0 4px}
+
+  /* modern confirm modal (replaces the browser's native confirm) */
+  .modal-veil{position:fixed;inset:0;background:rgba(19,28,36,.45);
+    backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:90}
+  .modal-veil.show{display:flex;animation:veilIn .15s ease-out}
+  @keyframes veilIn{from{opacity:0}to{opacity:1}}
+  .modal{background:var(--paper-2);border:1px solid var(--ink);max-width:440px;width:calc(100% - 40px);
+    box-shadow:0 20px 60px rgba(19,28,36,.25);animation:modalIn .18s ease-out}
+  @keyframes modalIn{from{transform:translateY(10px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+  .modal .m-head{display:flex;align-items:center;gap:10px;padding:16px 20px 0}
+  .modal .m-ic{width:34px;height:34px;border:1px solid var(--rule);display:flex;
+    align-items:center;justify-content:center;font-size:16px;flex:none}
+  .modal.danger .m-ic{border-color:rgba(168,72,29,.5);color:var(--warn);background:rgba(168,72,29,.06)}
+  .modal.calm .m-ic{border-color:rgba(14,110,112,.5);color:var(--flow);background:rgba(14,110,112,.06)}
+  .modal h3{font-family:var(--cond);font-size:19px;font-weight:700;margin:0;letter-spacing:-.01em}
+  .modal .m-body{padding:12px 20px 4px;font-size:14px;color:var(--slate);line-height:1.6}
+  .modal .m-body b{color:var(--ink)}
+  .modal .m-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 20px 18px}
+  .mbtn{font-family:var(--mono);font-size:12px;letter-spacing:.04em;padding:8px 18px;
+    cursor:pointer;border:1px solid var(--rule);background:transparent;color:var(--slate)}
+  .mbtn:hover{border-color:var(--ink);color:var(--ink)}
+  .mbtn.go{border-color:var(--flow);background:var(--flow);color:#fff;font-weight:600}
+  .mbtn.go:hover{background:#0a5658}
+  .modal.danger .mbtn.go{border-color:var(--warn);background:var(--warn)}
+  .modal.danger .mbtn.go:hover{background:#8a3a17}
+  footer{margin-top:44px;font-family:var(--mono);font-size:11.5px;color:var(--slate);line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Live demo · Single screen
+    <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+      <span class="dot" id="d-runner"></span> <span class="hlabel" id="l-runner">Runner</span>
+      <span class="dot" id="d-engine" style="margin-left:10px"></span> <span class="hlabel" id="l-engine">Mockifyr</span>
+      <button class="hbtn" id="collapseAll" title="Collapse / expand every output card"><span class="ic">▾</span><span id="collapseLbl">Collapse outputs</span></button>
+      <button class="hbtn" id="resetStage" title="Resets the stage (seed) — you re-do the OpenAPI import"><span class="ic">↺</span>Reset</button>
+      <button class="stopbtn" id="stopAll" title="Stops every demo process"><span class="ic">■</span>Stop</button>
+    </span>
+  </p>
+  <h1>Mockifyr — Live Demo</h1>
+  <p class="thesis">Press <b>▶ Run</b> on any step — the command runs behind the scenes and its
+  output appears right below. Purple cards are done on the dashboard. The Expected line is the
+  result we verify together on screen.</p>
+  <div class="meta">
+    <span><b>Dashboard</b> localhost:8080/__mockifyr</span>
+    <span><b>Tenant</b> Acme Pay</span>
+    <span><b>Upstream</b> localhost:9090</span>
+  </div>
+</header>
+
+<p class="sec-label">Act 1 · Spec to sandbox</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 1</span><h2>From an API spec to a sandbox</h2><span class="tag v1">~5 min</span></div>
+  <p class="lnote">All we have is the API's OpenAPI document — in a minute it becomes a sandbox
+  that holds data, is protected by keys, and enforces quotas.</p>
+  <div class="screen"><span class="where">Dashboard · Stubs</span>
+    <p><b>New stub</b> → <b>OpenAPI</b> tab → paste <code>demo/specs/payments.yaml</code> →
+    Stateful CRUD <b>on</b> → <b>Import spec</b> → "5 imported", stub counter <b>13</b>
+    &nbsp;<i>(or use the command below)</i></p></div>
+  <div class="step" data-step="openapi-import"><div class="cmdline"><code>./demo/demo.sh openapi-import</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">the command equivalent of the import: <span class="mono">{"imported": 5}</span></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="payments-create"><div class="cmdline"><code>./demo/demo.sh payments-create</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><b>201 Created</b> + a <span class="mono">Location</span> header — then the same address is GET and the record is <b>read back</b></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="payments-get"><div class="cmdline"><code>./demo/demo.sh payments-get</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">returns the seeded <span class="mono">PAY-1001</span> document</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="payments-list"><div class="cmdline"><code>./demo/demo.sh payments-list</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><span class="mono">count: 4</span> — 3 seeded records + the one just created</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · Resources → Access</span>
+    <p><b>Resources:</b> the payments collection, 4 documents · <b>Access:</b> Issue key
+    (<code>partner-portal</code>, quota 10) → the token is visible only this once; the server keeps a salted hash</p></div>
+  <div class="step" data-step="key-quota"><div class="cmdline"><code>./demo/demo.sh key-quota</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">no tenant header — <b>the key IS the identity</b>: 5 × 200 (Remaining 4→0) → the 6th call gets <b>429</b> + <span class="mono">Retry-After</span></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+</div>
+
+<p class="sec-label">Act 2 · Matching + near-miss</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 2</span><h2>Matching criteria + "why didn't it match?"</h2><span class="tag v1">~4 min</span></div>
+  <div class="screen"><span class="where">Dashboard · Stubs</span>
+    <p>Open <b>/api/orders → "Create order"</b>: a header matcher + a JSONPath body matcher + a templated response</p></div>
+  <div class="step" data-step="order-ok"><div class="cmdline"><code>./demo/demo.sh order-ok</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><b>201</b> — the response's <span class="mono">sku/qty</span> are copied from the request (templating)</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="order-bad"><div class="cmdline"><code>./demo/demo.sh order-bad</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">wrong partner key → <b>404</b>; the reason comes in the next step</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="near-miss"><div class="cmdline"><code>./demo/demo.sh near-miss</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">attribute-by-attribute diagnosis: urlPath ✓ · method ✓ · <span class="mono">headers['X-Partner-Key']</span> <b style="color:var(--warn)">✗ "WRONG"</b> · body ✓</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · Request journal</span>
+    <p>The <b>Unmatched</b> tab: every request that found no stub — the diagnosis works on those too</p></div>
+</div>
+
+<p class="sec-label">Act 3 · Callback</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 3</span><h2>Callback: answer now, call back later</h2><span class="tag v1">~2 min</span></div>
+  <div class="step" data-step="webhook"><div class="cmdline"><code>./demo/demo.sh webhook</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><b>202</b> immediately → the callback fires 2 s later → journal proof: <b>"delivered": true</b> + the receiver's 200</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · Request journal → detail</span>
+    <p>The <b>/api/payments/authorize</b> row → <b>Callback</b> tab: URL, body, delivery, the receiver's response</p></div>
+</div>
+
+<p class="sec-label">Act 4 · Messages</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 4</span><h2>Messages: SMS · e-mail · OTP</h2><span class="tag v1">~3 min</span></div>
+  <div class="step" data-step="sms"><div class="cmdline"><code>./demo/demo.sh sms</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">provider-shaped API (the official SDK works unchanged) → <span class="mono">sid: SM…</span>, <span class="mono">status: queued</span></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="otp"><div class="cmdline"><code>./demo/demo.sh otp</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><span class="mono">{"otp": "482913"}</span> — E2E testing's OTP question, answered by one endpoint</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="email"><div class="cmdline"><code>./demo/demo.sh email</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">real SMTP · the AUTH username = the tenant → the mail lands in acme-pay's inbox</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · Messages</span>
+    <p>One inbox: e-mail + SMS · the SMS row carries an <b>OTP badge</b> · open the e-mail → an HTML receipt</p></div>
+</div>
+
+<p class="sec-label">Act 5 · Beyond HTTP</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 5</span><h2>gRPC · GraphQL · WebSocket</h2><span class="tag v1">~5 min</span></div>
+  <div class="step" data-step="grpc-descriptor"><div class="cmdline"><code>./demo/demo.sh grpc-descriptor</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><span class="mono">{"serving": true}</span> — the descriptor hot-loaded, <b>no restart</b></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="grpc"><div class="cmdline"><code>./demo/demo.sh grpc</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">real <span class="mono">grpcurl</span> · HTTP/2+TLS → <span class="mono">"Hello Ada — served by a Mockifyr stub"</span></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="graphql"><div class="cmdline"><code>./demo/demo.sh graphql</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">matched on query + variables + operationName → <span class="mono">data.payment</span></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="graphql-messy"><div class="cmdline"><code>./demo/demo.sh graphql-messy</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">the same query, mangled formatting — <b>still matches</b>: comparison is by AST, not text</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="ws"><div class="cmdline"><code>./demo/demo.sh ws</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><span class="mono">welcome</span> → <span class="mono">ping/pong</span> → <span class="mono">shout</span> = a tenant-wide <b>broadcast</b></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · Stubs</span>
+    <p>One tree with HTTP + <b>GraphQL</b> + <b>gRPC</b> badges + the <b>WebSocket</b> group — one engine, four channels</p></div>
+</div>
+
+<p class="sec-label">Act 6 · Scenarios</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 6</span><h2>Scenarios: a state machine</h2><span class="tag v1">~2 min</span></div>
+  <div class="step" data-step="scenario"><div class="cmdline"><code>./demo/demo.sh scenario</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">1st call <span class="mono">"pending"</span> → 2nd call <span class="mono">"settled"</span> — same endpoint, different frame</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · Scenarios</span>
+    <p>The <b>payment-PAY-1001</b> card → click the <b>Started</b> pill = the flow rewinds → run the command again, it starts from pending</p></div>
+</div>
+
+<p class="sec-label">Act 7 · Recording</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 7</span><h2>Recording: turn the real API into a mock</h2><span class="tag v1">~3 min</span><span class="tag warn">Switch the tenant first</span></div>
+  <p class="lnote">While recording, Mockifyr is a reverse proxy with a tape deck: it forwards,
+  it copies; the snapshot turns the copies into stubs.</p>
+  <div class="screen"><span class="where">Dashboard · tenant + Recordings</span>
+    <p>Tenant → <b>Globex</b> (Stubs is empty: isolation) → Recordings: Target <code>http://localhost:9090</code> → <b>Start recording</b></p></div>
+  <div class="step" data-step="record-drive"><div class="cmdline"><code>./demo/demo.sh record-drive</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">responses come from the <b>real API</b> (<span class="mono">INV-2041, currency: EUR</span>) — the mock only forwards and records</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · Recordings</span>
+    <p><b>Snapshot</b> → "Captured stubs · 2" → <b>Import all</b> → the real API copied <b>without writing a single stub by hand</b></p></div>
+  <div class="step" data-step="drift"><div class="cmdline"><code>./demo/demo.sh drift</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><span class="tag opt" style="margin-right:8px">Optional</span> the "real" API silently changes: <span class="mono">currency</span> disappears, <span class="mono">settlementBatch</span> appears</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="record-verify"><div class="cmdline"><code>./demo/demo.sh record-verify</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><span class="tag opt" style="margin-right:8px">Optional</span> the drift report: <b style="color:var(--warn)">fieldMissing /settlementBatch</b> · <b style="color:var(--warn)">fieldUnexpected /currency</b></div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="record-stop"><div class="cmdline"><code>./demo/demo.sh record-stop</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">recording ends → the stubs answer from now on; the real API can leave the stage</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="screen"><span class="where">Dashboard · tenant</span><p>Tenant → back to <b>Acme Pay</b></p></div>
+  <p class="caution">If you use verify, always run it BEFORE stop — stop clears the recorded traffic.</p>
+</div>
+
+<p class="sec-label">Act 8 · Time · chaos · contract</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 8</span><h2>Time · chaos · contract</h2><span class="tag opt">Optional</span></div>
+  <div class="step" data-step="token"><div class="cmdline"><code>./demo/demo.sh token</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><span class="mono">issuedAt / expiresAt</span> = real now + 1 hour</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="clock-freeze"><div class="cmdline"><code>./demo/demo.sh clock-freeze</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">the tenant clock <b>freezes at 2027-01-01</b>; journal/audit stay in real time</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="token"><div class="cmdline"><code>./demo/demo.sh token</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">the same stub, zero changes → a <b>2027-dated token</b> — no waiting an hour to test expiry</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="clock-reset"><div class="cmdline"><code>./demo/demo.sh clock-reset</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">back to real time (200)</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="chaos-on"><div class="cmdline"><code>./demo/demo.sh chaos-on</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">+300±200 ms latency · 40% 503s · <b>seed 42</b> — same seed, same chaos</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="chaos-probe"><div class="cmdline"><code>./demo/demo.sh chaos-probe</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">5 requests: mixed 200/503, all visibly slower — a repeatable chaos run</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="chaos-off"><div class="cmdline"><code>./demo/demo.sh chaos-off</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">chaos ends — the admin surface was never degraded</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="verify-stubs"><div class="cmdline"><code>./demo/demo.sh verify-stubs</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result">contract report: <b>5/5 operations covered</b> + 8 deliberately undeclared stubs</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+  <div class="step" data-step="verify-traffic"><div class="cmdline"><code>./demo/demo.sh verify-traffic</code><button class="btn run">▶ Run</button><button class="btn copy">Copy</button></div>
+    <div class="result"><b>did the clients stay inside the contract?</b> — the report that catches what a permissive mock hides</div>
+    <div class="term"><div class="term-head"><div class="lights"><i></i><i></i><i></i></div><span class="st"></span></div><pre></pre></div></div>
+</div>
+
+<p class="sec-label">Act 9 · Enterprise sign-in (SSO)</p>
+<div class="layer">
+  <div class="lhead"><span class="lno">Act 9</span><h2>Dashboard sign-in with OIDC</h2><span class="tag opt">Optional · Separate setup</span></div>
+  <p class="lnote">The admin surface plugs into the corporate identity provider: the dashboard
+  login becomes SSO (authorization code + PKCE), the token's <b>tenant claim</b> locks the user
+  to one tenant, and the audit trail records every change as
+  <span style="font-family:var(--mono);font-size:12.5px">oidc:demo</span>.
+  This act swaps long-lived processes, so it runs from a terminal:</p>
+  <div class="screen"><span class="where">Terminal · One command</span>
+    <p><code>./demo/start.sh sso</code> → Keycloak (Docker, realm pre-imported) + the OIDC engine + upstream + runner,
+    all together · users: <b>demo/demo123</b> (acme-pay) and <b>globex/globex123</b> (globex) ·
+    in this mode <b>the whole flow still works</b> — the steps fetch their own tokens (verified 33/33 green) ·
+    back to normal: <code>./demo/stop.sh && ./demo/start.sh</code></p></div>
+  <div class="screen"><span class="where">Browser · The show</span>
+    <p>Open the dashboard → locked screen + <b>"Sign in with your identity provider"</b> → the Keycloak page →
+    demo/demo123 → redirected back, signed in. A token-less <code>curl /__admin/mappings</code> → <b>401</b>;
+    the user can only manage <b>acme-pay</b> (the claim lock). Basic auth keeps working next to it for machine accounts.</p></div>
+  <div class="detailbox show" style="border-top:none;border:1px solid var(--rule)">
+    <div class="row"><a class="deep" href="/doc?d=auth" target="_blank">Deep dive: two doors, three identity sources →</a></div>
+  </div>
+</div>
+
+<footer>
+  ▶ Run = the command executes behind the scenes, output below · Copy = to the clipboard · purple card = a dashboard step<br>
+  runner: <span class="mono">python3 demo/runner.py</span> → http://localhost:7788 · localhost only, whitelisted steps only
+</footer>
+
+</div>
+<div class="deadview" id="deadview">
+  <h2>Demo stopped</h2>
+  <p>Every process was shut down. To start again: ./demo/start.sh</p>
+</div>
+
+<div class="modal-veil" id="mveil">
+  <div class="modal" id="mbox" role="dialog" aria-modal="true">
+    <div class="m-head"><div class="m-ic" id="mic">↺</div><h3 id="mtitle"></h3></div>
+    <div class="m-body" id="mbody"></div>
+    <div class="m-foot">
+      <button class="mbtn" id="mcancel">Cancel</button>
+      <button class="mbtn go" id="mgo"></button>
+    </div>
+  </div>
+</div>
+<script>
+  // In-page confirm modal — returns a Promise<boolean>
+  function confirmModal({title, body, action, icon, danger}){
+    return new Promise(resolve=>{
+      const veil = document.getElementById('mveil');
+      document.getElementById('mtitle').textContent = title;
+      document.getElementById('mbody').innerHTML = body;
+      document.getElementById('mgo').textContent = action;
+      document.getElementById('mic').textContent = icon;
+      document.getElementById('mbox').className = 'modal ' + (danger ? 'danger' : 'calm');
+      veil.classList.add('show');
+      const done = v => { veil.classList.remove('show'); cleanup(); resolve(v); };
+      const onGo = () => done(true), onNo = () => done(false);
+      const onKey = e => { if(e.key==='Escape') done(false); };
+      const onVeil = e => { if(e.target===veil) done(false); };
+      function cleanup(){
+        document.getElementById('mgo').removeEventListener('click', onGo);
+        document.getElementById('mcancel').removeEventListener('click', onNo);
+        removeEventListener('keydown', onKey);
+        veil.removeEventListener('click', onVeil);
+      }
+      document.getElementById('mgo').addEventListener('click', onGo);
+      document.getElementById('mcancel').addEventListener('click', onNo);
+      addEventListener('keydown', onKey);
+      veil.addEventListener('click', onVeil);
+    });
+  }
+  const RUNNER = location.origin.startsWith('http') ? '' : 'http://localhost:7788';
+
+  // Per-step detail: what happens · where to verify on screen · the deep-dive doc
+  const DETAILS = {
+    'openapi-import': {what:'Each of the 5 operations in the OpenAPI document becomes a stub; the /payments + /payments/{id} pair is resource-shaped, so it is wired into live CRUD against the document store.', verify:'Dashboard → Stubs: the counter goes 8→13; list/create under the /payments folder, with a {paymentId} group beneath it.', doc:'sandbox'},
+    'payments-create': {what:'An ordinary POST — but the state directive actually writes the body into the store; the server mints an id and answers with a Location header. The command then follows the Location and reads the record back.', verify:'Dashboard → Resources: a 4th document in the payments collection; a POST /payments 201 row in the Request journal.', doc:'sandbox'},
+    'payments-get': {what:'The seeded PAY-1001 document is read from the store — the response is data, not a canned string.', verify:'Dashboard → Resources → payments → identical JSON to PAY-1001.', doc:'sandbox'},
+    'payments-list': {what:'The list stub renders the whole collection via {{state.list}} — including the record you just created.', verify:'The count matches the number of documents on the Resources page.', doc:'sandbox'},
+    'key-quota': {what:'6 requests WITHOUT a tenant header — the mfk_ key is the identity itself. The server reports the remaining quota on every response; the 6th gets an honest 429 + Retry-After.', verify:'Dashboard → Access: the ci-pipeline row shows usage 5/5.', doc:'auth'},
+    'order-ok': {what:'A request that satisfies all three conditions (path + X-Partner-Key + sku in the body); the response template copies sku/qty from the request.', verify:'POST /api/orders 201 (Matched) in the Request journal.', doc:'matching'},
+    'order-bad': {what:'Wrong key → no stub matches → 404. That is all the client sees; the reason comes in the next step.', verify:'It lands on the Request journal → Unmatched tab.', doc:'matching'},
+    'near-miss': {what:'The same broken request is put to the admin diagnosis API: the closest stub, judged attribute by attribute — what matched, what did not, and what the request carried there.', verify:'The attribute names are the stub JSON\'s own vocabulary — open the order stub in Stubs and compare.', doc:'matching'},
+    'webhook': {what:'The stub answers 202 immediately; 2 s later the mock fires the callback ITSELF (templated from originalRequest). The command also pulls the delivery proof from the journal.', verify:'Request journal → the authorize row → Callback tab: delivered ✓ + the receiver\'s 200. The callback request is its own journal row too.', doc:'callbacks'},
+    'sms': {what:'A POST to Twilio\'s real endpoint shape — the official SDK works unchanged. A realistic response: an SM… sid, queued. No SMS goes anywhere.', verify:'Dashboard → Messages: the SMS row, with an OTP badge.', doc:'messages'},
+    'otp': {what:'The verification code is extracted from the latest SMS in the inbox by regex — E2E testing\'s "how do I read the code" question, one endpoint.', verify:'The returned code equals the 482913 inside the SMS on the Messages page.', doc:'messages'},
+    'email': {what:'A real SMTP session (EHLO/AUTH/DATA). The AUTH username selects the tenant. The HTML receipt is parsed as MIME and stored.', verify:'Dashboard → Messages: open the e-mail row → the HTML receipt renders.', doc:'messages'},
+    'grpc-descriptor': {what:'A protobuf descriptor set is uploaded; the server validates, indexes, and gRPC serving hot-enables — no restart. Garbage gets a 422 and the index stays intact.', verify:'The service/method list in the output; then the grpc step working.', doc:'protocols'},
+    'grpc': {what:'Real grpcurl calls over HTTP/2+TLS; the tenant rides the metadata. The stub matches the message as JSON and encodes the reply back to protobuf.', verify:'A gRPC-badged row in the Request journal.', doc:'protocols'},
+    'graphql': {what:'The graphql-body-matcher checks the query + variables + operationName triple; the id in the response is copied from the request variable.', verify:'A GraphQL-badged row in the Request journal.', doc:'protocols'},
+    'graphql-messy': {what:'The SAME query — no whitespace, fields reordered. It still matches because the comparison is over the parsed tree (AST), not the text.', verify:'The response is byte-identical to the previous step.', doc:'protocols'},
+    'ws': {what:'A WebSocket connection: the connect trigger pushes a welcome from the server; ping→pong matches; shout broadcasts to every socket of the tenant.', verify:'The WebSocket group at the bottom of the Stubs page — three message mappings.', doc:'protocols'},
+    'scenario': {what:'The same GET twice: the first answers pending and ADVANCES the state to Settled; the second lands on the other stub and answers settled.', verify:'Dashboard → Scenarios: the pill sits on Settled. Click Started → run again → it starts from pending.', doc:'scenarios'},
+    'record-drive': {what:'While recording, every request is forwarded to the real API (:9090) and taped with its response. The answers come from the upstream — the mock is just a mirrored gate right now.', verify:'Dashboard → Recordings: the red Recording pill. Snapshot shows "Captured stubs · 2".', doc:'recording'},
+    'drift': {what:'The "real" API changes silently: the currency field disappears, settlementBatch appears. Nobody runs this in real life — life does it for you.', verify:'The upstream\'s new shape shows in the first line of record-verify.', doc:'recording'},
+    'record-verify': {what:'What the upstream JUST returned is compared structurally against what the stubs would answer — no id/timestamp noise. The moment your mock starts lying, field by field.', verify:'findings: fieldMissing /settlementBatch + fieldUnexpected /currency.', doc:'recording'},
+    'record-stop': {what:'The tape stops, recorded traffic is cleared, stubs answer again. That is why verify always goes BEFORE stop.', verify:'The Recordings pill turns Stopped; the same requests are now answered by stubs.', doc:'recording'},
+    'token': {what:'The /api/token stub renders issuedAt/expiresAt from {{now}} — the tenant\'s CURRENT clock.', verify:'With the clock frozen the dates read 2027; the journal stays in real time.', doc:'time-chaos-contract'},
+    'clock-freeze': {what:'The tenant\'s virtual clock is pinned to 2027-01-01. Only what templates see changes; the machine clock and the records stay real.', verify:'The next token output shows 2027 dates.', doc:'time-chaos-contract'},
+    'clock-reset': {what:'The virtual clock is removed; the tenant returns to real time.', verify:'token prints today\'s date again.', doc:'time-chaos-contract'},
+    'chaos-on': {what:'A degradation profile composes over ALL of the tenant\'s stubs: +300±200 ms latency, 503s at 40% probability. Seed 42 → the same sequence every run.', verify:'The 200/503 pattern in chaos-probe repeats identically.', doc:'time-chaos-contract'},
+    'chaos-probe': {what:'5 requests: mixed 200/503, all visibly slow. Chaos is now a regression test.', verify:'Durations ~0.3-0.5 s; the admin API is untouched throughout.', doc:'time-chaos-contract'},
+    'chaos-off': {what:'The profile is deleted; the tenant is instantly healthy again.', verify:'The same probe now returns all-200 and fast.', doc:'time-chaos-contract'},
+    'verify-stubs': {what:'The OpenAPI document is compared against the stub set: which operations are covered, which stubs are off-contract, which responses violate the schema.', verify:'5/5 covered + 8 deliberately undeclared (the demo extras).', doc:'time-chaos-contract'},
+    'verify-traffic': {what:'The REAL traffic in the journal is compared against the spec: did the clients stay inside the contract? The report that catches what a permissive mock hides.', verify:'Every off-contract call (order, authorize, token…) is listed one by one.', doc:'time-chaos-contract'},
+  };
+
+  // ANSI → HTML (the codes demo.sh uses)
+  function ansi(s){
+    s = s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const map = {'1;33':'#E2B53E','1;36':'#4FC3C7','1;32':'#4ADE80','1;31':'#F87171'};
+    let depth = 0, out = '';
+    s.split(/(\x1b\[[0-9;]*m)/).forEach(part=>{
+      const m = part.match(/^\x1b\[([0-9;]*)m$/);
+      if(!m){ out += part; return; }
+      const code = m[1];
+      if(code === '0' || code === ''){ if(depth>0){ out += '</span>'; depth--; } }
+      else { const c = map[code]; out += c ? `<span style="color:${c}">` : '<span>'; depth++; }
+    });
+    while(depth-- > 0) out += '</span>';
+    return out;
+  }
+
+  function copyText(text){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text).catch(()=>legacyCopy(text));
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+  function legacyCopy(text){
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); } finally { ta.remove(); }
+  }
+
+  let busy = false;
+  document.querySelectorAll('.step').forEach(el=>{
+    const stepName = el.dataset.step;
+    const code = el.querySelector('code').innerText;
+    const runBtn = el.querySelector('.btn.run');
+    const copyBtn = el.querySelector('.btn.copy');
+    const term = el.querySelector('.term');
+    const pre = el.querySelector('.term pre');
+    const st = el.querySelector('.term-head .st');
+
+    // Detail panel — built automatically from the DETAILS map
+    const d = DETAILS[stepName];
+    if(d){
+      const btn = document.createElement('button');
+      btn.className = 'btn detail'; btn.textContent = 'Detail';
+      el.querySelector('.cmdline').insertBefore(btn, runBtn);
+      const box = document.createElement('div');
+      box.className = 'detailbox';
+      box.innerHTML =
+        '<div class="row"><span class="k">What happens</span>' + d.what + '</div>' +
+        '<div class="row"><span class="k">Verify on screen</span>' + d.verify + '</div>' +
+        '<div class="row"><a class="deep" href="/doc?d=' + d.doc + '" target="_blank">Deep dive →</a></div>';
+      el.insertBefore(box, term);
+      btn.addEventListener('click', e=>{
+        e.stopPropagation();
+        box.classList.toggle('show');
+        btn.classList.toggle('open', box.classList.contains('show'));
+      });
+    }
+
+    copyBtn.addEventListener('click', e=>{
+      e.stopPropagation();
+      copyText(code).then(()=>{
+        copyBtn.textContent='✓'; copyBtn.classList.add('done'); el.classList.add('copied');
+        setTimeout(()=>{copyBtn.textContent='Copy';copyBtn.classList.remove('done');el.classList.remove('copied');},1200);
+      });
+    });
+
+    runBtn.addEventListener('click', async e=>{
+      e.stopPropagation();
+      if(busy) return;
+      busy = true;
+      document.querySelectorAll('.btn.run').forEach(b=>b.disabled=true);
+      el.classList.add('running');
+      runBtn.innerHTML = '<span class="spinner"></span>running';
+      term.classList.add('show'); term.classList.remove('collapsed');
+      st.textContent=''; st.className='st';
+      pre.textContent = '';
+      try{
+        const res = await fetch(RUNNER + '/run', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({step: stepName})
+        });
+        const data = await res.json();
+        pre.innerHTML = ansi((data.output||'').trim() || '(no output)');
+        const ok = data.exit === 0;
+        st.textContent = (ok ? 'Success' : 'Error ' + data.exit) + ' · ' + (data.ms/1000).toFixed(1) + ' s';
+        st.classList.add(ok ? 'ok' : 'err');
+        pre.scrollTop = 0;
+      }catch(err){
+        pre.textContent = 'Could not reach the runner.\nStart it in a terminal:  python3 demo/runner.py\nThen open this page at:  http://localhost:7788';
+        st.textContent = 'No runner'; st.classList.add('err');
+      }
+      el.classList.remove('running');
+      runBtn.innerHTML = '▶ Run';
+      document.querySelectorAll('.btn.run').forEach(b=>b.disabled=false);
+      busy = false;
+    });
+  });
+
+  // Output cards: click the header to collapse/expand; the chevron is injected here
+  document.querySelectorAll('.term').forEach(t=>{
+    const head = t.querySelector('.term-head');
+    const chev = document.createElement('span');
+    chev.className = 'chev'; chev.textContent = '▾';
+    head.insertBefore(chev, head.firstChild);
+    head.addEventListener('click', ()=> t.classList.toggle('collapsed'));
+  });
+
+  // Collapse / expand every open output card in one click
+  document.getElementById('collapseAll').addEventListener('click', ()=>{
+    const terms = [...document.querySelectorAll('.term.show')];
+    if(!terms.length) return;
+    const anyOpen = terms.some(t=>!t.classList.contains('collapsed'));
+    terms.forEach(t=>t.classList.toggle('collapsed', anyOpen));
+    document.getElementById('collapseLbl').textContent = anyOpen ? 'Expand outputs' : 'Collapse outputs';
+    document.querySelector('#collapseAll .ic').textContent = anyOpen ? '▸' : '▾';
+  });
+
+  // Reset — returns the stage to the seed and clears every output card
+  document.getElementById('resetStage').addEventListener('click', async ()=>{
+    const yes = await confirmModal({
+      title: 'Reset the stage?',
+      body: 'Stubs, journal, messages and keys all return to the <b>seed state</b>.<br>You will need to re-do the OpenAPI import (Act 1).',
+      action: 'Reset', icon: '↺', danger: false});
+    if(!yes) return;
+    const b = document.getElementById('resetStage');
+    b.textContent = '… resetting'; b.disabled = true;
+    try{
+      await fetch(RUNNER + '/run', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({step:'seed'})});
+      document.querySelectorAll('.term').forEach(t=>{
+        t.classList.remove('show','collapsed');
+        t.querySelector('pre').textContent = '';
+        const st = t.querySelector('.st'); st.textContent=''; st.className='st';
+      });
+      b.textContent = '✓ Reset done'; b.classList.add('done');
+    }catch{ b.textContent = 'Error — runner?'; }
+    setTimeout(()=>{ b.innerHTML='<span class="ic">↺</span>Reset'; b.classList.remove('done'); b.disabled=false; }, 1800);
+  });
+
+  // Stop — shut everything down from the page
+  document.getElementById('stopAll').addEventListener('click', async ()=>{
+    const yes = await confirmModal({
+      title: 'Stop the demo?',
+      body: 'Every demo process shuts down: <b>engine</b> (8080), <b>upstream</b> (9090) and the <b>runner</b> (7788).<br>Start again with <b>./demo/start.sh</b>.',
+      action: 'Stop everything', icon: '■', danger: true});
+    if(!yes) return;
+    try{ await fetch(RUNNER + '/shutdown', {method:'POST'}); }catch{}
+    document.getElementById('deadview').classList.add('show');
+  });
+
+  // health dots
+  async function pulse(){
+    const set = (dot, label, ok) => {
+      document.getElementById(dot).className = 'dot ' + (ok ? 'on' : 'off');
+      document.getElementById(label).className = 'hlabel' + (ok ? '' : ' off');
+    };
+    try{ await fetch(RUNNER + '/health'); set('d-runner','l-runner',true); }
+    catch{ set('d-runner','l-runner',false); }
+    try{ await fetch('http://localhost:8080/__admin/health', {mode:'no-cors'}); set('d-engine','l-engine',true); }
+    catch{ set('d-engine','l-engine',false); }
+  }
+  pulse(); setInterval(pulse, 5000);
+</script>
+</body>
+</html>

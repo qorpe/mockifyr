@@ -1,0 +1,104 @@
+openapi: 3.0.3
+info:
+  title: Acme Payments API
+  version: 1.2.0
+paths:
+  /payments:
+    get:
+      operationId: listPayments
+      responses:
+        '200':
+          description: All payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Payment'
+    post:
+      operationId: createPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Payment'
+      responses:
+        '201':
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+  /payments/{paymentId}:
+    get:
+      operationId: getPayment
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+    put:
+      operationId: updatePayment
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Payment'
+      responses:
+        '200':
+          description: Updated payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+    delete:
+      operationId: deletePayment
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+components:
+  schemas:
+    Payment:
+      type: object
+      required: [id, amount, currency, status]
+      properties:
+        id:
+          type: string
+          example: PAY-1001
+        amount:
+          type: number
+          example: 149.5
+        currency:
+          type: string
+          example: EUR
+        status:
+          type: string
+          enum: [pending, authorized, settled, failed]
+          example: pending
+      example:
+        id: PAY-1001
+        amount: 149.5
+        currency: EUR
+        status: pending

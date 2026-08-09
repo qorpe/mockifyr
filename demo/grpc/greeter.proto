@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package mockifyr.grpc.test;
+
+import "google/protobuf/wrappers.proto";
+
+option csharp_namespace = "Mockifyr.Grpc.Test";
+
+// A unary service for the gRPC differential. SayHello (G13a) is the minimal case; Describe (G13b)
+// exercises repeated fields, an enum, a map, and a packed repeated reply; Wrapped (G13c) exercises
+// the well-known wrapper types and a oneof, both request and reply.
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+  rpc Describe (DescribeRequest) returns (DescribeReply);
+  rpc Wrapped (WrappedRequest) returns (WrappedReply);
+  // G13 streaming (single-message, the extent WireMock's extension supports; bidi is unsupported).
+  rpc ServerStream (HelloRequest) returns (stream HelloReply);
+  rpc ClientStream (stream HelloRequest) returns (HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+}
+
+message DescribeRequest {
+  repeated string tags = 1;
+  Color color = 2;
+  map<string, int32> counts = 3;
+}
+
+message DescribeReply {
+  string summary = 1;
+  repeated int32 codes = 2;
+}
+
+// G13c: wrapper-typed fields (each renders as its bare inner scalar in proto3 JSON) plus a oneof.
+message WrappedRequest {
+  google.protobuf.StringValue note = 1;
+  google.protobuf.Int32Value count = 2;
+  google.protobuf.BoolValue active = 3;
+  oneof choice {
+    string text = 4;
+    int32 number = 5;
+  }
+}
+
+message WrappedReply {
+  google.protobuf.StringValue label = 1;
+  google.protobuf.Int64Value total = 2;
+  oneof result {
+    string ok = 3;
+    int32 code = 4;
+  }
+}
