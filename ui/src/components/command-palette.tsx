@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { Command } from 'cmdk'
-import { Globe,
-  Activity, BookOpen, Database, Disc, KeyRound, LayoutDashboard, LayoutGrid, ListTree, Moon, Plus, Search, Settings, Sun, Waypoints,
+import {
+  Activity, BookOpen, Database, Disc, Globe, KeyRound, LayoutDashboard, LayoutGrid,
+  ListTree, Moon, Plus, Settings, Sun, Waypoints,
 } from 'lucide-react'
+import { CommandPalette as KitCommandPalette } from '@qorpe/ui'
 import { useUi } from '@/components/providers'
 import { openHelpers } from '@/components/templating/helpers-dialog'
 
@@ -21,64 +21,43 @@ const NAV = [
   { to: '/settings', key: 'nav.settings', icon: Settings },
 ]
 
-/** Global command palette — open with ⌘K/Ctrl-K or the sidebar search (dispatches `open-command`). */
+/**
+ * The global palette, on the family kit (ADR 0014 M4). ⌘K and the rail's search trigger both
+ * reach it through the kit's own event, so the trigger and the palette never know each other.
+ * What stays local is the only part that is mockifyr's: which destinations and actions exist.
+ */
 export function CommandPalette() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { theme, setTheme } = useUi()
-  const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setOpen((o) => !o) }
-    }
-    const onOpen = () => setOpen(true)
-    document.addEventListener('keydown', onKey)
-    window.addEventListener('open-command', onOpen)
-    return () => { document.removeEventListener('keydown', onKey); window.removeEventListener('open-command', onOpen) }
-  }, [])
-
-  const run = (fn: () => void) => { setOpen(false); fn() }
 
   return (
-    <Command.Dialog open={open} onOpenChange={setOpen} label={t('common.search')}
-      className="fixed inset-0 z-[100] grid place-items-start justify-center pt-[16vh]">
-      <div className="fixed inset-0 bg-black/40" onClick={() => setOpen(false)} />
-      <div className="relative w-[640px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-background shadow-[0_16px_50px_rgb(24_24_27/0.25)]">
-        <div className="flex items-center gap-2.5 border-b border-border px-4">
-          <Search className="size-4 text-muted-foreground" />
-          <Command.Input autoFocus placeholder={t('common.commandHint')} className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
-        </div>
-        <Command.List className="max-h-[340px] overflow-y-auto p-2">
-          <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">—</Command.Empty>
-          <Command.Group heading={t('common.goTo')} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-faint">
-            {NAV.map((n) => {
-              const Icon = n.icon
-              return (
-                <Command.Item key={n.to} value={t(n.key)} onSelect={() => run(() => navigate(n.to))}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm data-[selected=true]:bg-muted">
-                  <Icon className="size-4 text-muted-foreground" />{t(n.key)}
-                </Command.Item>
-              )
-            })}
-          </Command.Group>
-          <Command.Group heading={t('common.actions')} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-faint">
-            <Command.Item value={t('stubs.newStub')} onSelect={() => run(() => navigate('/stubs?new=1'))}
-              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm data-[selected=true]:bg-muted">
-              <Plus className="size-4 text-muted-foreground" />{t('stubs.newStub')}
-            </Command.Item>
-            <Command.Item value={t('editor.helpers')} onSelect={() => run(openHelpers)}
-              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm data-[selected=true]:bg-muted">
-              <BookOpen className="size-4 text-muted-foreground" />{t('editor.helpers')}
-            </Command.Item>
-            <Command.Item value={t('common.darkMode')} onSelect={() => run(() => setTheme(theme === 'dark' ? 'light' : 'dark'))}
-              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm data-[selected=true]:bg-muted">
-              {theme === 'dark' ? <Sun className="size-4 text-muted-foreground" /> : <Moon className="size-4 text-muted-foreground" />}
-              {t('common.darkMode')}
-            </Command.Item>
-          </Command.Group>
-        </Command.List>
-      </div>
-    </Command.Dialog>
+    <KitCommandPalette
+      label={t('common.search')}
+      groups={[
+        {
+          heading: t('common.goTo'),
+          items: NAV.map((n) => {
+            const Icon = n.icon
+            return { id: n.to, label: t(n.key), icon: <Icon className="size-4 text-muted-foreground" />, run: () => navigate(n.to) }
+          }),
+        },
+        {
+          heading: t('common.actions'),
+          items: [
+            { id: 'new-stub', label: t('stubs.newStub'), icon: <Plus className="size-4 text-muted-foreground" />, run: () => navigate('/stubs?new=1') },
+            { id: 'helpers', label: t('editor.helpers'), icon: <BookOpen className="size-4 text-muted-foreground" />, run: openHelpers },
+            {
+              id: 'theme',
+              label: t('common.darkMode'),
+              icon: theme === 'dark'
+                ? <Sun className="size-4 text-muted-foreground" />
+                : <Moon className="size-4 text-muted-foreground" />,
+              run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
+            },
+          ],
+        },
+      ]}
+    />
   )
 }

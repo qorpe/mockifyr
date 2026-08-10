@@ -54,7 +54,7 @@ one, or a trigger that ends it:
 | `ui/tabs` | `TabStrip`/`TabPanel` | Radix Tabs here host ROUTED, lazily-mounted panels (stub editor Form/JSON, message detail); the kit's strip owns its own selection state. **Trigger:** the kit's strip grows a controlled-panel story, or these screens stop routing through tabs. |
 | `ui/confirm-dialog` | `Dialog` + `VerbButton` | The kit's confirm lives INSIDE `VerbButton` (confirm-before-verb); this app's destructive actions are not admin verbs over the `AdminResult` envelope, so the pattern does not fit yet. **Trigger:** the dashboard adopts the verb envelope. |
 | `ui/context-menu` | — (not promoted) | The kit deliberately did NOT take it: this implementation has no keyboard support, and shipping that into the family would export a defect. Written in the extraction RFC's D3. **Trigger:** a second consumer needs right-click menus → rebuild on Radix, in the kit. |
-| `layout/app-shell`, `layout/app-sidebar`, `layout/tenant-switcher`, `command-palette`, `login-gate`, `error-boundary` | `AppShell`, `PageHeader`, `CommandPalette` | **The real debt (~690 lines).** These predate the kit and were missed by M1–M3 because they are shell, not screens. The kit's `AppShell` takes nav items as props and would host this nav; the sidebar's live per-tenant count badges and the tenant switcher are mockifyr-domain and stay. **Trigger: M4** — one slice, visual-diffed against the current shell, because the shell is the one surface where a regression is felt on every screen. |
+| `layout/tenant-switcher`, `layout/preferences-menu`, `login-gate`, `error-boundary` | — | **Domain, and staying.** The tenant switcher carries live per-tenant counts and the mockifyr tenancy model; preferences owns the locale set and the sign-out that only exists when the host runs with credentials; the login gate and error boundary are mockifyr's auth and failure story. They ride the kit shell's `footer` slot rather than being reimplemented by it. **M4 done** — `app-shell` and `command-palette` are configuration over `AppShell`/`CommandPalette` now, and `app-sidebar` (249 lines) is deleted. |
 | `ui/badges`, `ui/http-view`, `ui/illustrations`, `ui/brand-mark`, `stubs/*`, `templating/*` | — | Domain visuals: HTTP methods, protocols, status ramps, product art, brand. Adopting the kit is not a restyle; these are the app's own vocabulary (RFC D7: mechanism in the kit, taxonomy app-side). Permanent. |
 
 An audit on 2026-08-09 also found this repo still shipping a 448-line `docs/design-system.md`
@@ -71,3 +71,25 @@ scrim or shadow in a component is a defect") now holds here too.
   Sheet custom-header slot.
 - The i18n strings the kit needs arrive via its labels props from this app's
   i18next — the kit itself stays framework-free.
+
+## M4, and what adopting a shell actually cost
+
+The shell moved onto the kit in [#329](https://github.com/qorpe/mockifyr/pull/329): `app-sidebar.tsx`
+(249 lines) is gone, `app-shell.tsx` and `command-palette.tsx` are configuration rather than layout,
+and `preferences-menu.tsx` was *extracted* rather than written — the same code, in the slot that owns it.
+Net **340 deleted against 157 added**.
+
+The interesting part is the price of getting there. A first pass judged the kit by **rendering** —
+layout, colour, spacing — and concluded three things were missing. Driving the real screens found
+**four more**, all of them about what an operator can *do* rather than what they see:
+
+| found by | gap |
+|---|---|
+| reading | no brand slot; badges always `danger`; no bleed surface |
+| **using** | nav items were buttons, not links (no ⌘-click into a second tab) |
+| **using** | the visible search label could not be translated — six locales would all have read "Search" |
+| **measuring** | the rail scrolled as a whole, so a twelve-item nav pushed the tenant switcher below the fold |
+
+Each went back to the kit rather than into a fork — 0.2.0, 0.3.0, 0.3.1, 0.3.2 — which is the point of
+having a kit at all. The lesson worth keeping: **a component comparison that only looks is half a
+comparison.** Three of the four regressions were invisible in a screenshot.

@@ -8,6 +8,16 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Changed
+
+- **The dashboard shell runs on the shared kit** (ADR 0014 M4). The sidebar, app frame and command
+  palette are the family kit's now; what stays mockifyr's is what only mockifyr knows — the brand mark,
+  the routes, the live per-tenant counts, and the tenant switcher and preferences in the rail foot.
+  Two things an operator gains: **nav items are real links**, so ⌘-click opens the journal in a second
+  tab while stubs stay open here, and the **tenant switcher is pinned** rather than scrolling away as
+  the nav grew. Everything else is deliberately identical — verified screen by screen, in light and
+  dark, expanded and collapsed.
+
 ## Released
 
 ### [v1.14.0](https://github.com/qorpe/mockifyr/releases/tag/v1.14.0) — 2026-08-09
