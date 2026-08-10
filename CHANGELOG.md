@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Changed
+## Released
+
+### [v1.16.0](https://github.com/qorpe/mockifyr/releases/tag/v1.16.0) — 2026-08-10
+
+#### Changed
 
 - **The last local sheet is gone.** The journal, message and channel-behaviour panels run on the
   family kit's `Sheet`, which grew the two things they needed: a header slot for the interactive
@@ -16,15 +20,13 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   padding and scrolling to tabs that scroll their own panes. Nothing an operator sees changed —
   verified panel by panel in a browser, light and dark.
 
-### Fixed
+#### Fixed
 
 - **The dashboard's type check was checking nothing.** `tsc --noEmit` at the dashboard root reports
   clean regardless: the root config carries only project references. It stayed silent through three
   components referencing identifiers that no longer existed. `pnpm typecheck` now runs `tsc -b
   --force` and CI runs it as its own step — a check that cannot fail is worse than no check, because
   it is trusted.
-
-## Released
 
 ### [v1.15.0](https://github.com/qorpe/mockifyr/releases/tag/v1.15.0) — 2026-08-10
 
