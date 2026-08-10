@@ -8,7 +8,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
-### Changed
+## Released
+
+### [v1.15.0](https://github.com/qorpe/mockifyr/releases/tag/v1.15.0) — 2026-08-10
+
+#### Changed
 
 - **The dashboard shell runs on the shared kit** (ADR 0014 M4). The sidebar, app frame and command
   palette are the family kit's now; what stays mockifyr's is what only mockifyr knows — the brand mark,
@@ -18,7 +22,19 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   the nav grew. Everything else is deliberately identical — verified screen by screen, in light and
   dark, expanded and collapsed.
 
-## Released
+- **Dependencies moved forward**, most of them quietly: Handlebars.Net 2.1.6 → 2.4.3, Confluent.Kafka
+  2.6.1 → 2.15.0, RabbitMQ.Client 7.0.0 → 7.2.2, the Microsoft identity stack 8.3.0 → 8.22.0,
+  Grpc.Net.Client 2.80 → 2.83, StackExchange.Redis 2.13 → 3.1, and the dashboard's own set.
+
+  Handlebars.Net 2.4.3 publishes substantial rendering and compilation improvements. We are **not**
+  quoting a number here: the repository's quick benchmark is a did-it-break gate, not a measurement
+  (its margin exceeded its mean by thirty-fold on this run), and the published envelope in
+  `docs/parity/performance.md` comes from a stated machine. It will be re-measured there rather than
+  guessed at here.
+
+  Two of these needed source changes rather than a version bump, both recorded in the commits: 2.4.3
+  annotates its helper hash as nullable — which it always could be, for `{{jwt sub=missingThing}}` —
+  so the signatures follow the truth instead of asserting the older, less true one.
 
 ### [v1.14.0](https://github.com/qorpe/mockifyr/releases/tag/v1.14.0) — 2026-08-09
 
