@@ -63,6 +63,8 @@ internal static class FakerHelpers
             ? provider(new Faker())
             : $"[ERROR: Unable to evaluate the expression {expression}]";
 
+    // Pattern-matched rather than index-checked twice: 2.4.3 annotates the indexer as nullable, and
+    // `is not null` on one read tells the compiler nothing about the next one.
     private static string Argument(Arguments arguments) =>
-        arguments.Length > 0 && arguments[0] is not null ? arguments[0].ToString() ?? string.Empty : string.Empty;
+        arguments.Length > 0 && arguments[0] is { } first ? first.ToString() ?? string.Empty : string.Empty;
 }
