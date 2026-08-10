@@ -61,7 +61,7 @@
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.3.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <!-- FakeTimeProvider: lets the key-rotation tests advance time instead of sleeping (#250). -->
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.8.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <!-- Differential harness: runs the real Java WireMock oracle in a container. -->
