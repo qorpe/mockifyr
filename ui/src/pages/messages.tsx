@@ -17,11 +17,10 @@ import {
   messageAttachmentUrl, type MessageBehaviors, type MessageChannel, resetMessageBehaviors, resetMessages,
   saveMessageBehaviors,
 } from '@/lib/api'
-import { Button, SearchBox } from '@qorpe/ui'
+import { Button, SearchBox, Sheet } from '@qorpe/ui'
 import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet'
 import { Input, Label } from '@/components/ui/field'
 import { Select } from '@qorpe/ui'
 
@@ -292,14 +291,16 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
   const { t } = useTranslation()
   const hasHtml = !!message?.htmlBody
   return (
-    <Sheet open={message !== null} onOpenChange={(o) => { if (!o) onClose() }}>
-      <SheetContent>
-        {message && (
-          <>
-            {/* The subject and the from→to line copy on hover — both travel into tests and bug
-                reports constantly (#194 polish). */}
-            <div className="border-b border-border px-6 py-4">
-              <HoverCopy className="text-base font-semibold" text={headline(message, t)} />
+    <Sheet
+      open={message !== null}
+      onOpenChange={(o) => { if (!o) onClose() }}
+      // The accessible name is what the row is called; the visible header is the interactive
+      // version of it, because subject and addressing lines travel into tests and bug reports
+      // constantly and copy on hover (#194 polish).
+      title={message ? headline(message, t) : t('nav.messages')}
+      header={message && (
+        <div className="pe-10">
+          <HoverCopy className="text-base font-semibold" text={headline(message, t)} />
               {/* A broker message has no recipients — it is addressed to a topic, not to anybody —
                   so an arrow pointing at nothing would describe a delivery that never happened. Its
                   headline is already the topic, so this line carries the partition key instead, and
@@ -313,7 +314,14 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                     <HoverCopy className="mt-0.5 text-sm text-muted-foreground"
                       text={`${message.from || '—'} → ${message.to.join(', ')}`} />
                   )}
-            </div>
+        </div>
+      )}
+      // Preview, text, source and details each scroll their own pane.
+      body="bleed"
+      closeLabel={t('common.close')}
+    >
+        {message && (
+          <>
             {message.channel === 'sms' ? (
               <SmsThread list={thread} locale={locale} onDelete={onDelete} />
             ) : (
@@ -368,7 +376,6 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
             )}
           </>
         )}
-      </SheetContent>
     </Sheet>
   )
 }
@@ -546,9 +553,18 @@ function BehaviorsSheet({ open, onOpenChange, tenant }: { open: boolean; onOpenC
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="max-w-[480px]">
-        <SheetHeader title={t('messages.behaviors')} description={t('messages.behaviorsHint')} />
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      maxWidth={480}
+      // A plain title and description here: this panel's header is not interactive, so it takes
+      // the kit's default rather than a header slot it does not need.
+      title={t('messages.behaviors')}
+      description={t('messages.behaviorsHint')}
+      // The form scrolls itself and dims while loading, so it owns its own padding too.
+      body="bleed"
+      closeLabel={t('common.close')}
+    >
         <div className={cn('min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5', !loaded && 'pointer-events-none opacity-50')}>
           <div>
             <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold"><Mail className="size-4 text-info" />{t('messages.qsMail')}</div>
@@ -594,7 +610,6 @@ function BehaviorsSheet({ open, onOpenChange, tenant }: { open: boolean; onOpenC
             <Button variant="primary" onClick={() => void save()}>{t('messages.save')}</Button>
           </div>
         </div>
-      </SheetContent>
     </Sheet>
   )
 }

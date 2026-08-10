@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ArrowUpRight, Clock } from 'lucide-react'
 import { fetchJournalDetail, fetchStubs, type JournalWebhook } from '@/lib/api'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet } from '@qorpe/ui'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MethodChip } from '@/components/ui/badges'
 // Shared with the stub test runner (#203) so both surfaces render HTTP traffic identically.
@@ -106,17 +106,30 @@ export function JournalDetailSheet({ id, tenant, onClose }: { id: string | null;
   })
 
   return (
-    <Sheet open={!!id} onOpenChange={(o) => { if (!o) onClose() }}>
-      <SheetContent className="max-w-[720px]">
+    <Sheet
+      open={!!id}
+      onOpenChange={(o) => { if (!o) onClose() }}
+      maxWidth={720}
+      // The accessible name is the URL — what an operator would call this entry. While the fetch
+      // is in flight there is no URL yet, so the screen's own noun stands in rather than an empty
+      // string, which would leave the dialog unannounceable at exactly the wrong moment.
+      title={data ? data.request.url : t('nav.journal')}
+      // The header is a live strip — method chip, URL, status chip — not a string.
+      header={data && (
+        <div className="flex items-center gap-2.5 pe-10">
+          <MethodChip method={data.request.method} />
+          <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium">{data.request.url}</span>
+          {data.response && <StatusChip status={data.response.status} />}
+        </div>
+      )}
+      // Each tab scrolls its own pane, so the panel must not wrap them in a second scroller.
+      body="bleed"
+      closeLabel={t('common.close')}
+    >
         {isLoading || !data ? (
           <div className="space-y-3 p-6">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-6 animate-pulse rounded bg-muted" />)}</div>
         ) : (
           <>
-            <div className="flex items-center gap-2.5 border-b border-border px-6 py-4 pe-14">
-              <MethodChip method={data.request.method} />
-              <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium">{data.request.url}</span>
-              {data.response && <StatusChip status={data.response.status} />}
-            </div>
             <MatchedStubRow
               stubId={data.wasMatched ? data.stubId : null}
               stubs={stubsData?.mock ? null : stubsData?.stubs ?? null}
@@ -158,7 +171,6 @@ export function JournalDetailSheet({ id, tenant, onClose }: { id: string | null;
             </Tabs>
           </>
         )}
-      </SheetContent>
     </Sheet>
   )
 }
