@@ -19,6 +19,15 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 3
+    # A deferral that lives only in an issue is not a deferral: Dependabot does not read them, so
+    # the same major came back and the same reasoning had to be found again. Recorded HERE, where
+    # the tool can act on it, with the issue carrying the argument.
+    ignore:
+      # @tanstack/react-table 9 is a redesign, not a rename — atoms, stores, a Subscribe HOC and
+      # opt-in reactivity. See #338 for why it is deferred and the three triggers that end the
+      # deferral. Minor and patch updates to v8 still arrive.
+      - dependency-name: "@tanstack/react-table"
+        update-types: ["version-update:semver-major"]
     groups:
       dashboard-dependencies:
         patterns: ["*"]
