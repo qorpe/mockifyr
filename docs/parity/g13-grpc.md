@@ -146,3 +146,21 @@ The fix is in the test, not the assertion: the oracle call retries **only** whil
 of the startup shapes (`Unimplemented`/`Unavailable`/`Internal`), with a 30-second deadline. A
 genuine mismatch still fails immediately — the retry cannot mask one, because a real divergence
 produces a settled status, not a startup status.
+
+
+## The oracle's warm-up has more shapes than the retry knew (post-1.14.0)
+
+`G13dGrpcStatusTests` waits out the oracle container's gRPC warm-up before comparing statuses,
+because the container's readiness probe is an HTTP call that says nothing about the gRPC extension
+having loaded its descriptor. The retry treated `Unimplemented`, `Unavailable` and `Internal` as
+startup shapes.
+
+**`Cancelled` and `DeadlineExceeded` are startup shapes too.** On a loaded runner the handshake is
+torn down mid-flight and the client reports the abort rather than the container's readiness — so the
+loop returned immediately with `Cancelled`, compared it against Mockifyr's correct `NotFound`, and
+failed.
+
+It surfaced on a **`StackExchange.Redis` bump**, which touches no gRPC code whatsoever. That is the
+tell worth keeping: a test that fails on a change it cannot possibly be affected by is reporting its
+own environment, not the change. The fix widens the retry rather than lengthening a sleep; a genuine
+divergence still fails, because the assertion runs either way once the deadline passes.
