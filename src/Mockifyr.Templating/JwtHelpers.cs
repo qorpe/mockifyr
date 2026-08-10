@@ -59,7 +59,10 @@ internal static class JwtHelpers
         return new JsonObject { ["keys"] = new JsonArray(jwk) }.ToJsonString();
     }
 
-    private static object CreateToken(IReadOnlyDictionary<string, object>? hash)
+    // The hash's values are nullable as of Handlebars.Net 2.4.3, which annotated its API more
+    // precisely rather than changing it: a helper written `{{jwt sub=undefinedThing}}` always could
+    // hand us a null. The signature follows the truth instead of asserting the old one.
+    private static object CreateToken(IReadOnlyDictionary<string, object?>? hash)
     {
         // The tenant's clock (#290), so a token minted for a frozen host expires on that host's terms.
         var now = RenderClock.UtcNow;
@@ -137,6 +140,6 @@ internal static class JwtHelpers
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private static string? Get(IReadOnlyDictionary<string, object>? hash, string key) =>
+    private static string? Get(IReadOnlyDictionary<string, object?>? hash, string key) =>
         hash is not null && hash.TryGetValue(key, out var value) ? value?.ToString() : null;
 }
