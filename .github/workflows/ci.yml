@@ -181,6 +181,12 @@ jobs:
         # so the one gate that reads the code for smells was never actually a gate.
         run: pnpm lint
 
+      - name: Type-check
+        # `tsc -b --force`, not `tsc --noEmit`: the root tsconfig only carries references, so
+        # --noEmit there checks NOTHING and reports clean. It cost a broken build once — four
+        # errors it had been silent about showed up the moment the build ran for real.
+        run: pnpm typecheck
+
       - name: Build (type-check + bundle)
         run: pnpm build
 

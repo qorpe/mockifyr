@@ -93,3 +93,22 @@ layout, colour, spacing — and concluded three things were missing. Driving the
 Each went back to the kit rather than into a fork — 0.2.0, 0.3.0, 0.3.1, 0.3.2 — which is the point of
 having a kit at all. The lesson worth keeping: **a component comparison that only looks is half a
 comparison.** Three of the four regressions were invisible in a screenshot.
+
+## The sheets, and a type-check that checked nothing
+
+The journal, message and channel-behaviour panels moved onto the kit's `Sheet` once it grew the two
+things they needed — a `header` slot for an interactive header strip, and `body="bleed"` for a body
+whose own tabs scroll. The local `sheet.tsx` is deleted. Both additions went back to the kit (0.4.0,
+0.5.0) rather than into a fork, which is now the seventh and eighth time that route was taken.
+
+The second one is worth naming: it is the **same decision** `AppShell` took for its content surface,
+found again one layer down. One scroller per column is a rule, not a special case.
+
+**The process finding matters more.** I verified the migration with `npx tsc --noEmit` and it
+reported clean while three components in one file referenced identifiers that no longer existed. The
+root `tsconfig.json` carries only project references, so `--noEmit` there checks nothing at all and
+says so by saying nothing. `tsc -b --force` printed all four errors immediately.
+
+A check that cannot fail is worse than no check, because it is trusted. `pnpm typecheck` now runs
+`tsc -b --force` and CI runs it as its own step, so the gate CLAUDE.md §3a asks for is one that can
+actually go red.
