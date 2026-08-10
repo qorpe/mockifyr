@@ -88,7 +88,16 @@ public sealed class G13dGrpcStatusTests : IAsyncLifetime
         while (true)
         {
             var result = await CallAsync(_oracle.GrpcAddress);
-            var warmingUp = result.Code is StatusCode.Unimplemented or StatusCode.Unavailable or StatusCode.Internal;
+            // Cancelled and DeadlineExceeded belong here too: on a loaded runner the oracle's gRPC
+            // handshake gets torn down mid-flight, and the client reports the abort rather than the
+            // container's readiness. Leaving them out made a startup symptom look like a divergence
+            // — it failed CI on a StackExchange.Redis bump, which touches no gRPC code at all.
+            var warmingUp = result.Code
+                is StatusCode.Unimplemented
+                or StatusCode.Unavailable
+                or StatusCode.Internal
+                or StatusCode.Cancelled
+                or StatusCode.DeadlineExceeded;
             if (!warmingUp || DateTime.UtcNow > deadline)
             {
                 return result;
