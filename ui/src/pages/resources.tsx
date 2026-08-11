@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronLeft, ChevronRight, Database, Eraser, Pencil, Plus, Sprout, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Database, Eraser, Link2, Pencil, Plus, Sprout, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  deleteResourceDocument, fetchResourceCollections, fetchResourceDocuments, putResourceDocument,
-  resetResources, seedResourceCollection, type ResourceDoc,
+  deleteResourceDocument, fetchResourceCollections, fetchResourceDocuments, fetchResourceRelations,
+  putResourceDocument, putResourceRelations, resetResources, seedResourceCollection,
+  type ResourceDoc, type ResourceRelation,
 } from '@/lib/api'
 import { useUi } from '@/components/providers'
 import { Button } from '@qorpe/ui'
@@ -60,6 +61,28 @@ export function ResourcesPage() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['resources', tenant] })
 
+  const relationsQuery = useQuery({
+    queryKey: ['relations', tenant],
+    queryFn: () => fetchResourceRelations(tenant),
+  })
+  const relations = useMemo(
+    () => relationsQuery.data?.find((r) => r.collection === selected)?.belongsTo ?? [],
+    [relationsQuery.data, selected])
+
+  const saveRelations = useMutation({
+    mutationFn: async () => {
+      const usable = draftRelations.filter((r) => r.collection.trim() && r.via.trim())
+      const result = await putResourceRelations(tenant, selected!, usable)
+      if (!result.ok) throw new Error(result.message ?? 'failed')
+    },
+    onSuccess: () => {
+      toast.success(t('res.relationsSaved'))
+      setRelating(false)
+      void queryClient.invalidateQueries({ queryKey: ['relations', tenant] })
+    },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
   // ---- dialogs ------------------------------------------------------------------------------
 
   // Document editor: null = closed; a ResourceDoc = editing; 'new' = creating (collection editable
@@ -69,9 +92,14 @@ export function ResourcesPage() {
   const [docId, setDocId] = useState('')
   const [docBody, setDocBody] = useState('')
   const [seeding, setSeeding] = useState(false)
+  // Relations (ADR 0015): what this collection's documents belong to. Usually derived at OpenAPI
+  // import, so the screen's first job is to SHOW them — a scoping rule you cannot see is one you
+  // debug by guessing.
+  const [relating, setRelating] = useState(false)
+  const [draftRelations, setDraftRelations] = useState<ResourceRelation[]>([])
   const [seedJson, setSeedJson] = useState('')
   const [confirm, setConfirm] = useState<{ kind: 'doc'; id: string } | { kind: 'collection' } | { kind: 'all' } | null>(null)
-  useEffect(() => { setEditing(null); setSeeding(false); setConfirm(null) }, [tenant])
+  useEffect(() => { setEditing(null); setSeeding(false); setConfirm(null); setRelating(false) }, [tenant])
 
   const openEditor = (doc?: ResourceDoc, newCollection = false) => {
     setEditing(doc ?? (newCollection ? 'new-collection' : 'new'))
@@ -172,11 +200,35 @@ export function ResourcesPage() {
               <span className="font-mono text-[12.5px] font-semibold">{selected}</span>
               <span className="text-xs tabular-nums text-muted-foreground">{t('res.total', { count: total })}</span>
               <div className="ms-auto flex gap-1.5">
+                <Button
+                  variant="ghost" size="sm"
+                  onClick={() => { setDraftRelations(relations.map((r) => ({ ...r }))); setRelating(true) }}
+                ><Link2 />{t('res.relations')}</Button>
                 <Button variant="ghost" size="sm" onClick={() => { setSeedJson(''); setSeeding(true) }}><Sprout />{t('res.seed')}</Button>
                 <Button variant="ghost" size="sm" onClick={() => setConfirm({ kind: 'collection' })}><Eraser />{t('res.reset')}</Button>
                 <Button variant="outline" size="sm" onClick={() => openEditor()}><Plus />{t('res.newDoc')}</Button>
               </div>
             </div>
+
+            {relations.length > 0 && (
+              // Stated where the documents are, not on a screen of its own: "why is this list short"
+              // and "what is this collection scoped by" are the same question, asked in the same place.
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-border bg-muted/20 px-4 py-2">
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{t('res.belongsTo')}</span>
+                {relations.map((r) => (
+                  <span
+                    key={`${r.collection}.${r.via}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-0.5 font-mono text-[12px]"
+                    title={t('res.onDeleteIs', { rule: r.onDelete })}
+                  >
+                    <Link2 className="size-3 text-muted-foreground" />
+                    {r.collection}
+                    <span className="text-muted-foreground">·</span>
+                    {r.via}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -256,6 +308,58 @@ export function ResourcesPage() {
           </div>
         </ConfirmDialog>
       )}
+
+      {/* Relations dialog */}
+      <ConfirmDialog
+        open={relating} onOpenChange={setRelating}
+        title={t('res.relationsTitle', { collection: selected ?? '' })} body={t('res.relationsHint')}
+        confirmLabel={t('env.save')} cancelLabel={t('editor.cancel')}
+        onConfirm={() => saveRelations.mutate()}
+      >
+        <div className="mt-3 space-y-2">
+          {draftRelations.map((r, i) => (
+            <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_130px_auto] items-center gap-2">
+              <Input
+                value={r.collection} placeholder="customers" className="font-mono"
+                onChange={(e) => {
+                  const next = [...draftRelations]
+                  next[i] = { ...next[i], collection: e.target.value }
+                  setDraftRelations(next)
+                }}
+              />
+              <Input
+                value={r.via} placeholder="customerId" className="font-mono"
+                onChange={(e) => {
+                  const next = [...draftRelations]
+                  next[i] = { ...next[i], via: e.target.value }
+                  setDraftRelations(next)
+                }}
+              />
+              <select
+                value={r.onDelete}
+                onChange={(e) => {
+                  const next = [...draftRelations]
+                  next[i] = { ...next[i], onDelete: e.target.value as ResourceRelation['onDelete'] }
+                  setDraftRelations(next)
+                }}
+                className="h-9 rounded-lg border border-border bg-background px-2 text-[13px]"
+              >
+                {(['restrict', 'cascade', 'orphan'] as const).map((rule) => (
+                  <option key={rule} value={rule}>{t(`res.onDelete.${rule}`)}</option>
+                ))}
+              </select>
+              <Button
+                variant="ghost" size="iconSm" aria-label={t('res.removeRelation')}
+                onClick={() => setDraftRelations(draftRelations.filter((_, j) => j !== i))}
+              ><X /></Button>
+            </div>
+          ))}
+          <Button
+            variant="ghost"
+            onClick={() => setDraftRelations([...draftRelations, { collection: '', via: '', onDelete: 'restrict' }])}
+          ><Plus />{t('res.addRelation')}</Button>
+        </div>
+      </ConfirmDialog>
 
       {/* Seed dialog */}
       <ConfirmDialog

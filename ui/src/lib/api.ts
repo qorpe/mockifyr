@@ -961,6 +961,60 @@ export async function fetchResourceCollections(tenant: string): Promise<{ collec
   }
 }
 
+/** One declared relation: this collection's documents belong to `collection`, keyed by `via`. */
+export interface ResourceRelation {
+  collection: string
+  via: string
+  onDelete: 'restrict' | 'cascade' | 'orphan'
+}
+
+/** A collection's relations (ADR 0015). Derived at OpenAPI import; editable here. */
+export interface ResourceSchema {
+  collection: string
+  belongsTo: ResourceRelation[]
+}
+
+/** Every collection's declared relations (GET /__admin/relations). */
+export async function fetchResourceRelations(tenant: string): Promise<ResourceSchema[]> {
+  try {
+    const res = await adminFetch('/relations', tenant)
+    if (!res.ok) throw new Error(String(res.status))
+    const body = (await res.json()) as { relations?: ResourceSchema[] }
+    return body.relations ?? []
+  } catch {
+    return []
+  }
+}
+
+/** Declares or replaces one collection's relations (PUT /__admin/relations/{collection}). */
+export async function putResourceRelations(
+  tenant: string,
+  collection: string,
+  belongsTo: ResourceRelation[],
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await adminFetch(`/relations/${encodeURIComponent(collection)}`, tenant, {
+      method: 'PUT',
+      body: JSON.stringify({ belongsTo }),
+    })
+    if (res.ok) return { ok: true }
+    const body = (await res.json().catch(() => ({}))) as { message?: string }
+    return { ok: false, message: body.message }
+  } catch {
+    return { ok: false, message: 'Network' }
+  }
+}
+
+/** Removes a collection's relations (DELETE /__admin/relations/{collection}). */
+export async function deleteResourceRelations(tenant: string, collection: string): Promise<boolean> {
+  try {
+    const res = await adminFetch(`/relations/${encodeURIComponent(collection)}`, tenant, { method: 'DELETE' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 /** Pages through one collection (GET /__admin/resources/{collection}?limit=&offset=). */
 export async function fetchResourceDocuments(
   tenant: string, collection: string, limit: number, offset: number,

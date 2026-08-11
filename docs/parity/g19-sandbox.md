@@ -438,6 +438,20 @@ did not move the parity surface.
 None of the five survivors turned out to be an equivalent mutant, which is the useful outcome: the
 suite was measuring the paths that were easy to write rather than the ones that fail.
 
+**The dashboard shows them (#350 follow-up).** A scoping rule you cannot see is one you debug by
+guessing, and relations are usually *derived* at import rather than typed — so the first job is simply
+to state them. A `BELONGS TO` strip sits under the collection header, beside the documents, because
+"why is this list short" and "what is this collection scoped by" are the same question asked in the
+same place. Editing is a small dialog over `/__admin/relations`, with `onDelete` spelled out as what
+it does (refuse delete / delete children / leave children) rather than as the wire value.
+
+Verified by driving the real screen: import a nested spec, watch the strip appear with the derived
+relation, switch `onDelete` to cascade, save, and confirm that deleting a customer goes from **409**
+to **204** and takes their order with it. Two of my own probes were wrong before that worked — a
+synchronous DOM read that ran before React had rendered, and a programmatic `select` write that never
+fired React's `onChange`, so a save persisted the unchanged value. Both looked exactly like a broken
+feature. Recorded because the next person to automate this screen will meet the same two.
+
 **Out of scope, deliberately** (ADR 0015): joins, cross-collection transactions, a query language,
 schema migrations. A sandbox should behave like the API it stands in for, not become a database
 harder to reason about than the service it replaces.
