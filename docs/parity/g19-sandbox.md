@@ -414,11 +414,29 @@ earlier versions stay valid; scoping happens only where a relation is declared; 
 to declared relations. All three are asserted, not assumed.
 
 **Validation.** No oracle has a sandbox resource model, so a self-test throughout:
-`RelationalResourceTests` (28 unit cases over the pure decisions and the reserved-collection
+`RelationalResourceTests` (35 unit cases over the pure decisions and the reserved-collection
 isolation), `RelationalStateDirectiveTests` (10 over the directive), and `RelationalSandboxTests`
 (9 wire cases that import a nested spec and then **serve** it — import claims proven by serving, the
 G19c rule). The differential suite stayed green at 425 untouched, which is the proof that relations
 did not move the parity surface.
+
+**Stryker 100 %** on `Relations.cs`, reached from 80 % — and the 20 % it found was not decoration:
+
+- **A customer with no orders was untested.** Every scoping test had at least one match, so returning
+  `null` instead of an empty list survived undetected. The commonest case in any sandbox, and `null`
+  here is a `NullReferenceException` at serve time rather than an empty page.
+- **The named relation was never proven to be the one used.** A collection can belong to two things;
+  nothing asserted that scoping by one is not satisfied by the other's key, which is how a supplier's
+  order would appear under a customer's route. Both the list side and the cascade side had the gap.
+- **The order of a refusal was arbitrary.** Two relations can block one delete, and nothing pinned
+  which is reported first — including the tie-break when both name the same collection through
+  different fields (an order belonging to a customer as buyer *and* as payer).
+- **`MaxCascadeDepth` had an untested boundary.** `>` versus `>=` differ by one level, so the wrong
+  bound is a delete that reports success and silently leaves a level of children behind. Only an exact
+  count over a chain deeper than the limit can tell the two apart, so the test builds one.
+
+None of the five survivors turned out to be an equivalent mutant, which is the useful outcome: the
+suite was measuring the paths that were easy to write rather than the ones that fail.
 
 **Out of scope, deliberately** (ADR 0015): joins, cross-collection transactions, a query language,
 schema migrations. A sandbox should behave like the API it stands in for, not become a database

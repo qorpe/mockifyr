@@ -119,6 +119,128 @@ public sealed class RelationalResourceTests
     }
 
     [Fact]
+    public void A_customer_with_no_orders_lists_nothing_rather_than_null()
+    {
+        // The commonest case in any sandbox, and mutation testing found it untested: every scoping test
+        // had at least one match, so returning null instead of an empty list survived undetected — and
+        // null here is a NullReferenceException at serve time, not an empty page.
+        var store = new InMemoryResourceStore();
+        var schema = new ResourceSchema("orders", [new ResourceRelation("customers", "customerId")]);
+        store.Put(Acme, "orders", "o1", """{"customerId":"c1"}""");
+
+        var none = ResourceRelations.ChildrenOf(Acme, "orders", schema, "customers", "c2", store);
+
+        Assert.NotNull(none);
+        Assert.Empty(none);
+    }
+
+    [Fact]
+    public void A_document_belonging_to_nothing_is_not_scoped_into_someone_elses_route()
+    {
+        Assert.False(ResourceRelations.BelongsTo(
+            Doc("o1", "orders", """{"customerId":"c1"}"""), schema: null, "customers", "c1"));
+    }
+
+    [Fact]
+    public void The_wrong_relation_never_answers_for_a_route()
+    {
+        // A collection can belong to two different things. Scoping by one must not be satisfied by the
+        // other's key — matching any relation rather than the named one would put a supplier's order
+        // under a customer's route.
+        var store = new InMemoryResourceStore();
+        var schema = new ResourceSchema("orders",
+        [
+            new ResourceRelation("suppliers", "supplierId"),
+            new ResourceRelation("customers", "customerId"),
+        ]);
+        store.Put(Acme, "orders", "o1", """{"supplierId":"x1"}""");
+
+        Assert.Empty(ResourceRelations.ChildrenOf(Acme, "orders", schema, "customers", "x1", store));
+        Assert.Equal(["o1"], ResourceRelations.ChildrenOf(Acme, "orders", schema, "suppliers", "x1", store).Select(d => d.Id));
+    }
+
+    [Fact]
+    public void A_refusal_names_what_is_in_the_way_in_a_stable_order()
+    {
+        // Two things can block one delete. An operator comparing today's 409 with yesterday's should not
+        // have to wonder whether the order means anything.
+        var store = new InMemoryResourceStore();
+        var schemas = new ResourceBackedSchemaStore(store);
+        schemas.Put(Acme, new ResourceSchema("orders", [new ResourceRelation("customers", "customerId")]));
+        schemas.Put(Acme, new ResourceSchema("invoices", [new ResourceRelation("customers", "billTo")]));
+        store.Put(Acme, "customers", "c1", "{}");
+        store.Put(Acme, "orders", "o1", """{"customerId":"c1"}""");
+        store.Put(Acme, "invoices", "i1", """{"billTo":"c1"}""");
+
+        var plan = ResourceRelations.PlanDelete(Acme, "customers", "c1", schemas, store);
+
+        Assert.Equal(
+            [("invoices", "billTo"), ("orders", "customerId")],
+            plan.Restricted.Select(r => (r.Collection, r.Via)));
+    }
+
+    [Fact]
+    public void Two_relations_to_the_same_collection_are_reported_in_a_stable_order_too()
+    {
+        // An order can belong to a customer twice — as its buyer and as its payer. Ordering by
+        // collection alone leaves those two tied, so the tie-break on the field name is what makes the
+        // 409 reproducible rather than dictionary-ordered.
+        var store = new InMemoryResourceStore();
+        var schemas = new ResourceBackedSchemaStore(store);
+        schemas.Put(Acme, new ResourceSchema("orders",
+        [
+            new ResourceRelation("customers", "payerId"),
+            new ResourceRelation("customers", "buyerId"),
+        ]));
+        store.Put(Acme, "customers", "c1", "{}");
+        store.Put(Acme, "orders", "o1", """{"payerId":"c1","buyerId":"c1"}""");
+
+        var plan = ResourceRelations.PlanDelete(Acme, "customers", "c1", schemas, store);
+
+        Assert.Equal(["buyerId", "payerId"], plan.Restricted.Select(r => r.Via));
+    }
+
+    [Fact]
+    public void A_cascade_stops_at_the_documented_depth_and_not_one_level_early()
+    {
+        // MaxCascadeDepth is a safety belt, but an off-by-one in it silently spares a level of children
+        // — a delete that reports success and leaves data behind. The exact count is the only assertion
+        // that can tell the two bounds apart.
+        var store = new InMemoryResourceStore();
+        var schemas = new ResourceBackedSchemaStore(store);
+        var levels = ResourceRelations.MaxCascadeDepth + 8;
+        store.Put(Acme, "c0", "x", "{}");
+        for (var i = 1; i <= levels; i++)
+        {
+            schemas.Put(Acme, new ResourceSchema($"c{i}",
+                [new ResourceRelation($"c{i - 1}", "parentId", RelationDeleteRule.Cascade)]));
+            store.Put(Acme, $"c{i}", "x", """{"parentId":"x"}""");
+        }
+
+        var plan = ResourceRelations.PlanDelete(Acme, "c0", "x", schemas, store);
+
+        Assert.Equal(ResourceRelations.MaxCascadeDepth, plan.Doomed.Count);
+    }
+
+    [Fact]
+    public void A_cascade_ignores_a_relation_that_points_somewhere_else()
+    {
+        // The mirror of the scoping case, on the delete side: walking children must follow the relation
+        // that names the collection being deleted, not the first one declared.
+        var store = new InMemoryResourceStore();
+        var schemas = new ResourceBackedSchemaStore(store);
+        schemas.Put(Acme, new ResourceSchema("orders",
+        [
+            new ResourceRelation("suppliers", "supplierId", RelationDeleteRule.Cascade),
+            new ResourceRelation("customers", "customerId", RelationDeleteRule.Cascade),
+        ]));
+        store.Put(Acme, "customers", "c1", "{}");
+        store.Put(Acme, "orders", "o1", """{"supplierId":"c1"}""");
+
+        Assert.Empty(ResourceRelations.PlanDelete(Acme, "customers", "c1", schemas, store).Doomed);
+    }
+
+    [Fact]
     public void A_relation_never_reaches_across_tenants()
     {
         // The one place a relation could have become a cross-tenant read: the parent exists, just not
