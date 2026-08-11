@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
@@ -147,6 +148,39 @@ public static class MockifyrHost
                 yield return args[i + 1];
             }
         }
+    }
+
+    /// <summary>
+    /// The tenant a request belongs to, for the purpose of bounding its body (#349): the sandbox key
+    /// first, then the tenant header, then the default — the same order the serving facade resolves in
+    /// (ADR 0003), because a limit that applied to a different tenant than the request did would be
+    /// worse than no limit.
+    /// </summary>
+    private static TenantId TenantForLimits(HttpContext context)
+    {
+        var sandbox = context.RequestServices.GetService<SandboxAuthOptions>();
+        if (sandbox is { Enabled: true })
+        {
+            var presented = context.Request.Headers.TryGetValue("X-Api-Key", out var header)
+                && header.FirstOrDefault() is { Length: > 0 } apiKey
+                    ? apiKey
+                    : context.Request.Headers.Authorization.FirstOrDefault() is { } authorization
+                      && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                        ? authorization["Bearer ".Length..].Trim()
+                        : null;
+
+            if (presented is not null
+                && context.RequestServices.GetRequiredService<IApiKeyStore>().GetAll()
+                    .FirstOrDefault(k => ApiKeyMaterial.Verify(presented, k.Salt, k.Hash)) is { } key)
+            {
+                return key.Tenant;
+            }
+        }
+
+        return context.Request.Headers.TryGetValue(TenantCredentialHeader, out var tenant)
+            && !string.IsNullOrEmpty(tenant)
+                ? new TenantId(tenant.ToString())
+                : TenantId.Default;
     }
 
     /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
@@ -526,6 +560,16 @@ public static class MockifyrHost
             builder.Services.AddSingleton(allowedOutbound);
             Console.WriteLine("mockifyr: outbound calls are restricted to " + string.Join(", ", allowedOutbound.Entries)
                 + " — webhooks and proxy stubs naming anything else are refused, and the refusal is journaled.");
+        }
+
+        // Request body limits (#349). Kestrel's ~30 MB default applies to every caller equally, which
+        // is fine on a laptop and not fine once the host is reachable by people you do not employ.
+        var bodyLimits = RequestBodyLimits.From(
+            long.TryParse(builder.Configuration["max-request-body-bytes"], out var ceiling) ? ceiling : null,
+            ReadRepeated(args, "--tenant-max-request-body"));
+        if (bodyLimits.IsConfigured)
+        {
+            builder.Services.AddSingleton(bodyLimits);
         }
 
         // Sandbox access (G19d, ADR 0011): --sandbox-auth turns on key-based tenant resolution
@@ -1069,6 +1113,47 @@ public static class MockifyrHost
         if (metricsEnabled)
         {
             app.MapPrometheusScrapingEndpoint("/__admin/metrics");
+        }
+
+        if (bodyLimits.IsConfigured)
+        {
+            Console.WriteLine("mockifyr: request bodies are capped"
+                + (bodyLimits.HostCeiling is { } cap ? $" at {cap} bytes host-wide" : " per tenant")
+                + " — a larger body is refused with 413 naming the limit it hit.");
+
+            app.Use(async (context, next) =>
+            {
+                var tenant = TenantForLimits(context);
+                if (bodyLimits.For(tenant) is not { } limit)
+                {
+                    await next();
+                    return;
+                }
+
+                // The hard stop, for a chunked body that declares no length: Kestrel aborts the read
+                // once it passes the limit. Set per request because the limit is per tenant, and the
+                // server-wide option cannot be.
+                if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature)
+                {
+                    feature.MaxRequestBodySize = limit;
+                }
+
+                // The explanatory stop, for the common case where the body announces its size. Kestrel's
+                // own refusal is a bare 413; this one says which limit was hit, which is the difference
+                // between an operator raising the right number and guessing.
+                if (context.Request.ContentLength is { } declared && declared > limit)
+                {
+                    context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        error = "Request.BodyTooLarge",
+                        message = bodyLimits.Refusal(tenant, limit),
+                    });
+                    return;
+                }
+
+                await next();
+            });
         }
 
         app.MapAdminEndpoints();
