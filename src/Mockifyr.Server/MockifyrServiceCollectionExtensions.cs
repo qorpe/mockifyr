@@ -68,6 +68,7 @@ public static class MockifyrServiceCollectionExtensions
         // Facades (SMTP, SMS profiles) write through IMessageSink; behavior decorates the sink, not them.
         services.AddSingleton<IMessageStore, InMemoryMessageStore>();
         services.AddSingleton<IResourceStore, InMemoryResourceStore>();
+        services.AddSingleton<IResourceSchemaStore, InMemoryResourceSchemaStore>();
         services.AddSingleton<IResourceIdGenerator, GuidResourceIdGenerator>();
         services.AddSingleton(new ResourceOptions());
         // Readiness state (#242): startup flips it on, shutdown flips it off.
@@ -123,7 +124,8 @@ public static class MockifyrServiceCollectionExtensions
             resourceIds: sp.GetRequiredService<IResourceIdGenerator>(),
             resourceOptions: sp.GetRequiredService<ResourceOptions>(),
             bodyFiles: sp.GetRequiredService<IResponseBodyFiles>(),
-            clock: sp.GetRequiredService<IClockResolver>()));
+            clock: sp.GetRequiredService<IClockResolver>(),
+            resourceSchemas: sp.GetRequiredService<IResourceSchemaStore>()));
 
         // Serve-event listeners: the built-in webhook plus any user extensions.
         services.AddSingleton<IServeEventTemplateRenderer>(sp =>

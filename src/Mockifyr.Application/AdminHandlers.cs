@@ -719,15 +719,23 @@ public sealed class SeedResourcesHandler(
 /// SAME reader as any bundle — dialect compliance by construction. Fully transactional: every
 /// mapping parses before anything is stored.
 /// </summary>
-public sealed class ImportOpenApiHandler(IStubStore store, IMatcherRegistry matchers, IStubPersistence persistence)
+public sealed class ImportOpenApiHandler(
+    IStubStore store,
+    IMatcherRegistry matchers,
+    IStubPersistence persistence,
+    IResourceSchemaStore schemas)
     : ICommandHandler<ImportOpenApiCommand, Result<int>>
 {
     public ValueTask<Result<int>> Handle(ImportOpenApiCommand command, CancellationToken cancellationToken)
     {
         List<(StubMapping Stub, string Source)> stubs = [];
+        IReadOnlyList<ResourceSchema> relations = [];
         try
         {
-            foreach (var mappingJson in Mockifyr.Adapters.OpenApi.OpenApiStubGenerator.Generate(command.SpecText, command.Stateful))
+            var generated = Mockifyr.Adapters.OpenApi.OpenApiStubGenerator.GenerateWithRelations(
+                command.SpecText, command.Stateful);
+            relations = generated.Relations;
+            foreach (var mappingJson in generated.Mappings)
             {
                 stubs.AddRange(MappingJsonReader.ReadWithSource(mappingJson, command.Tenant, matchers));
             }
@@ -746,6 +754,14 @@ public sealed class ImportOpenApiHandler(IStubStore store, IMatcherRegistry matc
         {
             store.Put(stub);
             persistence.Save(stub, source);
+        }
+
+        // The relations the path shapes declared (ADR 0015). Applied after the mappings for the same
+        // reason the mappings are applied only once they all parse: an import that half-landed would
+        // leave a sandbox whose stubs and whose relations disagree.
+        foreach (var relation in relations)
+        {
+            schemas.Put(command.Tenant, relation);
         }
 
         return ValueTask.FromResult<Result<int>>(stubs.Count);

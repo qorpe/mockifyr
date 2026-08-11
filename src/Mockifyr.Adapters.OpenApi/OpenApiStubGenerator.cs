@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Readers;
+using Mockifyr.Core;
 
 namespace Mockifyr.Adapters.OpenApi;
 
@@ -58,7 +59,22 @@ public static partial class OpenApiStubGenerator
         }
     }
 
-    public static IReadOnlyList<string> Generate(string specText, bool stateful = false)
+    /// <summary>
+    /// What an import produces: the mappings, and the relations the path shapes declared (ADR 0015).
+    /// </summary>
+    /// <remarks>
+    /// The relations are read from the specification rather than asked for, because
+    /// <c>/customers/{customerId}/orders</c> already <em>is</em> the sentence "orders belong to
+    /// customers, keyed by customerId". Making the user restate it would be asking them to repeat
+    /// something they have already written down.
+    /// </remarks>
+    public sealed record OpenApiImport(IReadOnlyList<string> Mappings, IReadOnlyList<ResourceSchema> Relations);
+
+    /// <summary>The mappings alone, for callers that do not wire sandbox state.</summary>
+    public static IReadOnlyList<string> Generate(string specText, bool stateful = false) =>
+        GenerateWithRelations(specText, stateful).Mappings;
+
+    public static OpenApiImport GenerateWithRelations(string specText, bool stateful = false)
     {
         GuardSpec(specText);
 
@@ -90,7 +106,9 @@ public static partial class OpenApiStubGenerator
             throw new OpenApiImportException(OpenApiImportError.Empty, "The document declares no paths to import.");
         }
 
-        var stateWired = stateful ? DetectResourcePairs(document) : [];
+        var (stateWired, relations) = stateful
+            ? DetectResourcePairs(document)
+            : ([], []);
         var mappings = new List<string>();
         foreach (var (path, item) in document.Paths.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
@@ -108,7 +126,7 @@ public static partial class OpenApiStubGenerator
             throw new OpenApiImportException(OpenApiImportError.Empty, "The document declares no operations to import.");
         }
 
-        return mappings;
+        return new OpenApiImport(mappings, relations);
     }
 
     private static string ExampleMapping(string path, string method, OpenApiOperation operation)
@@ -168,9 +186,11 @@ public static partial class OpenApiStubGenerator
     /// Finds resource-shaped pairs — a collection path plus an item path that adds exactly one
     /// trailing template segment — and emits the G19b state-wired CRUD set for their operations.
     /// </summary>
-    private static Dictionary<(string Path, string Method), string> DetectResourcePairs(OpenApiDocument document)
+    private static (Dictionary<(string Path, string Method), string> Wired, List<ResourceSchema> Relations)
+        DetectResourcePairs(OpenApiDocument document)
     {
         var wired = new Dictionary<(string, string), string>();
+        var relations = new Dictionary<string, ResourceSchema>(StringComparer.Ordinal);
         foreach (var (itemPath, _) in document.Paths)
         {
             var lastSlash = itemPath.LastIndexOf('/');
@@ -188,41 +208,108 @@ public static partial class OpenApiStubGenerator
 
             var collection = CollectionName(collectionPath);
             var idTemplate = $"{{{{request.pathSegments.[{itemPath.Trim('/').Split('/').Length - 1}]}}}}";
+            var owner = OwnerOf(collectionPath);
+            if (owner is { } declared)
+            {
+                relations[collection] = new ResourceSchema(
+                    collection,
+                    [new ResourceRelation(declared.Collection, declared.Via)]);
+            }
 
             wired[(collectionPath, "POST")] = Serialize($"create {collection}", collectionPath, "POST", new Dictionary<string, object>
             {
                 ["status"] = 201,
-                ["headers"] = new Dictionary<string, object> { ["Location"] = collectionPath + "/{{state.id}}" },
+                // Built from the request's own path, not from the specification's template text: for a
+                // nested collection the template still contains "{customerId}", so composing the header
+                // from it handed the client a Location it could not follow. The two forms agree for a
+                // top-level collection, which is why this went unnoticed until a nested spec was served.
+                ["headers"] = new Dictionary<string, object> { ["Location"] = "{{request.path}}/{{state.id}}" },
                 ["body"] = "{{state.body}}",
-                ["state"] = new Dictionary<string, object> { ["operation"] = "create", ["collection"] = collection },
+                ["state"] = StateBlock("create", collection, owner: owner),
             });
             wired[(collectionPath, "GET")] = Serialize($"list {collection}", collectionPath, "GET", new Dictionary<string, object>
             {
                 ["status"] = 200,
                 ["headers"] = new Dictionary<string, object> { ["Content-Type"] = "application/json" },
                 ["body"] = "{\"count\":{{state.count}},\"items\":{{state.list}} }",
-                ["state"] = new Dictionary<string, object> { ["operation"] = "list", ["collection"] = collection },
+                ["state"] = StateBlock("list", collection, owner: owner),
             });
-            wired[(itemPath, "GET")] = StateItemMapping($"read {collection}", itemPath, "GET", "read", collection, idTemplate, 200, "{{state.body}}");
-            wired[(itemPath, "PUT")] = StateItemMapping($"update {collection}", itemPath, "PUT", "update", collection, idTemplate, 200, "{{state.body}}");
-            wired[(itemPath, "DELETE")] = StateItemMapping($"delete {collection}", itemPath, "DELETE", "delete", collection, idTemplate, 204, null);
+            wired[(itemPath, "GET")] = StateItemMapping($"read {collection}", itemPath, "GET", "read", collection, idTemplate, 200, "{{state.body}}", owner);
+            wired[(itemPath, "PUT")] = StateItemMapping($"update {collection}", itemPath, "PUT", "update", collection, idTemplate, 200, "{{state.body}}", owner);
+            wired[(itemPath, "DELETE")] = StateItemMapping($"delete {collection}", itemPath, "DELETE", "delete", collection, idTemplate, 204, null, owner);
         }
 
-        return wired;
+        return (wired, [.. relations.Values.OrderBy(schema => schema.Collection, StringComparer.Ordinal)]);
+    }
+
+    /// <summary>
+    /// The owning collection a nested path declares, or null when the path is top-level:
+    /// <c>/customers/{customerId}/orders</c> yields <c>customers</c>, keyed by <c>customerId</c>, whose
+    /// value is at path segment 1.
+    /// </summary>
+    /// <remarks>
+    /// The collection keeps its own name — <c>orders</c>, not <c>customers-orders</c> — because a spec
+    /// may expose the same resource both ways (<c>/orders</c> and <c>/customers/{id}/orders</c>) and in
+    /// a real API those are one collection with one id space. What was missing was never the name; it
+    /// was the relation.
+    /// </remarks>
+    private static (string Collection, string Via, string IdTemplate)? OwnerOf(string collectionPath)
+    {
+        var segments = collectionPath.Trim('/').Split('/');
+        if (segments.Length < 3)
+        {
+            return null;
+        }
+
+        var ownerSegment = segments[^2];
+        if (!ownerSegment.StartsWith('{') || !ownerSegment.EndsWith('}') || ownerSegment.Length <= 2)
+        {
+            return null;
+        }
+
+        var ownerCollection = CollectionName("/" + string.Join('/', segments[..^2]));
+        return (ownerCollection, ownerSegment[1..^1], $"{{{{request.pathSegments.[{segments.Length - 2}]}}}}");
+    }
+
+    private static Dictionary<string, object> StateBlock(
+        string operation,
+        string collection,
+        string? idTemplate = null,
+        (string Collection, string Via, string IdTemplate)? owner = null)
+    {
+        var state = new Dictionary<string, object> { ["operation"] = operation, ["collection"] = collection };
+        if (idTemplate is not null)
+        {
+            state["id"] = idTemplate;
+        }
+
+        if (owner is { } parent)
+        {
+            state["parent"] = new Dictionary<string, object>
+            {
+                ["collection"] = parent.Collection,
+                ["id"] = parent.IdTemplate,
+            };
+        }
+
+        return state;
     }
 
     private static string StateItemMapping(
-        string name, string path, string method, string operation, string collection, string idTemplate, int status, string? body)
+        string name,
+        string path,
+        string method,
+        string operation,
+        string collection,
+        string idTemplate,
+        int status,
+        string? body,
+        (string Collection, string Via, string IdTemplate)? owner)
     {
         var response = new Dictionary<string, object>
         {
             ["status"] = status,
-            ["state"] = new Dictionary<string, object>
-            {
-                ["operation"] = operation,
-                ["collection"] = collection,
-                ["id"] = idTemplate,
-            },
+            ["state"] = StateBlock(operation, collection, idTemplate, owner),
         };
         if (body is not null)
         {
