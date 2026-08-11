@@ -592,8 +592,19 @@ public sealed class ListResourcesHandler(IResourceStore store)
 
         var limit = Math.Clamp(query.Limit ?? 100, 1, 500);
         var offset = Math.Max(query.Offset ?? 0, 0);
-        var documents = store.List(query.Tenant, query.Collection);
-        var page = documents.Skip(offset).Take(limit).ToArray();
+
+        // Filtered and sorted BEFORE paging, so `total` means "matching" rather than "in the
+        // collection" (#353). The other order makes the count disagree with the pages under it, which
+        // is a paging control that lies about how many pages there are.
+        var selection = query.Query ?? ResourceQuery.All;
+        var documents = selection.Apply(store.List(query.Tenant, query.Collection));
+
+        var page = documents.Skip(offset).Take(limit)
+            .Select(document => selection.Fields.Count == 0
+                ? document
+                : document with { Body = selection.Project(document.Body) })
+            .ToArray();
+
         return ValueTask.FromResult<Result<ResourcePage>>(new ResourcePage(page, documents.Count));
     }
 }

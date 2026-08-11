@@ -133,8 +133,17 @@ public sealed record SeedResourceItem(string? Id, string Body);
 /// <summary>Lists the tenant's collections with document counts.</summary>
 public sealed record GetResourceCollectionsQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<ResourceCollectionInfo>>>;
 
-/// <summary>Lists one collection, paginated (limit clamped to 1..500, default 100).</summary>
-public sealed record ListResourcesQuery(string Collection, int? Limit, int? Offset, TenantId Tenant) : IQuery<Result<ResourcePage>>;
+/// <summary>
+/// Lists one collection, paginated (limit clamped to 1..500, default 100) and optionally filtered,
+/// sorted and projected (#353). <paramref name="Query"/> defaults to selecting everything, so a caller
+/// that passes none behaves exactly as before.
+/// </summary>
+public sealed record ListResourcesQuery(
+    string Collection,
+    int? Limit,
+    int? Offset,
+    TenantId Tenant,
+    ResourceQuery? Query = null) : IQuery<Result<ResourcePage>>;
 
 /// <summary>Reads one document, or a not-found error.</summary>
 public sealed record GetResourceQuery(string Collection, string Id, TenantId Tenant) : IQuery<Result<ResourceDocument>>;
