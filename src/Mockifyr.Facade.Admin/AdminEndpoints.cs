@@ -776,7 +776,10 @@ public static class AdminEndpoints
                 collection,
                 int.TryParse(request.Query["limit"].FirstOrDefault(), out var limit) ? limit : null,
                 int.TryParse(request.Query["offset"].FirstOrDefault(), out var offset) ? offset : null,
-                TenantOf(request)));
+                TenantOf(request),
+                // Everything that is not a paging control is a filter (#353).
+                ResourceQuery.Parse(request.Query.Select(
+                    p => new KeyValuePair<string, string?>(p.Key, p.Value.FirstOrDefault())))));
             return result.IsSuccess
                 ? Results.Json(new { documents = result.Value.Documents.Select(ResourceJson), total = result.Value.Total })
                 : ResourceFailure(result.Error);

@@ -496,3 +496,55 @@ this does not reopen them. This is a scoped API for somebody who already holds a
 **Validation.** `SandboxSelfServiceTests` (13 wire cases) and `SandboxSurfaceWithoutAuthTests` (1).
 The cross-tenant cases assert the positive first — that the caller sees their own document — so the
 absence of the other tenant's means something rather than meaning the request failed.
+
+---
+
+## Querying a collection (#353)
+
+`GET /__admin/resources/{collection}` took `limit` and `offset` and nothing else, and the serve-time
+`list` returned the whole collection. A sandbox stands in for an API, and the APIs it stands in for
+filter and sort — so `GET /orders?status=settled&_sort=-total` had to be faked with a hand-written stub
+per query shape, which then drifts from the data underneath it.
+
+**The vocabulary is the one the dialect already proves.** `?status=settled` is `equalTo`;
+`?note:contains=x`, `?note:matches=^r.*h$` and `?note:absent=true` are the matcher names a stub author
+already knows. Inventing a second vocabulary would make somebody learn the same idea twice and let the
+two drift.
+
+**Both surfaces, one evaluator.** The admin listing and the served `list` parse and apply the same
+`ResourceQuery`. Two implementations would let the sandbox and the screen watching it disagree about
+what a collection contains, which is worse than neither of them filtering.
+
+**Decisions worth keeping:**
+
+- **`total` means matching.** Filtering happens before paging, or the count disagrees with the pages
+  under it and the paging control lies about how many there are.
+- **Numbers sort numerically.** As text, `"9"` sorts after `"250"` — correct for strings and wrong for
+  the column of totals people actually sort by.
+- **A document missing the sort field goes last in either direction.** Absent is not "smallest", and
+  surfacing it first in one direction would read as a bug in the data.
+- **An unknown operator suffix is part of the field name.** `?created:at=x` is somebody filtering a
+  field called `created:at`; refusing it for looking like a typo would refuse a legitimate query.
+- **A regex filter cannot take the host down.** The pattern is caller-supplied, so it carries a
+  100 ms timeout and an invalid pattern matches nothing rather than throwing into the serving path.
+- **Field selection omits what the document lacks** rather than returning it as null — present-and-null
+  is a claim the document does not make.
+- **Still no query language** (ADR 0015): no joins, no cross-collection anything. Filter, sort, select.
+
+**A trap worth stating.** Serve-time filtering only works if the stub matches on `urlPath`, not `url`:
+in the mapping dialect `url` includes the query string, so `"/orders"` stops matching the moment a
+caller filters — the request that most wants this feature is the one that would 404. Found by writing
+the wire test with `url` and watching it return nothing.
+
+**Validation.** `ResourceQueryTests` (24 unit cases) and `ResourceQueryWireTests` (7 wire cases that
+ask the same question of both surfaces and compare the answers). **Stryker 94.87 %**, four survivors,
+each confirmed equivalent:
+
+- `All` constructed with `SortDescending: true`, and the local `descending` initialised to `true`:
+  both are unreachable, because a sort direction is only read when a sort field exists, and one is
+  always assigned alongside the other.
+- Removing the guard that nulls an empty sort field: `SortField is not { Length: > 0 }` already treats
+  `""` as no sort, so both paths sort nothing.
+- Short-circuiting the empty-filter case: `Filters.All(...)` over an empty list is true, so the
+  unfiltered branch and the filtered one return the same documents. The branch is an allocation
+  optimisation, not a semantic.

@@ -38,7 +38,8 @@ public static class StateDirectiveApplier
         IResourceIdGenerator ids,
         ResourceOptions options,
         StateParent? parent = null,
-        IResourceSchemaStore? schemas = null)
+        IResourceSchemaStore? schemas = null,
+        ResourceQuery? query = null)
     {
         if (ReservedEnvironmentKeys.IsWellFormed(directive.Collection) is false || directive.Collection.Length > 64)
         {
@@ -146,10 +147,16 @@ public static class StateDirectiveApplier
                     ? ResourceRelations.ChildrenOf(tenant, directive.Collection, schema, owner.Collection, owner.Id, store)
                     : store.List(tenant, directive.Collection);
 
+                // The request's own query, evaluated by the same code the admin listing uses (#353).
+                // Two evaluators would let the sandbox and the screen watching it disagree about what a
+                // collection contains, which is worse than neither of them filtering.
+                var selection = query ?? ResourceQuery.All;
+                documents = selection.Apply(documents);
+
                 return StateOutcome.Success(new Dictionary<string, object?>
                 {
                     ["count"] = documents.Count,
-                    ["list"] = "[" + string.Join(",", documents.Select(d => d.Body)) + "]",
+                    ["list"] = "[" + string.Join(",", documents.Select(d => selection.Project(d.Body))) + "]",
                 });
             }
 

@@ -108,7 +108,11 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
                 state.Parent is { } parent
                     ? parent with { Id = RenderTemplate(parent.Id, requestModel) }
                     : null,
-                _resourceSchemas);
+                _resourceSchemas,
+                // Serve-time filtering, sorting and field selection come from the request that asked
+                // (#353) — the same shape the admin listing accepts, read by the same parser.
+                ResourceQuery.Parse(context.Request.Query.Select(
+                    group => new KeyValuePair<string, string?>(group.Key, group.FirstOrDefault()))));
 
             if (outcome.ShortCircuitStatus is { } shortCircuit)
             {
