@@ -997,7 +997,26 @@ public static class MappingJsonReader
             collection.GetString()!,
             Id: state.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null,
             Document: state.TryGetProperty("document", out var doc) && doc.ValueKind == JsonValueKind.String ? doc.GetString() : null,
-            MissStatus: state.TryGetProperty("missStatus", out var miss) && miss.TryGetInt32(out var missStatus) ? missStatus : 404);
+            MissStatus: state.TryGetProperty("missStatus", out var miss) && miss.TryGetInt32(out var missStatus) ? missStatus : 404,
+            Parent: ReadStateParent(state));
+    }
+
+    /// <summary>
+    /// Reads the optional <c>parent</c> block (ADR 0015) — the owning document a nested route names.
+    /// Its <c>id</c> stays raw template text, like the directive's own id. A malformed or partial
+    /// block reads as no parent rather than as an error, matching how every other optional field in
+    /// this reader behaves.
+    /// </summary>
+    private static StateParent? ReadStateParent(JsonElement state)
+    {
+        if (!state.TryGetProperty("parent", out var parent) || parent.ValueKind != JsonValueKind.Object
+            || !parent.TryGetProperty("collection", out var collection) || collection.ValueKind != JsonValueKind.String
+            || !parent.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return new StateParent(collection.GetString()!, id.GetString()!);
     }
 
     /// <summary>Reads a <c>uniform</c> <c>delayDistribution</c>; lognormal is deferred (racy to test).</summary>

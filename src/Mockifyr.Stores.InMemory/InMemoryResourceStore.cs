@@ -69,7 +69,33 @@ public sealed class InMemoryResourceStore(
     }
 
     /// <inheritdoc />
-    public ResourceDocument Put(TenantId tenant, string collection, string id, string body)
+    public IReadOnlyList<ResourceDocument> Find(TenantId tenant, string collection, string field, string value)
+    {
+        lock (_gate)
+        {
+            // Implemented here rather than left to the interface default: the default copies the whole
+            // collection out before filtering it, and this is the hot path every scoped list runs
+            // through. It is also the only form a caller holding the concrete type can reach.
+            if (Documents(tenant, collection) is not { } documents)
+            {
+                return [];
+            }
+
+            List<ResourceDocument>? matches = null;
+            foreach (var document in documents)
+            {
+                if (string.Equals(ResourceRelations.ReadKey(document.Body, field), value, StringComparison.Ordinal))
+                {
+                    (matches ??= []).Add(document);
+                }
+            }
+
+            return matches is null ? [] : matches;
+        }
+    }
+
+    /// <inheritdoc />
+    public ResourceDocument Put(TenantId tenant, string collection, string id, string body, ResourceLink? parent = null)
     {
         lock (_gate)
         {
@@ -81,13 +107,21 @@ public sealed class InMemoryResourceStore(
             if (index >= 0)
             {
                 // Replace in place: CreatedAt and the insertion position survive, the version advances.
+                // The parent survives too unless this write names one — a PUT that only changes a
+                // child's body must not silently detach it from its owner (ADR 0015).
                 var previous = documents[index];
-                var updated = previous with { Body = body, UpdatedAt = now, Version = previous.Version + 1 };
+                var updated = previous with
+                {
+                    Body = body,
+                    UpdatedAt = now,
+                    Version = previous.Version + 1,
+                    Parent = parent ?? previous.Parent,
+                };
                 documents[index] = updated;
                 return updated;
             }
 
-            var created = new ResourceDocument(id, collection, body, now, now, Version: 1);
+            var created = new ResourceDocument(id, collection, body, now, now, Version: 1, parent);
             documents.Add(created);
             // One create can overflow by at most one, so evicting the single oldest entry is enough.
             if (documents.Count > Capacity)

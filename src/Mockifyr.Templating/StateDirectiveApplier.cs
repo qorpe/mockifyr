@@ -36,7 +36,9 @@ public static class StateDirectiveApplier
         byte[] requestBody,
         IResourceStore store,
         IResourceIdGenerator ids,
-        ResourceOptions options)
+        ResourceOptions options,
+        StateParent? parent = null,
+        IResourceSchemaStore? schemas = null)
     {
         if (ReservedEnvironmentKeys.IsWellFormed(directive.Collection) is false || directive.Collection.Length > 64)
         {
@@ -44,6 +46,7 @@ public static class StateDirectiveApplier
         }
 
         var id = string.IsNullOrWhiteSpace(renderedId) ? null : renderedId.Trim();
+        var schema = schemas?.Get(tenant, directive.Collection);
 
         switch (directive.Operation.ToLowerInvariant())
         {
@@ -55,21 +58,42 @@ public static class StateDirectiveApplier
                     return refusal;
                 }
 
-                var stored = store.Put(tenant, directive.Collection, id ?? ids.NextId(directive.Collection), document);
+                // A parent named by the ROUTE that does not exist is a 404 on that route — the answer a
+                // real API gives to POST /customers/99/orders. A parent named by the BODY that does not
+                // exist is a 422: the request reached a real place and its payload is what is wrong.
+                // Collapsing the two would misreport one of them (ADR 0015).
+                if (parent is { } named && store.Get(tenant, named.Collection, named.Id) is null)
+                {
+                    return StateOutcome.ShortCircuit(directive.MissStatus);
+                }
+
+                if (ResourceRelations.UnresolvedReferences(document, schema, tenant, store).Count > 0)
+                {
+                    return StateOutcome.ShortCircuit(422);
+                }
+
+                var stored = store.Put(
+                    tenant,
+                    directive.Collection,
+                    id ?? ids.NextId(directive.Collection),
+                    document,
+                    LinkFor(parent, schema, document));
+
                 return StateOutcome.Success(DocumentModel(stored));
             }
 
             case "read":
             {
                 var found = id is null ? null : store.Get(tenant, directive.Collection, id);
-                return found is null
+                return found is null || !InScope(found, schema, parent)
                     ? StateOutcome.ShortCircuit(directive.MissStatus)
                     : StateOutcome.Success(DocumentModel(found));
             }
 
             case "update":
             {
-                if (id is null || store.Get(tenant, directive.Collection, id) is null)
+                if (id is null || store.Get(tenant, directive.Collection, id) is not { } target
+                    || !InScope(target, schema, parent))
                 {
                     return StateOutcome.ShortCircuit(directive.MissStatus);
                 }
@@ -80,19 +104,48 @@ public static class StateDirectiveApplier
                     return refusal;
                 }
 
+                if (ResourceRelations.UnresolvedReferences(document, schema, tenant, store).Count > 0)
+                {
+                    return StateOutcome.ShortCircuit(422);
+                }
+
                 return StateOutcome.Success(DocumentModel(store.Put(tenant, directive.Collection, id, document)));
             }
 
             case "delete":
             {
-                return id is not null && store.Delete(tenant, directive.Collection, id)
-                    ? StateOutcome.Success(new Dictionary<string, object?> { ["id"] = id })
-                    : StateOutcome.ShortCircuit(directive.MissStatus);
+                if (id is null || store.Get(tenant, directive.Collection, id) is not { } doomed
+                    || !InScope(doomed, schema, parent))
+                {
+                    return StateOutcome.ShortCircuit(directive.MissStatus);
+                }
+
+                if (schemas is not null)
+                {
+                    var plan = ResourceRelations.PlanDelete(tenant, directive.Collection, id, schemas, store);
+                    if (!plan.IsAllowed)
+                    {
+                        // Nothing is removed: a cascade that stopped halfway would leave the sandbox in
+                        // a state no real API could produce.
+                        return StateOutcome.ShortCircuit(409);
+                    }
+
+                    foreach (var child in plan.Doomed)
+                    {
+                        store.Delete(tenant, child.Collection, child.Id);
+                    }
+                }
+
+                store.Delete(tenant, directive.Collection, id);
+                return StateOutcome.Success(new Dictionary<string, object?> { ["id"] = id });
             }
 
             case "list":
             {
-                var documents = store.List(tenant, directive.Collection);
+                var documents = parent is { } owner
+                    ? ResourceRelations.ChildrenOf(tenant, directive.Collection, schema, owner.Collection, owner.Id, store)
+                    : store.List(tenant, directive.Collection);
+
                 return StateOutcome.Success(new Dictionary<string, object?>
                 {
                     ["count"] = documents.Count,
@@ -103,6 +156,41 @@ public static class StateDirectiveApplier
             default:
                 return StateOutcome.ShortCircuit(422);
         }
+    }
+
+    /// <summary>
+    /// Whether a document is reachable through the route that asked for it. A directive with no
+    /// parent scopes nothing, which is what keeps a flat collection behaving exactly as it did before
+    /// relations existed.
+    /// </summary>
+    private static bool InScope(ResourceDocument document, ResourceSchema? schema, StateParent? parent) =>
+        parent is not { } owner || ResourceRelations.BelongsTo(document, schema, owner.Collection, owner.Id);
+
+    /// <summary>
+    /// The metadata pointer to store with a new document, or null when none is needed. None is needed
+    /// when the modelled contract declares the key itself: the body already carries it, the body is
+    /// what a client can see and edit, and writing it twice would let the two disagree.
+    /// </summary>
+    private static ResourceLink? LinkFor(StateParent? parent, ResourceSchema? schema, string document)
+    {
+        if (parent is not { } owner)
+        {
+            return null;
+        }
+
+        if (schema is not null)
+        {
+            foreach (var relation in schema.BelongsTo)
+            {
+                if (string.Equals(relation.Collection, owner.Collection, StringComparison.Ordinal)
+                    && ResourceRelations.ReadKey(document, relation.Via) is { Length: > 0 })
+                {
+                    return null;
+                }
+            }
+        }
+
+        return new ResourceLink(owner.Collection, owner.Id);
     }
 
     private static StateOutcome? Guard(string document, ResourceOptions options)

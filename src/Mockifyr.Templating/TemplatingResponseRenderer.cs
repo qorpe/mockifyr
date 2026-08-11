@@ -41,6 +41,7 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
     /// </summary>
     private readonly IResourceStore? _resources;
     private readonly IResourceIdGenerator? _resourceIds;
+    private readonly IResourceSchemaStore? _resourceSchemas;
     private readonly ResourceOptions _resourceOptions;
     private readonly IClockResolver? _clock;
 
@@ -52,7 +53,8 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         IResourceIdGenerator? resourceIds = null,
         ResourceOptions? resourceOptions = null,
         IResponseBodyFiles? bodyFiles = null,
-        IClockResolver? clock = null)
+        IClockResolver? clock = null,
+        IResourceSchemaStore? resourceSchemas = null)
     {
         _bodyFiles = bodyFiles ?? new NoResponseBodyFiles();
         _handlebars = HandlebarsFactory.Create(extraHelpers);
@@ -63,6 +65,7 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
         _resourceIds = resourceIds;
         _resourceOptions = resourceOptions ?? new ResourceOptions();
         _clock = clock;
+        _resourceSchemas = resourceSchemas;
     }
 
     /// <inheritdoc />
@@ -99,7 +102,13 @@ public sealed class TemplatingResponseRenderer : IResponseRenderer
                 context.Request.Body,
                 resources,
                 resourceIds,
-                _resourceOptions);
+                _resourceOptions,
+                // The owning document a nested route names (ADR 0015). Its id is a template like the
+                // directive's own, so it renders against the same request model.
+                state.Parent is { } parent
+                    ? parent with { Id = RenderTemplate(parent.Id, requestModel) }
+                    : null,
+                _resourceSchemas);
 
             if (outcome.ShortCircuitStatus is { } shortCircuit)
             {

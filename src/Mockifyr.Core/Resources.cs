@@ -5,13 +5,22 @@ namespace Mockifyr.Core;
 /// opaque JSON text — Core never parses it; the admin facade validates well-formedness at the
 /// edge and the document round-trips byte-for-byte.
 /// </summary>
+/// <remarks>
+/// <see cref="Parent"/> (ADR 0015) is the optional half of a relation: it carries the owning
+/// document's id when the modelled contract declares no field for it, which is what keeps
+/// <see cref="Body"/> byte-identical to what the client sent. When the contract <em>does</em>
+/// declare the field, the key lives in the body and this stays null. Being optional is also what
+/// makes the change compatible: documents written before ADR 0015 have none and stay valid on
+/// every persistence provider.
+/// </remarks>
 public sealed record ResourceDocument(
     string Id,
     string Collection,
     string Body,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    long Version);
+    long Version,
+    ResourceLink? Parent = null);
 
 /// <summary>A collection summary for the admin listing: its name and how many documents it holds.</summary>
 public sealed record ResourceCollectionInfo(string Name, int Count);
@@ -56,7 +65,15 @@ public sealed record StateDirective(
     string Collection,
     string? Id = null,
     string? Document = null,
-    int MissStatus = 404);
+    int MissStatus = 404,
+    StateParent? Parent = null);
+
+/// <summary>
+/// The owning document a nested route names (ADR 0015) — the <c>/customers/{customerId}</c> half of
+/// <c>/customers/{customerId}/orders</c>. <see cref="Id"/> is a template expression rendered against
+/// the request, like <see cref="StateDirective.Id"/>; the collection is literal.
+/// </summary>
+public sealed record StateParent(string Collection, string Id);
 
 /// <summary>
 /// The body checks shared by the admin PUT path and the serve-time state directive — one
@@ -107,10 +124,29 @@ public interface IResourceStore
     ResourceDocument? Get(TenantId tenant, string collection, string id);
 
     /// <summary>
+    /// The collection's documents whose top-level <paramref name="field"/> equals
+    /// <paramref name="value"/>, in insertion order (ADR 0015).
+    /// </summary>
+    /// <remarks>
+    /// This is the one primitive the store was missing: reading by id or reading everything were the
+    /// only two options, so scoping a relation, filtering a collection and resolving a session by its
+    /// token were all unanswerable. A default implementation over <see cref="List"/> keeps every
+    /// existing implementer compiling and is the right shape anyway — the in-memory store is the hot
+    /// path source of truth (ADR 0006) and collections are bounded, so this is an in-process scan and
+    /// never a query pushed to a backend.
+    /// </remarks>
+    IReadOnlyList<ResourceDocument> Find(TenantId tenant, string collection, string field, string value) =>
+        [.. List(tenant, collection)
+            .Where(d => string.Equals(ResourceRelations.ReadKey(d.Body, field), value, StringComparison.Ordinal))];
+
+    /// <summary>
     /// Creates or replaces a document. A create stamps <c>CreatedAt</c> and version 1; a replace
     /// keeps <c>CreatedAt</c> and the insertion position, advances <c>UpdatedAt</c> and the version.
+    /// <paramref name="parent"/> (ADR 0015) records the owning document when the modelled contract
+    /// declares no field for it; a replace that passes none keeps whatever the document already had,
+    /// so updating a child's body never quietly reparents it.
     /// </summary>
-    ResourceDocument Put(TenantId tenant, string collection, string id, string body);
+    ResourceDocument Put(TenantId tenant, string collection, string id, string body, ResourceLink? parent = null);
 
     /// <summary>
     /// Writes a document exactly as it was persisted — id, collection, timestamps <em>and version</em>
