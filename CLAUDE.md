@@ -361,4 +361,23 @@ messages with no new API — one inbox, as the ADR decided. Writing it found a b
 shipped: the admin API projected a message's channel with a two-way ternary, so every broker message
 would have been labelled "sms" the moment a third channel existed.
 
+**G22 — the sandbox as a partner-facing platform (epic #345, ADR 0015)** has begun. Asking what the
+sandbox would need before it could be handed to an external partner produced thirteen issues in three
+phases, and the analysis found something sharper than a gap: a spec containing
+`/customers/{customerId}/orders` imported to a flat global `orders` collection, so every modelled
+customer listed every other customer's orders. **#350 — relations** is complete and is a defect fix, not
+an enhancement. Relations are declared once per collection and derived from the path shape at import,
+because that path already *is* the sentence "orders belong to customers, keyed by customerId". Where the
+key lives is the contract's decision: in the body when the modelled document declares the field, and in
+an optional metadata pointer otherwise — so the body still round-trips byte-for-byte and `POST
+/__admin/openapi/verify` cannot report our own sandbox as drifted from the document we generated it
+from. `onDelete` defaults to `restrict` (deleting a Stripe customer does not delete their charges), and
+enforcement is presence-triggered, which keeps mutually referencing collections creatable and makes
+cycles in the relation graph legal. Serving the imported spec — rather than reading the generator —
+found a second bug that had been there since G19c: the created-resource `Location` header was composed
+from the specification's template text, so a nested collection answered a Location containing a literal
+`{customerId}`. Relations are stored as documents under a reserved collection, so they persist, restore
+and reload on all four backends with no per-backend code; holding them in memory would have let them
+vanish on restart while their documents survived, quietly restoring the very defect.
+
 Builds clean (0 warnings); 1122 tests green across the four suites.
