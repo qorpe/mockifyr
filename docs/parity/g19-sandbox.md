@@ -441,3 +441,44 @@ suite was measuring the paths that were easy to write rather than the ones that 
 **Out of scope, deliberately** (ADR 0015): joins, cross-collection transactions, a query language,
 schema migrations. A sandbox should behave like the API it stands in for, not become a database
 harder to reason about than the service it replaces.
+
+---
+
+## The partner self-service surface (#347)
+
+An `mfk_` key was checked **only on the serving path** and selected the tenant from the key. That is
+the right design and it did not change. Its consequence was that a partner could *call* the mock and
+see nothing else: not the OTP their signup flow just "sent", not the webhook they were delivered, not
+why a call 404'd, and no way to reset their sandbox between runs. All of that lives on `/__admin/*`,
+which the key deliberately cannot reach — and the only way to hand them any of it was a tenant admin
+credential, which is precisely what #346 exists because is not partner-safe.
+
+**A separate namespace, not a loosened one.** ADR 0011 makes it a binding criterion that *a sandbox key
+never grants admin access* — `/__admin/*` ignores `X-Api-Key` and bearer tokens entirely, with a wire
+test asserting it. Teaching that surface to accept a sandbox key for "just a few safe routes" would
+have weakened an invariant someone may have relied on, and would have left the property true only by
+inspection of a route list. `/__sandbox/*` stands beside it instead: the rule stays literally true, its
+test stays green, and the boundary is something you can see rather than something you have to audit.
+The test for this change re-asserts the ADR's criterion from the new side, so the two cannot drift.
+
+**The tenant comes from the key and only from the key.** There is no `X-Mockifyr-Tenant` on this
+surface — not a header that gets refused, but no header at all. Sending one naming another tenant is
+inert rather than an error, which is a stronger property than refusing a forged value correctly: it is
+not a check that could be wrong. Proven by asserting that the request still answers with the caller's
+own documents.
+
+**What it carries.** Reads: the journal, the inbox (including the OTP extraction that already existed,
+because "the code you just sent me" as one GET is the whole reason a partner wants their inbox),
+resources, and environment *keys* — never a secret literal, which is why #348 was taken first. Writes:
+reset my resources, my inbox, my journal. Nothing that touches another tenant or the host.
+
+**Absent, not open.** Without `--sandbox-auth` there is no way to tell one partner from another, so the
+namespace is not mapped at all and answers 404 like any other route the host does not have. A surface
+that existed but trusted everyone would be worse than none.
+
+**Non-goals restated.** Not a developer portal and not self-registration — ADR 0011 ruled both out and
+this does not reopen them. This is a scoped API for somebody who already holds a credential.
+
+**Validation.** `SandboxSelfServiceTests` (13 wire cases) and `SandboxSurfaceWithoutAuthTests` (1).
+The cross-tenant cases assert the positive first — that the caller sees their own document — so the
+absence of the other tenant's means something rather than meaning the request failed.

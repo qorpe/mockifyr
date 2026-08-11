@@ -17,6 +17,7 @@
     <ProjectReference Include="..\Mockifyr.Crypto\Mockifyr.Crypto.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Http\Mockifyr.Facade.Http.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Admin\Mockifyr.Facade.Admin.csproj" />
+    <ProjectReference Include="..\Mockifyr.Facade.Sandbox\Mockifyr.Facade.Sandbox.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Grpc\Mockifyr.Facade.Grpc.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.WebSocket\Mockifyr.Facade.WebSocket.csproj" />
     <ProjectReference Include="..\Mockifyr.Facade.Broker\Mockifyr.Facade.Broker.csproj" />

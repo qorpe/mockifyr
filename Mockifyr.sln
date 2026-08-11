@@ -63,6 +63,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mockifyr.Benchmarks", "benc
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mockifyr.Facade.Broker", "src\Mockifyr.Facade.Broker\Mockifyr.Facade.Broker.csproj", "{0E0960BB-93C1-4785-8A96-160E39F9F7C9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mockifyr.Facade.Sandbox", "src\Mockifyr.Facade.Sandbox\Mockifyr.Facade.Sandbox.csproj", "{7894B144-3F7D-434C-90A5-F1DD1ABACB57}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -385,6 +387,18 @@ Global
 		{0E0960BB-93C1-4785-8A96-160E39F9F7C9}.Release|x64.Build.0 = Release|Any CPU
 		{0E0960BB-93C1-4785-8A96-160E39F9F7C9}.Release|x86.ActiveCfg = Release|Any CPU
 		{0E0960BB-93C1-4785-8A96-160E39F9F7C9}.Release|x86.Build.0 = Release|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Debug|x64.Build.0 = Debug|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Debug|x86.Build.0 = Debug|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Release|x64.ActiveCfg = Release|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Release|x64.Build.0 = Release|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Release|x86.ActiveCfg = Release|Any CPU
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -416,5 +430,6 @@ Global
 		{18064B9F-BACB-487B-8525-2C891EDE8416} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{681ABFCA-6F7C-4017-85E5-D5F7176E3389} = {760AB15A-8938-8D9B-BEDE-5CE1484B84C3}
 		{0E0960BB-93C1-4785-8A96-160E39F9F7C9} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{7894B144-3F7D-434C-90A5-F1DD1ABACB57} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

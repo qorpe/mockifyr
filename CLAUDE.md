@@ -392,6 +392,11 @@ issue's checklist promises a partner may read environment values but never secre
 unenforceable while every value was plaintext. A secret is withheld from the admin API, the dashboard
 and export bundles, and still resolves at serve time; a redacted read handed back on save means
 *unchanged* rather than empty. Driving the real dashboard found it would have **deleted** secrets on an
-untouched save.
+untouched save. **#347 — the partner self-service surface** completes the pair: `/__sandbox/*` is
+reachable with the `mfk_` key a partner already holds and answers only for that key's tenant. It is a
+separate namespace rather than a loosened `/__admin`, because ADR 0011 binds that surface to ignore
+sandbox keys entirely and a test asserts it — standing beside it keeps the rule literally true instead
+of true-by-audit. There is no tenant header on this surface at all, so cross-tenant access is not a
+check that could be wrong.
 
 Builds clean (0 warnings); 1122 tests green across the four suites.
