@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Check, Globe, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Check, Globe, Lock, LockOpen, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   ENV_KEY_PATTERN, type EnvironmentKey, type EnvironmentValue, isReservedKey, migrateLegacyEnvironments,
@@ -71,7 +71,10 @@ export function EnvironmentsPage() {
   const keyInvalid = trimmedKey.length > 0 && !ENV_KEY_PATTERN.test(trimmedKey)
   const keyReserved = trimmedKey.length > 0 && isReservedKey(trimmedKey)
   const keyTaken = editing !== null && trimmedKey !== editing && keys.some((k) => k.key === trimmedKey)
-  const filled = values.filter((v) => v.name.trim() && v.value.trim())
+  // A stored secret counts as filled with no text typed: the editor was never shown its literal, so
+  // requiring one would drop the row on save and delete the credential (#348).
+  const isKept = (v: EnvironmentValue) => Boolean(v.secret) && !(v.value ?? '').trim()
+  const filled = values.filter((v) => v.name.trim() && ((v.value ?? '').trim() || isKept(v)))
   const duplicateValue = new Set(filled.map((v) => v.name.trim())).size !== filled.length
   const activeMissing = filled.length > 0 && !filled.some((v) => v.name.trim() === activeValue)
   const blocked = !trimmedKey || filled.length === 0 || keyInvalid || keyReserved || keyTaken || duplicateValue || activeMissing
@@ -84,7 +87,10 @@ export function EnvironmentsPage() {
         activeValue,
         resolved: null,
         // Trailing slashes are stripped so {{key}}/path composes without a double slash.
-        values: filled.map((v) => ({ name: v.name.trim(), value: v.value.trim().replace(/\/$/, '') })),
+        // A kept secret is sent as the marker alone — that is what the server reads as "unchanged".
+        values: filled.map((v) => isKept(v)
+          ? { name: v.name.trim(), secret: true }
+          : { name: v.name.trim(), value: (v.value ?? '').trim().replace(/\/$/, ''), secret: Boolean(v.secret) }),
       })
       if (!result.ok) throw new Error(result.message ?? result.error ?? 'failed')
       if (editing && editing !== trimmedKey) await deleteEnvironmentKey(tenant, editing)
@@ -145,7 +151,7 @@ export function EnvironmentsPage() {
                         <button
                           key={v.name}
                           onClick={() => activate.mutate({ key: entry.key, value: v.name })}
-                          title={v.value}
+                          title={v.secret ? t('env.secretHidden') : v.value}
                           className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[12px] transition-colors',
                             entry.activeValue === v.name
                               ? 'border-success bg-success/10 text-success'
@@ -158,7 +164,9 @@ export function EnvironmentsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 font-mono text-[12.5px] text-muted-foreground break-all">
-                    {entry.resolved ?? <span className="text-danger">{t('env.unresolved')}</span>}
+                    {entry.secret
+                      ? <span className="text-muted-foreground">{t('env.secretHidden')}</span>
+                      : entry.resolved ?? <span className="text-danger">{t('env.unresolved')}</span>}
                   </td>
                   <td className="w-24 px-4 py-3">
                     <div className="flex justify-end gap-1">
@@ -182,7 +190,7 @@ export function EnvironmentsPage() {
             <Label className="mt-4 block">{t('env.values')}</Label>
             <div className="mt-1 space-y-2">
               {values.map((v, i) => (
-                <div key={i} className="grid grid-cols-[28px_180px_minmax(0,1fr)_auto] items-center gap-2">
+                <div key={i} className="grid grid-cols-[28px_180px_minmax(0,1fr)_auto_auto] items-center gap-2">
                   {/* Radio, not checkbox: exactly one value is active per key. */}
                   <button
                     onClick={() => setActiveValue(v.name.trim())}
@@ -203,9 +211,24 @@ export function EnvironmentsPage() {
                     }}
                   />
                   <Input
-                    value={v.value} placeholder="https://dev.example.intra" className="font-mono"
+                    value={v.value ?? ''}
+                    type={v.secret ? 'password' : 'text'}
+                    placeholder={isKept(v) ? t('env.secretKept') : 'https://dev.example.intra'}
+                    className="font-mono"
                     onChange={(e) => { const next = [...values]; next[i] = { ...next[i], value: e.target.value }; setValues(next) }}
                   />
+                  <Button
+                    variant="ghost" size="iconSm" aria-label={t('env.secret')} title={t('env.secret')}
+                    aria-pressed={Boolean(v.secret)}
+                    className={cn(v.secret && 'text-warning')}
+                    onClick={() => {
+                      const next = [...values]
+                      // Clearing the flag also clears a kept literal we never held, so the row cannot
+                      // silently save an empty public value in place of a secret.
+                      next[i] = { ...next[i], secret: !next[i].secret, value: isKept(next[i]) ? '' : next[i].value }
+                      setValues(next)
+                    }}
+                  >{v.secret ? <Lock /> : <LockOpen />}</Button>
                   <Button
                     variant="ghost" size="iconSm" aria-label={t('env.removeValue')} disabled={values.length === 1}
                     onClick={() => setValues(values.filter((_, j) => j !== i))}

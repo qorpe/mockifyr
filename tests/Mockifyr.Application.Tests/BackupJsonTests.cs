@@ -71,8 +71,17 @@ public sealed class BackupJsonTests
         // along beside the display prefix.
         var json = BackupJson.Write(Sample());
 
-        Assert.DoesNotContain("\"token\"", json);
-        Assert.DoesNotContain("\"secret\"", json);
+        // Asserted against the API-key entries rather than the whole document. The original form
+        // forbade the string "secret" anywhere, which was equivalent while "secret" could only mean an
+        // API key's — it stopped being equivalent when environment values gained a `secret` marker
+        // (#348), and a bare substring ban would have failed for a change that leaks nothing.
+        var keys = System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("apiKeys");
+        foreach (var key in keys.EnumerateArray())
+        {
+            Assert.False(key.TryGetProperty("token", out _));
+            Assert.False(key.TryGetProperty("secret", out _));
+        }
+
         Assert.Equal(1, json.Split("mfk_").Length - 1); // the display prefix, and nothing else
     }
 

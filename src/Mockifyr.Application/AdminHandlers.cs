@@ -452,8 +452,17 @@ public sealed class PutEnvironmentKeyHandler(IEnvironmentStore store, IEnvironme
             return ValueTask.FromResult(Result.Failure(error));
         }
 
-        store.Put(command.Tenant, command.Key);
-        persistence.Save(command.Tenant, command.Key);
+        // Merged against what is stored (#348). The read redacts secrets, so a screen that reads, edits
+        // one name and writes back sends a key whose secrets have no literal. Taken at face value that
+        // stores empty strings — opening the page and pressing save would destroy a credential nobody
+        // touched.
+        var merged = EnvironmentSecrets.Merge(
+            command.Key,
+            store.GetKeys(command.Tenant).FirstOrDefault(
+                existing => string.Equals(existing.Key, command.Key.Key, StringComparison.Ordinal)));
+
+        store.Put(command.Tenant, merged);
+        persistence.Save(command.Tenant, merged);
         return ValueTask.FromResult(Result.Success());
     }
 }

@@ -1256,9 +1256,14 @@ public static class AdminEndpoints
             {
                 var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
                 var value = item.TryGetProperty("value", out var v) ? v.GetString() : null;
-                if (name is not null && value is not null)
+                var secret = item.TryGetProperty("secret", out var sec)
+                    && sec.ValueKind == System.Text.Json.JsonValueKind.True;
+
+                // A secret with no literal is what a redacted read hands straight back — it means
+                // "unchanged", and EnvironmentSecrets.Merge resolves it against what is stored.
+                if (name is not null && (value is not null || secret))
                 {
-                    values.Add(new EnvironmentValue(name, value));
+                    values.Add(new EnvironmentValue(name, value ?? string.Empty, secret));
                 }
             }
         }
@@ -1267,12 +1272,20 @@ public static class AdminEndpoints
         return new EnvironmentKey(key, active ?? values.FirstOrDefault()?.Name ?? string.Empty, values);
     }
 
+    /// <summary>
+    /// The read projection, with every secret literal withheld (#348). Two places leak, not one: the
+    /// value in the list and the <c>resolved</c> literal computed from the active one — reporting the
+    /// second while hiding the first would have been redaction in name only.
+    /// </summary>
     private static object EnvironmentJson(EnvironmentKey key) => new
     {
         key = key.Key,
         activeValue = key.ActiveValue,
-        resolved = key.Resolve(),
-        values = key.Values.Select(v => new { name = v.Name, value = v.Value }),
+        resolved = key.ResolvesToSecret() ? null : key.Resolve(),
+        secret = key.ResolvesToSecret(),
+        values = key.Values.Select(v => v.Secret
+            ? (object)new { name = v.Name, secret = true }
+            : new { name = v.Name, value = v.Value, secret = false }),
     };
 
     private static object OutboundTrustJson(OutboundTrustStatus status) => new
