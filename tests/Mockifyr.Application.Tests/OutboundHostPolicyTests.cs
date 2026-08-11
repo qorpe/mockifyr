@@ -88,6 +88,19 @@ public sealed class OutboundHostPolicyTests
 
         Assert.Contains("internal.svc", refusal, StringComparison.Ordinal);
         Assert.Contains("partner.example", refusal, StringComparison.Ordinal);
+        // The phrase itself, not only the interpolated parts: this is what somebody greps a journal for
+        // when they are trying to find out why a callback never arrived.
+        Assert.Contains("is not in the allowlist", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_refusal_lists_every_allowed_entry_readably()
+    {
+        // With one entry the separator is invisible, so it took two to pin it. An operator reads this
+        // line to decide what to add — a run-together list is one they have to squint at.
+        var refusal = OutboundHostPolicy.From(["a.example", "b.example"]).Refusal("https://internal.svc/hook");
+
+        Assert.Contains("a.example, b.example", refusal, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -103,11 +116,78 @@ public sealed class OutboundHostPolicyTests
     }
 
     [Fact]
+    public void The_highest_real_port_is_a_real_port()
+    {
+        // 65535 is the boundary of the valid range, and off by one here silently drops a legitimate
+        // entry — the kind of narrowing nobody notices until a callback stops arriving.
+        var policy = OutboundHostPolicy.From(["partner.example:65535"]);
+
+        Assert.True(policy.Allows("https://partner.example:65535/hook"));
+        Assert.False(policy.Allows("https://partner.example:65534/hook"));
+    }
+
+    [Fact]
+    public void A_dropped_entry_does_not_reappear_in_what_the_host_reports()
+    {
+        // Entries backs the startup line. An entry that matches nothing but still prints is the
+        // "looks configured, is not" failure — an operator reads it and believes something is covered.
+        Assert.Equal(["partner.example"], OutboundHostPolicy.From(["*.", "", "   ", "partner.example"]).Entries);
+    }
+
+    [Fact]
     public void An_entry_list_of_only_junk_leaves_the_policy_unrestricted_and_says_so()
     {
         // Not silently "restricted to nothing", which would break every outbound call with no clue
         // why. IsRestricted is what the startup line reports, so an operator sees the truth.
         Assert.False(OutboundHostPolicy.From(["", "  "]).IsRestricted);
+    }
+
+    [Fact]
+    public void A_null_entry_list_is_the_same_as_an_empty_one()
+    {
+        Assert.False(OutboundHostPolicy.From(null).IsRestricted);
+        Assert.True(OutboundHostPolicy.From(null).Allows("https://anything.example"));
+    }
+
+    [Theory]
+    [InlineData("partner.example:0")]
+    [InlineData("partner.example:70000")]
+    [InlineData("partner.example:-1")]
+    [InlineData("partner.example:not-a-port")]
+    public void A_mistyped_port_makes_the_entry_match_nothing_rather_than_widening_it(string entry)
+    {
+        // The text after the colon is not a usable port, so it stays part of the host name — and no URI
+        // host contains a colon, so the entry matches nothing at all.
+        //
+        // That is deliberate, and it is the direction to fail in. Reading the entry as "any port on
+        // partner.example" would make a typo grant MORE than was written, which for an allowlist is the
+        // one outcome you can never detect from the outside. Failing closed shows up immediately: the
+        // refusal names the host in the journal, and the startup line prints the entry exactly as typed,
+        // so an operator sees "partner.example:0" and knows what to fix.
+        var policy = OutboundHostPolicy.From([entry]);
+
+        Assert.True(policy.IsRestricted);
+        Assert.False(policy.Allows("https://partner.example/hook"));
+        Assert.Equal([entry], policy.Entries);
+    }
+
+    [Fact]
+    public void A_leading_colon_names_no_port_and_no_host_worth_matching()
+    {
+        // ":8443" has its colon at position 0, so there is no host in front of it. It must not become
+        // an entry that matches port 8443 on every host.
+        Assert.False(OutboundHostPolicy.From([":8443"]).Allows("https://anything.example:8443/"));
+    }
+
+    [Fact]
+    public void The_refusal_for_something_that_is_not_a_url_says_that_rather_than_naming_a_host()
+    {
+        // The other half of Refusal, and the message an operator sees when a template rendered to
+        // something that is not an address at all.
+        var refusal = OutboundHostPolicy.From(["partner.example"]).Refusal("not-a-url");
+
+        Assert.Contains("not-a-url", refusal, StringComparison.Ordinal);
+        Assert.Contains("not a usable absolute URL", refusal, StringComparison.Ordinal);
     }
 
     [Fact]

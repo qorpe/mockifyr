@@ -79,6 +79,28 @@ public sealed class RequestBodyLimitTests
     }
 
     [Fact]
+    public void Either_kind_of_limit_on_its_own_counts_as_configured()
+    {
+        // IsConfigured is what the host reads to decide whether to install the middleware at all, so a
+        // policy that reported false with only one of the two set would be a limit nobody enforces.
+        Assert.True(RequestBodyLimits.From(1_000).IsConfigured);
+        Assert.True(RequestBodyLimits.From(null, ["acme:200"]).IsConfigured);
+        Assert.False(RequestBodyLimits.From(null).IsConfigured);
+    }
+
+    [Fact]
+    public void A_tenant_asking_for_exactly_the_ceiling_is_reported_as_its_own_limit()
+    {
+        // The boundary between "your tenant is holding you" and "the host is holding you". At exactly
+        // the ceiling the tenant's number IS the one in force, and saying otherwise sends an operator
+        // to change a setting that would not have helped.
+        Assert.Contains(
+            "tenant 'acme'",
+            RequestBodyLimits.From(1_000, ["acme:1000"]).Refusal(Acme, 1_000),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_refusal_says_which_limit_was_hit()
     {
         // An operator reading a 413 needs to know whether to raise the tenant's number or the host's.

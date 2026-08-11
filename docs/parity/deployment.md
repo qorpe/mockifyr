@@ -209,7 +209,35 @@ somebody's tenant.
 - **The separator for a tenant entry is `=`, not `:`** — every origin contains a colon, and a rule that
   has to explain which colon it means is a rule people get wrong.
 
-**Validation.** `OutboundHostPolicyTests` (17), `RequestBodyLimitTests` (15), `CorsOriginTests` (19)
+**Validation.** `OutboundHostPolicyTests` (27), `RequestBodyLimitTests` (17), `CorsOriginTests` (21)
 over the pure decisions; `OutboundAllowlistTests`, `RequestBodyLimitWireTests` and `CorsWireTests`
 (19 wire cases) over the edges, each paired with a class that runs the *unconfigured* host and asserts
 nothing changed.
+
+**Stryker 95.77 %** across the three new files, from 77.46 %. What the first 18 points bought:
+
+- `IsConfigured` on both the CORS and body-limit policies was untested with only *one* of its two
+  sources set — and that flag is what decides whether the middleware is installed at all, so the
+  mutant was "a limit nobody enforces".
+- The tenant/host boundary in a body-limit refusal: at *exactly* the ceiling the tenant's own number is
+  the one in force, and saying otherwise sends an operator to change a setting that would not have
+  helped.
+- Port 65535 — the top of the valid range — was silently dropped by an off-by-one nobody would notice
+  until a callback stopped arriving.
+- A junk entry still appearing in what the host *reports* (`Entries` backs the startup line), which is
+  the "looks configured, is not" failure in its purest form.
+
+One test had to be corrected rather than added. It asserted that `partner.example:0` would fall back to
+matching any port on that host. It does not: the unusable port stays part of the host name, no URI host
+contains a colon, and the entry therefore matches nothing. That is the right direction to fail in — a
+typo that grants *more* than was written is the one an allowlist can never reveal from outside, while a
+typo that grants less announces itself in the journal and in the startup line. The test now says so.
+
+Three survivors remain, each analysed as an equivalent mutant:
+
+- Removing the `text.Length == 0` early return in entry parsing: the same case is caught by the
+  `text.Length == 0 ? null` at the end of the method, so both paths still drop the entry.
+- `colon > 0` → `colon >= 0`: a leading colon then parses a port and leaves an empty host, which the
+  final guard drops — the entry is discarded either way.
+- `parsed is > 0` → `>= 0`: port 0 becomes a pinned port, and no URI ever reports port 0, so the entry
+  matches nothing either way.

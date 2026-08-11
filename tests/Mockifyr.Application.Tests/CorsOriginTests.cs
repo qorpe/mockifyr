@@ -116,10 +116,32 @@ public sealed class CorsOriginTests
     }
 
     [Fact]
-    public void The_configured_set_reads_back_for_the_startup_line()
+    public void Either_kind_of_entry_on_its_own_counts_as_configured()
     {
+        // IsConfigured decides whether the middleware is installed at all, so reporting false with only
+        // one of the two set would mean headers nobody ever emits.
+        Assert.True(CorsOrigins.From(["https://app.example"]).IsConfigured);
+        Assert.True(CorsOrigins.From(null, ["acme=https://app.example"]).IsConfigured);
+        Assert.False(CorsOrigins.From(null, null).IsConfigured);
+    }
+
+    [Fact]
+    public void The_configured_set_reads_back_for_the_startup_line_in_a_stable_order()
+    {
+        // An operator comparing today's startup line with yesterday's should not have to wonder whether
+        // the order means anything. Two entries per side, or the ordering is never exercised.
+        var described = CorsOrigins.From(
+            ["https://b.example", "https://a.example"],
+            ["zeta=https://z.example", "acme=https://acme.example:8443", "acme=https://acme.example"]).Describe();
+
         Assert.Equal(
-            ["https://shared.example", "acme=https://acme.example"],
-            CorsOrigins.From(["https://shared.example"], ["acme=https://acme.example"]).Describe());
+            [
+                "https://a.example",
+                "https://b.example",
+                "acme=https://acme.example",
+                "acme=https://acme.example:8443",
+                "zeta=https://z.example",
+            ],
+            described);
     }
 }
