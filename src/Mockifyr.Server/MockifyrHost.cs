@@ -12,6 +12,7 @@ using Mockifyr.Adapters.MappingJson;
 using Mockifyr.Core;
 using Mockifyr.Facade.Admin;
 using Mockifyr.Facade.Http;
+using Mockifyr.Facade.Sandbox;
 using Mockifyr.Facade.WebSocket;
 using Mockifyr.Stores.InMemory;
 using OpenTelemetry;
@@ -1043,6 +1044,12 @@ public static class MockifyrHost
         }
 
         app.MapAdminEndpoints();
+
+        // The partner self-service surface (#347). A separate namespace on purpose: ADR 0011 binds
+        // /__admin/* to ignore sandbox keys entirely, so this stands beside it rather than loosening
+        // it. Absent --sandbox-auth there is no way to tell one partner from another, and the whole
+        // namespace is absent rather than open.
+        app.MapSandboxEndpoints(app.Services.GetRequiredService<SandboxAuthOptions>().Enabled);
 
         // Dashboard (optional): when --dashboard <dir> points at the built UI (ui/dist), serve it under
         // the reserved /__mockifyr prefix — static assets plus an SPA fallback to index.html for client
