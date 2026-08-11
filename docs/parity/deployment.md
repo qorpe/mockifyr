@@ -141,3 +141,75 @@ are wired through values.
 **Deferred.** Spans for the individual engine phases (matching, templating, crypto) — the ASP.NET and
 HttpClient spans already cover request→response and outbound calls, and per-phase spans are worth
 adding once someone needs them rather than on speculation.
+
+## Edge hardening for an externally reachable host (#349)
+
+Three things a host on the public internet needs that a host on a laptop does not. All three were
+verified absent before being built, and all three are **off by default** — an unconfigured host
+behaves exactly as it always has, which is what makes them safe to ship into 1.x.
+
+### The hosts this instance may call — `--allow-outbound-host`
+
+The second half of "the sandbox cannot be used as a way into the network it runs in"; the first was
+the partner principal (#346), which stops a partner from *configuring* outbound reach. This stops the
+host from *making* the call, whoever configured it. Enforced at the webhook and proxy edges.
+
+- **Checked against the rendered URL, not the template.** A webhook URL may be
+  `{{request.headers.X-Callback}}`; a policy that inspected the text rather than the target would
+  allow exactly the case it exists to stop.
+- **A wildcard covers subdomains, not the apex.** Somebody allowing `*.internal.example` almost never
+  means `internal.example` itself, and for a control like this the permissive guess is the wrong one.
+- **A portless entry allows any port on that host.** Making an operator enumerate ports produces
+  allowlists that block something legitimate, which is how a control comes to be switched off.
+- **An unparseable target is refused** once a restriction is in force: "we could not tell, so we
+  allowed it" is the failure an allowlist exists to remove.
+- **Refusals are visible.** A webhook refusal is appended to the serve event beside the request that
+  caused it, the way a failed delivery already is. A proxy refusal needed a fix on the way: it was
+  thrown where only container-diagnosis failures were caught, so it would have propagated as an opaque
+  500 — the one proxy outcome the host can explain completely turned into the one that explains
+  nothing. It now answers **502** naming the host and the allowlist.
+- **Scope, stated rather than skipped.** `publish` (ADR 0013) names a *topic* on a broker the host was
+  started with, so a stub cannot choose an outbound host there and there is nothing for an allowlist to
+  decide. The issue listed it; this is why it is not enforced.
+
+### How large a body this host reads — `--max-request-body-bytes`
+
+Kestrel's ~30 MB default applied to every caller equally. The host value is a **ceiling**: a
+`--tenant-max-request-body` above it is clamped, or the one number an operator sets to bound the
+machine could be raised by configuration written later.
+
+Two stops, because one is not enough. The explanatory one reads `Content-Length` and answers **413**
+naming *which* limit was hit — a tenant held below the ceiling and the ceiling itself are different
+problems with different fixes. The hard one sets Kestrel's per-request limit, which is all that stands
+behind a chunked body declaring no length; it refuses without our message, and a bare refusal beats no
+refusal. An entry naming a non-positive size is dropped rather than read as zero, since a limit of
+zero refuses every request with a body and looks like the host being broken rather than misconfigured.
+
+The tenant is resolved key-first, then header, then default — the same order the serving facade uses
+(ADR 0003). A limit that applied to a different tenant than the request did would be worse than none.
+
+### Which browsers may call — `--allow-origin`
+
+The first wall anybody hits integrating a web front end, and it looks like our bug. Off by default,
+because turning it on for everyone would hand every browser on the internet a credentialed path into
+somebody's tenant.
+
+- **The origin is echoed, never `*`** — `*` is incompatible with credentials, and a sandbox key
+  travels as one. `Vary: Origin` goes with it, or a shared cache serves one origin's response to
+  another.
+- **A disallowed origin gets no headers, not a refusal.** The browser is what enforces CORS; answering
+  403 would break every non-browser client for a rule that does not apply to them.
+- **Preflight is answered here or not at all** — the serving catch-all would 404 an `OPTIONS`, and a
+  404 preflight is indistinguishable from "CORS is broken" to the developer on the other side.
+- **A tenant's own list replaces the host-wide one** rather than adding to it: a tenant naming its
+  origins is stating the whole set.
+- **`/__admin` is excluded and `/__sandbox` is not.** An operator's browser reaches the admin API from
+  the dashboard that served it; a partner's browser needs the surface that answers "did my OTP arrive"
+  (#347), and leaving it out would reopen that gap at the edge.
+- **The separator for a tenant entry is `=`, not `:`** — every origin contains a colon, and a rule that
+  has to explain which colon it means is a rule people get wrong.
+
+**Validation.** `OutboundHostPolicyTests` (17), `RequestBodyLimitTests` (15), `CorsOriginTests` (19)
+over the pure decisions; `OutboundAllowlistTests`, `RequestBodyLimitWireTests` and `CorsWireTests`
+(19 wire cases) over the edges, each paired with a class that runs the *unconfigured* host and asserts
+nothing changed.

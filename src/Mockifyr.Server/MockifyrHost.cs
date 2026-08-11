@@ -562,6 +562,12 @@ public static class MockifyrHost
                 + " — webhooks and proxy stubs naming anything else are refused, and the refusal is journaled.");
         }
 
+        // Browser origins (#349). Off by default and absent entirely until configured: a host with no
+        // origins emits no CORS headers at all and behaves exactly as it always has.
+        var corsOrigins = CorsOrigins.From(
+            ReadRepeated(args, "--allow-origin"),
+            ReadRepeated(args, "--tenant-allow-origin"));
+
         // Request body limits (#349). Kestrel's ~30 MB default applies to every caller equally, which
         // is fine on a laptop and not fine once the host is reachable by people you do not employ.
         var bodyLimits = RequestBodyLimits.From(
@@ -1113,6 +1119,54 @@ public static class MockifyrHost
         if (metricsEnabled)
         {
             app.MapPrometheusScrapingEndpoint("/__admin/metrics");
+        }
+
+        if (corsOrigins.IsConfigured)
+        {
+            Console.WriteLine("mockifyr: browser origins allowed — " + string.Join(", ", corsOrigins.Describe())
+                + ". The admin API is deliberately NOT included; it stays same-origin.");
+
+            app.Use(async (context, next) =>
+            {
+                var path = context.Request.Path;
+
+                // The serving path and the partner surface, never /__admin. An operator's browser
+                // reaches the admin API from the dashboard it is served by; a partner's browser needs
+                // the sandbox AND the surface that answers "did my OTP arrive" (#347) — leaving that
+                // out would reopen exactly the gap that issue closed.
+                var eligible = !path.StartsWithSegments("/__admin") && !path.StartsWithSegments("/__mockifyr");
+                var origin = context.Request.Headers.Origin.FirstOrDefault();
+
+                if (!eligible || origin is null || !corsOrigins.Allows(TenantForLimits(context), origin))
+                {
+                    // No headers at all rather than an explicit refusal: the browser enforces CORS, and
+                    // a host that answered 403 here would break every non-browser client too.
+                    await next();
+                    return;
+                }
+
+                // The origin is echoed rather than '*', because '*' is incompatible with credentials
+                // and a sandbox key travels as one.
+                context.Response.Headers.AccessControlAllowOrigin = origin;
+                context.Response.Headers.AccessControlAllowCredentials = "true";
+                // Vary, because the answer depends on the request's Origin — without it a shared cache
+                // can serve one origin's response to another.
+                context.Response.Headers.Append("Vary", "Origin");
+
+                if (HttpMethods.IsOptions(context.Request.Method))
+                {
+                    // Preflight is answered here or not at all: the serving catch-all would 404 it, and
+                    // a 404 preflight is indistinguishable to the developer from "CORS is broken".
+                    context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+                    context.Response.Headers.AccessControlAllowHeaders =
+                        context.Request.Headers.AccessControlRequestHeaders.FirstOrDefault() ?? "*";
+                    context.Response.Headers.AccessControlMaxAge = "600";
+                    context.Response.StatusCode = StatusCodes.Status204NoContent;
+                    return;
+                }
+
+                await next();
+            });
         }
 
         if (bodyLimits.IsConfigured)

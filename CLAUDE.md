@@ -397,6 +397,13 @@ reachable with the `mfk_` key a partner already holds and answers only for that 
 separate namespace rather than a loosened `/__admin`, because ADR 0011 binds that surface to ignore
 sandbox keys entirely and a test asserts it — standing beside it keeps the rule literally true instead
 of true-by-audit. There is no tenant header on this surface at all, so cross-tenant access is not a
-check that could be wrong.
+check that could be wrong. **#349 — edge hardening** closes Phase 1: `--allow-outbound-host` bounds
+the hosts this instance may call (checked against the *rendered* webhook URL, because a template may be
+`{{request.headers.X-Callback}}`), `--max-request-body-bytes` replaces Kestrel's blanket ~30 MB with a
+ceiling and a per-tenant value clamped beneath it, and `--allow-origin` lets a browser application in
+while the admin API stays same-origin. All three are off by default and each ships beside a test of the
+*unconfigured* host. Building the first found a defect it was not looking for: a proxy refusal was
+thrown where only container-diagnosis failures were caught, so the one proxy outcome the host can
+explain completely would have reached the caller as an opaque 500.
 
 Builds clean (0 warnings); 1122 tests green across the four suites.
