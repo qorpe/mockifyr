@@ -17,7 +17,12 @@ public sealed class RelationalStateDirectiveTests
     private sealed class Fixture
     {
         public InMemoryResourceStore Store { get; } = new();
-        public InMemoryResourceSchemaStore Schemas { get; } = new();
+
+        // The production store, not a test double: relations ride the resource store (ADR 0015), and
+        // a fixture that bypassed that would not be exercising what a host actually runs.
+        public IResourceSchemaStore Schemas { get; }
+
+        public Fixture() => Schemas = new ResourceBackedSchemaStore(Store);
         public IResourceIdGenerator Ids { get; } = new SequentialIds();
 
         public StateOutcome Run(StateDirective directive, string? parentId = null, string body = "{}") =>

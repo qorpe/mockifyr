@@ -77,6 +77,13 @@ public interface IResourceSchemaStore
 /// </summary>
 public static class ResourceRelations
 {
+    /// <summary>
+    /// The collection relation declarations are kept in (ADR 0015). Deliberately not a well-formed
+    /// collection name, so no tenant can create, seed or address one that collides with it — the
+    /// isolation is structural rather than a convention someone has to remember.
+    /// </summary>
+    public const string SchemaCollection = "!relations";
+
     /// <summary>How deep a cascade will walk before refusing to continue.</summary>
     /// <remarks>
     /// Cycles in the relation graph are legal — <c>employees.managerId → employees</c> is a real

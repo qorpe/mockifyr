@@ -167,6 +167,59 @@ public sealed class RelationalSandboxTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_import_declared_the_relation_the_path_shape_implied()
+    {
+        var (status, body, _) = await Send(HttpMethod.Get, "/__admin/relations");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        var declared = JsonDocument.Parse(body).RootElement.GetProperty("relations").EnumerateArray().Single();
+        Assert.Equal("orders", declared.GetProperty("collection").GetString());
+        var belongsTo = declared.GetProperty("belongsTo").EnumerateArray().Single();
+        Assert.Equal("customers", belongsTo.GetProperty("collection").GetString());
+        Assert.Equal("customerId", belongsTo.GetProperty("via").GetString());
+        Assert.Equal("restrict", belongsTo.GetProperty("onDelete").GetString());
+    }
+
+    [Fact]
+    public async Task Declaring_cascade_changes_what_a_delete_does()
+    {
+        // The declaration has to reach behaviour, not just storage: reading it back proves the write
+        // landed and nothing else.
+        var customer = await CreateCustomer("c7");
+        await Send(HttpMethod.Post, $"/customers/{customer}/orders", """{"total":100}""");
+
+        var (declared, _, _) = await Send(HttpMethod.Put, "/__admin/relations/orders",
+            """{"belongsTo":[{"collection":"customers","via":"customerId","onDelete":"cascade"}]}""");
+        Assert.Equal(HttpStatusCode.OK, declared);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(HttpMethod.Delete, $"/customers/{customer}")).Status);
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(HttpMethod.Get, $"/customers/{customer}")).Status);
+
+        // Put the imported declaration back: these tests share one host, and leaving `cascade` behind
+        // would make another test's outcome depend on the order they ran in.
+        await Send(HttpMethod.Put, "/__admin/relations/orders",
+            """{"belongsTo":[{"collection":"customers","via":"customerId"}]}""");
+    }
+
+    [Fact]
+    public async Task A_misspelled_delete_rule_is_refused_rather_than_defaulted()
+    {
+        // Reading "casade" as `restrict` would hand the operator the opposite of what they asked for,
+        // in the one declaration that decides whether data is destroyed.
+        var (status, body, _) = await Send(HttpMethod.Put, "/__admin/relations/orders",
+            """{"belongsTo":[{"collection":"customers","via":"customerId","onDelete":"casade"}]}""");
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, status);
+        Assert.Contains("onDelete", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Removing_relations_a_collection_never_declared_is_a_not_found()
+    {
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(HttpMethod.Delete, "/__admin/relations/nothing-here")).Status);
+    }
+
+    [Fact]
     public async Task A_flat_collection_is_untouched_by_any_of_this()
     {
         // The 1.x compatibility promise at the wire: /customers declares no owner, so it scopes nothing

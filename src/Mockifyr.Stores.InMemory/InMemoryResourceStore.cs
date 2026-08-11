@@ -33,7 +33,11 @@ public sealed class InMemoryResourceStore(
             }
 
             return [.. collections
-                .Where(pair => pair.Value.Count > 0)
+                .Where(pair => pair.Value.Count > 0
+                    // Relation declarations live in a reserved collection (ADR 0015). They are the
+                    // tenant's own data and no secret, but listing them beside their documents would
+                    // put internal bookkeeping in front of every operator reading the dashboard.
+                    && !string.Equals(pair.Key, ResourceRelations.SchemaCollection, StringComparison.Ordinal))
                 .Select(pair => new ResourceCollectionInfo(pair.Key, pair.Value.Count))
                 .OrderBy(info => info.Name, StringComparer.Ordinal)];
         }

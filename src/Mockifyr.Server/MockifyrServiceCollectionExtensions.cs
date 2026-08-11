@@ -68,7 +68,10 @@ public static class MockifyrServiceCollectionExtensions
         // Facades (SMTP, SMS profiles) write through IMessageSink; behavior decorates the sink, not them.
         services.AddSingleton<IMessageStore, InMemoryMessageStore>();
         services.AddSingleton<IResourceStore, InMemoryResourceStore>();
-        services.AddSingleton<IResourceSchemaStore, InMemoryResourceSchemaStore>();
+        // Relations ride the resource store (ADR 0015), so they persist, restore and reload through
+        // the change feed on every backend without a persistence surface of their own.
+        services.AddSingleton<IResourceSchemaStore>(sp =>
+            new ResourceBackedSchemaStore(sp.GetRequiredService<IResourceStore>()));
         services.AddSingleton<IResourceIdGenerator, GuidResourceIdGenerator>();
         services.AddSingleton(new ResourceOptions());
         // Readiness state (#242): startup flips it on, shutdown flips it off.

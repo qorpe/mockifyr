@@ -800,6 +800,40 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Ok() : ResourceFailure(result.Error);
         });
 
+        // Sandbox relations (ADR 0015). Deliberately NOT under /resources/schemas: that path would be
+        // shadowed by /resources/{collection} for anyone whose sandbox holds a collection called
+        // "schemas", and a route that works until someone names a collection unluckily is a trap.
+        admin.MapGet("/relations", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetRelationsQuery(TenantOf(request)));
+            return Results.Json(new { relations = result.Value.Select(RelationJson) });
+        });
+
+        admin.MapPut("/relations/{collection}", async (string collection, HttpRequest request, ISender sender) =>
+        {
+            IReadOnlyList<ResourceRelation> belongsTo;
+            try
+            {
+                belongsTo = ReadRelations(await ReadBody(request));
+            }
+            catch (System.Text.Json.JsonException exception)
+            {
+                // The reader's own message, not a generic one: it already names which part is wrong
+                // ("onDelete must be restrict, cascade or orphan"), and replacing that with a summary
+                // of the whole shape makes the caller re-derive what we already knew.
+                return RelationFailure(Mediant.Results.Error.Validation("Relation.InvalidBody", exception.Message));
+            }
+
+            var result = await sender.Send(new PutRelationCommand(collection, belongsTo, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(RelationJson(result.Value)) : RelationFailure(result.Error);
+        });
+
+        admin.MapDelete("/relations/{collection}", async (string collection, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new DeleteRelationCommand(collection, TenantOf(request)));
+            return result.IsSuccess ? Results.Ok() : RelationFailure(result.Error);
+        });
+
         admin.MapPost("/resources/reset", async (HttpRequest request, ISender sender) =>
         {
             await sender.Send(new ResetResourcesCommand(Collection: null, TenantOf(request)));
@@ -1529,6 +1563,69 @@ public static class AdminEndpoints
         Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
         {
             "ApiKey.NotFound" => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status422UnprocessableEntity,
+        });
+
+    /// <summary>
+    /// Reads <c>{"belongsTo":[{"collection":…,"via":…,"onDelete":…}]}</c>. An unrecognised
+    /// <c>onDelete</c> is refused rather than defaulted: silently reading "casade" as `restrict`
+    /// would give the operator the opposite of what they asked for, in the one place that deletes data.
+    /// </summary>
+    private static IReadOnlyList<ResourceRelation> ReadRelations(string body)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+        if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object
+            || !document.RootElement.TryGetProperty("belongsTo", out var declared)
+            || declared.ValueKind != System.Text.Json.JsonValueKind.Array)
+        {
+            throw new System.Text.Json.JsonException("belongsTo must be an array.");
+        }
+
+        var relations = new List<ResourceRelation>();
+        foreach (var entry in declared.EnumerateArray())
+        {
+            if (entry.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !entry.TryGetProperty("collection", out var collection)
+                || collection.ValueKind != System.Text.Json.JsonValueKind.String
+                || !entry.TryGetProperty("via", out var via)
+                || via.ValueKind != System.Text.Json.JsonValueKind.String)
+            {
+                throw new System.Text.Json.JsonException("Each relation needs a collection and a via.");
+            }
+
+            var rule = entry.TryGetProperty("onDelete", out var onDelete)
+                && onDelete.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? onDelete.GetString()!.ToLowerInvariant() switch
+                    {
+                        "restrict" => RelationDeleteRule.Restrict,
+                        "cascade" => RelationDeleteRule.Cascade,
+                        "orphan" => RelationDeleteRule.Orphan,
+                        _ => throw new System.Text.Json.JsonException(
+                            "onDelete must be restrict, cascade or orphan."),
+                    }
+                    : RelationDeleteRule.Restrict;
+
+            relations.Add(new ResourceRelation(collection.GetString()!, via.GetString()!, rule));
+        }
+
+        return relations;
+    }
+
+    private static object RelationJson(ResourceSchema schema) => new
+    {
+        collection = schema.Collection,
+        belongsTo = schema.BelongsTo.Select(relation => new
+        {
+            collection = relation.Collection,
+            via = relation.Via,
+            onDelete = relation.OnDelete.ToString().ToLowerInvariant(),
+        }),
+    };
+
+    private static IResult RelationFailure(Mediant.Results.Error error) =>
+        Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
+        {
+            "Relation.NotFound" => StatusCodes.Status404NotFound,
             _ => StatusCodes.Status422UnprocessableEntity,
         });
 
