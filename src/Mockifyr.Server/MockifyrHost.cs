@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
@@ -132,6 +133,55 @@ public static class MockifyrHost
         // The scrape endpoint too (#246): a Prometheus scraper cannot carry credentials, and the
         // series it exposes are counts and latencies — never payloads.
         || path.Equals("/__admin/metrics", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Every value of a repeatable flag, read straight off argv. .NET configuration keeps only the last
+    /// value of a repeated key, so anything repeatable has to be read here or it silently loses all but
+    /// one of its entries.
+    /// </summary>
+    private static IEnumerable<string> ReadRepeated(string[] args, string flag)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], flag, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return args[i + 1];
+            }
+        }
+    }
+
+    /// <summary>
+    /// The tenant a request belongs to, for the purpose of bounding its body (#349): the sandbox key
+    /// first, then the tenant header, then the default — the same order the serving facade resolves in
+    /// (ADR 0003), because a limit that applied to a different tenant than the request did would be
+    /// worse than no limit.
+    /// </summary>
+    private static TenantId TenantForLimits(HttpContext context)
+    {
+        var sandbox = context.RequestServices.GetService<SandboxAuthOptions>();
+        if (sandbox is { Enabled: true })
+        {
+            var presented = context.Request.Headers.TryGetValue("X-Api-Key", out var header)
+                && header.FirstOrDefault() is { Length: > 0 } apiKey
+                    ? apiKey
+                    : context.Request.Headers.Authorization.FirstOrDefault() is { } authorization
+                      && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                        ? authorization["Bearer ".Length..].Trim()
+                        : null;
+
+            if (presented is not null
+                && context.RequestServices.GetRequiredService<IApiKeyStore>().GetAll()
+                    .FirstOrDefault(k => ApiKeyMaterial.Verify(presented, k.Salt, k.Hash)) is { } key)
+            {
+                return key.Tenant;
+            }
+        }
+
+        return context.Request.Headers.TryGetValue(TenantCredentialHeader, out var tenant)
+            && !string.IsNullOrEmpty(tenant)
+                ? new TenantId(tenant.ToString())
+                : TenantId.Default;
+    }
 
     /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
     private const string TenantCredentialHeader = "X-Mockifyr-Tenant";
@@ -498,6 +548,34 @@ public static class MockifyrHost
         if (int.TryParse(builder.Configuration["message-limit"], out var messageLimit))
         {
             builder.Services.AddSingleton<IMessageStore>(new InMemoryMessageStore(messageLimit));
+        }
+
+        // The outbound allowlist (#349): --allow-outbound-host <host|host:port|*.domain>, repeatable.
+        // Read from argv rather than configuration, for the same reason --tenant-credential is: .NET
+        // configuration keeps only the LAST value of a repeated key, which would silently reduce an
+        // allowlist to one entry — the failure mode where a control looks configured and is not.
+        var allowedOutbound = OutboundHostPolicy.From(ReadRepeated(args, "--allow-outbound-host"));
+        if (allowedOutbound.IsRestricted)
+        {
+            builder.Services.AddSingleton(allowedOutbound);
+            Console.WriteLine("mockifyr: outbound calls are restricted to " + string.Join(", ", allowedOutbound.Entries)
+                + " — webhooks and proxy stubs naming anything else are refused, and the refusal is journaled.");
+        }
+
+        // Browser origins (#349). Off by default and absent entirely until configured: a host with no
+        // origins emits no CORS headers at all and behaves exactly as it always has.
+        var corsOrigins = CorsOrigins.From(
+            ReadRepeated(args, "--allow-origin"),
+            ReadRepeated(args, "--tenant-allow-origin"));
+
+        // Request body limits (#349). Kestrel's ~30 MB default applies to every caller equally, which
+        // is fine on a laptop and not fine once the host is reachable by people you do not employ.
+        var bodyLimits = RequestBodyLimits.From(
+            long.TryParse(builder.Configuration["max-request-body-bytes"], out var ceiling) ? ceiling : null,
+            ReadRepeated(args, "--tenant-max-request-body"));
+        if (bodyLimits.IsConfigured)
+        {
+            builder.Services.AddSingleton(bodyLimits);
         }
 
         // Sandbox access (G19d, ADR 0011): --sandbox-auth turns on key-based tenant resolution
@@ -1041,6 +1119,95 @@ public static class MockifyrHost
         if (metricsEnabled)
         {
             app.MapPrometheusScrapingEndpoint("/__admin/metrics");
+        }
+
+        if (corsOrigins.IsConfigured)
+        {
+            Console.WriteLine("mockifyr: browser origins allowed — " + string.Join(", ", corsOrigins.Describe())
+                + ". The admin API is deliberately NOT included; it stays same-origin.");
+
+            app.Use(async (context, next) =>
+            {
+                var path = context.Request.Path;
+
+                // The serving path and the partner surface, never /__admin. An operator's browser
+                // reaches the admin API from the dashboard it is served by; a partner's browser needs
+                // the sandbox AND the surface that answers "did my OTP arrive" (#347) — leaving that
+                // out would reopen exactly the gap that issue closed.
+                var eligible = !path.StartsWithSegments("/__admin") && !path.StartsWithSegments("/__mockifyr");
+                var origin = context.Request.Headers.Origin.FirstOrDefault();
+
+                if (!eligible || origin is null || !corsOrigins.Allows(TenantForLimits(context), origin))
+                {
+                    // No headers at all rather than an explicit refusal: the browser enforces CORS, and
+                    // a host that answered 403 here would break every non-browser client too.
+                    await next();
+                    return;
+                }
+
+                // The origin is echoed rather than '*', because '*' is incompatible with credentials
+                // and a sandbox key travels as one.
+                context.Response.Headers.AccessControlAllowOrigin = origin;
+                context.Response.Headers.AccessControlAllowCredentials = "true";
+                // Vary, because the answer depends on the request's Origin — without it a shared cache
+                // can serve one origin's response to another.
+                context.Response.Headers.Append("Vary", "Origin");
+
+                if (HttpMethods.IsOptions(context.Request.Method))
+                {
+                    // Preflight is answered here or not at all: the serving catch-all would 404 it, and
+                    // a 404 preflight is indistinguishable to the developer from "CORS is broken".
+                    context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+                    context.Response.Headers.AccessControlAllowHeaders =
+                        context.Request.Headers.AccessControlRequestHeaders.FirstOrDefault() ?? "*";
+                    context.Response.Headers.AccessControlMaxAge = "600";
+                    context.Response.StatusCode = StatusCodes.Status204NoContent;
+                    return;
+                }
+
+                await next();
+            });
+        }
+
+        if (bodyLimits.IsConfigured)
+        {
+            Console.WriteLine("mockifyr: request bodies are capped"
+                + (bodyLimits.HostCeiling is { } cap ? $" at {cap} bytes host-wide" : " per tenant")
+                + " — a larger body is refused with 413 naming the limit it hit.");
+
+            app.Use(async (context, next) =>
+            {
+                var tenant = TenantForLimits(context);
+                if (bodyLimits.For(tenant) is not { } limit)
+                {
+                    await next();
+                    return;
+                }
+
+                // The hard stop, for a chunked body that declares no length: Kestrel aborts the read
+                // once it passes the limit. Set per request because the limit is per tenant, and the
+                // server-wide option cannot be.
+                if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature)
+                {
+                    feature.MaxRequestBodySize = limit;
+                }
+
+                // The explanatory stop, for the common case where the body announces its size. Kestrel's
+                // own refusal is a bare 413; this one says which limit was hit, which is the difference
+                // between an operator raising the right number and guessing.
+                if (context.Request.ContentLength is { } declared && declared > limit)
+                {
+                    context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        error = "Request.BodyTooLarge",
+                        message = bodyLimits.Refusal(tenant, limit),
+                    });
+                    return;
+                }
+
+                await next();
+            });
         }
 
         app.MapAdminEndpoints();

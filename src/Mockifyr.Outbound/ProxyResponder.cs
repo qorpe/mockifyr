@@ -7,8 +7,19 @@ namespace Mockifyr.Outbound;
 /// surface it, and a flag marking the container-localhost diagnosis (#176) — the one case where the
 /// facade turns the failure into an explanatory 502 rather than an opaque 500.
 /// </summary>
-public sealed class ProxyDeliveryException(string message, bool containerDiagnosis) : Exception(message)
+public sealed class ProxyDeliveryException(string message, bool containerDiagnosis, bool refused = false)
+    : Exception(message)
 {
+    /// <summary>
+    /// Whether this host <em>declined</em> to make the call rather than failing to complete it (#349).
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from a connection failure because the two need different answers: a refusal has a
+    /// message an operator can act on, and letting it propagate as an unhandled exception would turn
+    /// the one outcome we can fully explain into an opaque 500.
+    /// </remarks>
+    public bool Refused { get; } = refused;
+
     /// <summary>True when the failure is the container-localhost trap and the message explains it.</summary>
     public bool ContainerDiagnosis { get; } = containerDiagnosis;
 }
@@ -25,7 +36,10 @@ public sealed class ProxyDeliveryException(string message, bool containerDiagnos
 /// <see cref="HttpClient"/> and the retry are both skipped when a service really does answer.
 /// </para>
 /// </summary>
-public sealed class ProxyResponder(HttpClient? client = null, bool hostFallback = true)
+public sealed class ProxyResponder(
+    HttpClient? client = null,
+    bool hostFallback = true,
+    OutboundHostPolicy? outboundHosts = null)
 {
     // The Host header must track the upstream URL (set by HttpClient), not the original mock host.
     private static readonly HashSet<string> DropForwardHeaders =
@@ -42,6 +56,16 @@ public sealed class ProxyResponder(HttpClient? client = null, bool hostFallback 
             : request.Url;
 
         var target = proxy.BaseUrl.TrimEnd('/') + forwardPath;
+
+        // The outbound allowlist (#349). A proxy stub names its own target, so this is the other half
+        // of the same control the webhook edge applies — and the refusal is an exception rather than a
+        // silent pass-through, because a proxy that quietly returned nothing would read as the upstream
+        // being down.
+        var policy = outboundHosts ?? OutboundHostPolicy.Unrestricted;
+        if (!policy.Allows(target))
+        {
+            throw new ProxyDeliveryException(policy.Refusal(target), containerDiagnosis: false, refused: true);
+        }
         try
         {
             return await SendAsync(proxy, request, target, cancellationToken).ConfigureAwait(false);

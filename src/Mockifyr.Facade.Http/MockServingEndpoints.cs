@@ -180,12 +180,15 @@ public static class MockServingEndpoints
                 var upstream = await responder.ProxyAsync(proxy, request, context.RequestAborted);
                 await WriteUpstreamAsync(context, upstream);
             }
-            catch (ProxyDeliveryException failure) when (failure.ContainerDiagnosis)
+            catch (ProxyDeliveryException failure) when (failure.ContainerDiagnosis || failure.Refused)
             {
                 // The container-localhost trap (#176): unlike a callback, a proxy has no journal, so its
                 // failure is a live response. Rather than the opaque 500 an unhandled exception would
                 // produce, answer 502 Bad Gateway with the cause — a proxy that cannot reach upstream is
-                // exactly what 502 means. Non-container proxy failures are left to propagate unchanged.
+                // exactly what 502 means. An allowlist refusal (#349) takes the same answer for the same
+                // reason: it is the one proxy outcome we can explain completely, and propagating it as
+                // an unhandled exception would hand back an opaque 500 instead. Other failures are left
+                // to propagate unchanged.
                 context.Response.StatusCode = StatusCodes.Status502BadGateway;
                 context.Response.ContentType = "text/plain; charset=utf-8";
                 await context.Response.WriteAsync(failure.Message, context.RequestAborted);

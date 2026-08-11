@@ -127,6 +127,11 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--amqp-subscribe <queues>` | comma-separated queues to consume |
 | `--tenant-credential <tenant>:<user>:<pass>` | repeatable — an admin credential scoped to ONE tenant; it cannot address another by renaming `X-Mockifyr-Tenant` (403). `--admin-user` stays the system scope |
 | `--partner-credential <tenant>:<user>:<pass>` | repeatable — as above, plus refused on every route and every stub field through which the host would act on the network (recordings, outbound trust, Git; `proxyBaseUrl`, post-serve actions) |
+| `--allow-outbound-host <host\|host:port\|*.domain>` | repeatable — restrict the hosts this instance may call (webhooks, proxy stubs). Unrestricted by default; a refusal is journaled |
+| `--max-request-body-bytes <n>` | host-wide ceiling on request bodies; larger is refused with **413** naming the limit |
+| `--tenant-max-request-body <tenant>:<bytes>` | repeatable — hold one tenant below the ceiling (never above it) |
+| `--allow-origin <origin>` | repeatable — browser origins allowed to call the mock and `/__sandbox`. Off by default; the admin API stays same-origin |
+| `--tenant-allow-origin <tenant>=<origin>` | repeatable — a tenant's own origin list, replacing the host-wide one |
 | `--block-outbound-routes` | while the admin API is unauthenticated, refuse the routes that act on the network (start recording, outbound trust, Git) with **403** — an open host cannot be turned into a forward proxy |
 | `--decrypt-key <base64>` | 256-bit key enabling payload cryptography: a stub's `"decrypt"` block makes encrypted request fields matchable/templatable (the journal keeps the ciphertext), and its `"protect"` block encrypts named response fields — or the whole body — on the way out |
 | `--metrics` | expose Prometheus metrics at `/__admin/metrics` (no credentials needed — a scraper cannot carry them) |
