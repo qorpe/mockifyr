@@ -145,7 +145,9 @@ public static class MockifyrServiceCollectionExtensions
                 // to the next call without a restart.
                 client: OutboundClient(sp),
                 sp.GetRequiredService<IServeEventTemplateRenderer>(),
-                sp.GetService<Mockifyr.Outbound.OutboundOptions>()?.HostFallback ?? true));
+                sp.GetService<Mockifyr.Outbound.OutboundOptions>()?.HostFallback ?? true,
+                // The outbound allowlist (#349); unrestricted unless the host registered one.
+                sp.GetService<OutboundHostPolicy>() ?? OutboundHostPolicy.Unrestricted));
         foreach (var listener in extensions.ServeEventListeners)
         {
             services.AddSingleton<IServeEventListener>(listener);
@@ -179,7 +181,8 @@ public static class MockifyrServiceCollectionExtensions
         // and the shared live-recording state the admin control endpoints and the fallback both see.
         services.AddSingleton<ProxyResponder>(sp => new ProxyResponder(
             OutboundClient(sp),
-            sp.GetService<Mockifyr.Outbound.OutboundOptions>()?.HostFallback ?? true));
+            sp.GetService<Mockifyr.Outbound.OutboundOptions>()?.HostFallback ?? true,
+            sp.GetService<OutboundHostPolicy>() ?? OutboundHostPolicy.Unrestricted));
         services.AddSingleton<StubRecorder>(_ => new StubRecorder());
         services.AddSingleton<RecordingSession>();
 

@@ -133,6 +133,22 @@ public static class MockifyrHost
         // series it exposes are counts and latencies — never payloads.
         || path.Equals("/__admin/metrics", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Every value of a repeatable flag, read straight off argv. .NET configuration keeps only the last
+    /// value of a repeated key, so anything repeatable has to be read here or it silently loses all but
+    /// one of its entries.
+    /// </summary>
+    private static IEnumerable<string> ReadRepeated(string[] args, string flag)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], flag, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return args[i + 1];
+            }
+        }
+    }
+
     /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
     private const string TenantCredentialHeader = "X-Mockifyr-Tenant";
 
@@ -498,6 +514,18 @@ public static class MockifyrHost
         if (int.TryParse(builder.Configuration["message-limit"], out var messageLimit))
         {
             builder.Services.AddSingleton<IMessageStore>(new InMemoryMessageStore(messageLimit));
+        }
+
+        // The outbound allowlist (#349): --allow-outbound-host <host|host:port|*.domain>, repeatable.
+        // Read from argv rather than configuration, for the same reason --tenant-credential is: .NET
+        // configuration keeps only the LAST value of a repeated key, which would silently reduce an
+        // allowlist to one entry — the failure mode where a control looks configured and is not.
+        var allowedOutbound = OutboundHostPolicy.From(ReadRepeated(args, "--allow-outbound-host"));
+        if (allowedOutbound.IsRestricted)
+        {
+            builder.Services.AddSingleton(allowedOutbound);
+            Console.WriteLine("mockifyr: outbound calls are restricted to " + string.Join(", ", allowedOutbound.Entries)
+                + " — webhooks and proxy stubs naming anything else are refused, and the refusal is journaled.");
         }
 
         // Sandbox access (G19d, ADR 0011): --sandbox-auth turns on key-based tenant resolution

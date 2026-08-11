@@ -24,6 +24,7 @@ public sealed class WebhookServeEventListener : IServeEventListener
         new(StringComparer.OrdinalIgnoreCase) { "Content-Type", "Content-Length", "Content-Encoding", "Content-Language" };
 
     private readonly HttpClient _client;
+    private readonly OutboundHostPolicy _outboundHosts;
     private readonly IServeEventTemplateRenderer? _renderer;
     private readonly bool _hostFallback;
 
@@ -36,11 +37,13 @@ public sealed class WebhookServeEventListener : IServeEventListener
     public WebhookServeEventListener(
         HttpClient? client = null,
         IServeEventTemplateRenderer? renderer = null,
-        bool hostFallback = true)
+        bool hostFallback = true,
+        OutboundHostPolicy? outboundHosts = null)
     {
         _client = client ?? new HttpClient();
         _renderer = renderer;
         _hostFallback = hostFallback;
+        _outboundHosts = outboundHosts ?? OutboundHostPolicy.Unrestricted;
     }
 
     /// <inheritdoc />
@@ -85,6 +88,17 @@ public sealed class WebhookServeEventListener : IServeEventListener
             // A template that fails to render dies before any request exists, so there is nothing to
             // report but the error itself.
             Append(serveEvent, SubEvent.ErrorType, new WebhookErrorData(ContainerHostFallback.Describe(exception)));
+            return;
+        }
+
+        // Checked against the RENDERED url, not the template (#349): the template may be
+        // "{{request.headers.X-Callback}}", and a policy that inspected the text rather than the target
+        // would allow exactly the case it exists to stop.
+        if (!_outboundHosts.Allows(url))
+        {
+            // Recorded on the serve event like any failed delivery, so a refusal is visible rather
+            // than a webhook that quietly never arrived.
+            Append(serveEvent, SubEvent.ErrorType, new WebhookErrorData(_outboundHosts.Refusal(url)));
             return;
         }
 
