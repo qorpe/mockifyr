@@ -374,3 +374,60 @@ mapping claims to anything finer than a tenant.
   invalid) and *Clear all* never closed it, so the dialog sat over a table that had already emptied.
   Both callers now close on confirm.
 
+
+## The partner principal (#346)
+
+`--tenant-credential` scopes a principal to one tenant's **data** correctly: renaming `X-Mockifyr-Tenant`
+does not let it address another tenant, and the refusal is audited. What it never scoped is **host-level
+outbound capability**, and `--block-outbound-routes` does not cover the gap — it is gated on the admin
+surface being *unauthenticated*, on the reasoning that credentials already gate the same routes. That
+reasoning holds for a single trusted operator and collapses for a credential handed to a partner, who is
+authenticated by definition.
+
+`--partner-credential <tenant>:<user>:<pass>` is the same tenant scoping plus a refusal on the ways this
+host acts on the network.
+
+**The part the original analysis missed.** The three outbound admin routes (`/__admin/recordings`,
+`/__admin/outbound-trust`, `/__admin/git`) are only *one* way to reach outward. `POST /__admin/mappings`
+goes through the same `MappingJsonReader` that accepts `proxyBaseUrl` (G8) and `postServeActions` /
+`serveEventListeners` (G3) — so a principal with stub-write access on its own tenant reaches the network
+through the **data plane**. Blocking the routes alone would have produced a control that looks like it
+holds and does not, which is worse than no control because an operator stops looking. The refusal
+therefore covers both, and names the field so a partner who legitimately needs a proxy stub gets
+something they can act on.
+
+**Decisions worth keeping:**
+
+- **A separate flag, not a fourth field.** The existing value is split exactly twice because a password
+  may contain `:`; adding a field would make some passwords unspellable. A second flag also makes
+  "today's `--tenant-credential` is unchanged" true by construction rather than by careful reading.
+- **Every method is refused on an outward route,** not only the mutating ones. Reading which upstream a
+  recording points at is not a partner's business either, and "these routes are not yours" is a rule an
+  operator can hold in their head.
+- **The check sits where mappings are admitted,** so `POST /mappings`, bundle import and the edit path
+  are covered by one rule rather than three that can drift apart. The body is buffered and rewound —
+  a check that consumed it would turn every allowed request into an empty one.
+- **OpenAPI import is unaffected:** the generator emits no proxy, webhook or publish directive, so a
+  partner can still turn a specification into a working sandbox.
+- **A payload that does not parse declares nothing.** It is refused moments later by the reader that owns
+  the dialect, with a better message; answering "denied" to malformed JSON would tell a caller their
+  permissions are wrong when their syntax is.
+
+**A silence removed on the way.** `--block-outbound-routes` on an authenticated host previously did
+nothing and *said* nothing. It now says so at startup and names what actually scopes a credential. The
+behaviour is unchanged — the flag is still scoped to the unauthenticated case by design — but a flag that
+silently no-ops is how an operator comes to believe in a control they do not have.
+
+**Validation.** `PartnerPrincipalTests` (12 wire cases) and `OutboundReachTests` (16 unit cases). The
+operator principal is asserted beside the partner in nearly every case on purpose: a test that only showed
+the partner refused would pass just as well if the route were broken for everybody, which is a different
+bug wearing the same 403. **Stryker 96.55 %** on `OutboundReach.cs`, one survivor, analysed and confirmed
+equivalent:
+
+- `mapping.TryGetProperty("response", out var response) && response.ValueKind == JsonValueKind.Object`
+  with the `&&` mutated to `||`. Stryker mutates the syntax tree, so the mutant is
+  `(A || B) && C && …` rather than the textually-different `A || (B && C && …)`. When `TryGetProperty`
+  returns false, `out var response` is `default`, and `default(JsonElement).ValueKind` is `Undefined` —
+  never `Object`. So `A` false implies `B` false, and at that node `||` and `&&` cannot be told apart.
+  Confirmed by applying it, which is also how the textual-versus-tree distinction surfaced: editing the
+  source by hand produces a genuinely different expression that six tests kill.

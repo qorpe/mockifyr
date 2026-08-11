@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Mockifyr.Facade.Grpc;
 using Microsoft.Extensions.DependencyInjection;
+using Mockifyr.Adapters.MappingJson;
 using Mockifyr.Core;
 using Mockifyr.Facade.Admin;
 using Mockifyr.Facade.Http;
@@ -133,6 +134,64 @@ public static class MockifyrHost
 
     /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
     private const string TenantCredentialHeader = "X-Mockifyr-Tenant";
+
+    /// <summary>
+    /// The admin routes that make this host act on the network rather than on one tenant's data:
+    /// recording (a forward proxy to any target), outbound certificate trust, and Git sync.
+    /// </summary>
+    private static readonly string[] OutwardRoutes =
+        ["/__admin/recordings", "/__admin/outbound-trust", "/__admin/git"];
+
+    /// <summary>
+    /// Whether a partner principal's request is refused, and why (#346). Two refusals, because
+    /// "may reach the network from this host" is not a property of a route set: the three routes above
+    /// are one way to reach outward and a stub definition is the other. Blocking only the routes would
+    /// leave an operator holding a control that looks like it holds and does not.
+    /// </summary>
+    /// <remarks>
+    /// Every method is refused on an outward route, not only the mutating ones. A partner has no
+    /// business reading which upstream a recording is pointed at either, and a rule stated as "these
+    /// routes are not yours" is one an operator can keep in their head.
+    /// </remarks>
+    private static async Task<(string Error, string Message)?> PartnerRefusal(HttpContext context)
+    {
+        var path = context.Request.Path;
+        foreach (var route in OutwardRoutes)
+        {
+            if (path.StartsWithSegments(route))
+            {
+                return ("Admin.PartnerRouteForbidden",
+                    $"'{route}' makes this host act on the network, and these credentials are scoped to "
+                    + "one tenant's data. An operator credential (--admin-user, or --tenant-credential) "
+                    + "can use it.");
+            }
+        }
+
+        if (!path.StartsWithSegments("/__admin/mappings")
+            || !(HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method)))
+        {
+            return null;
+        }
+
+        // Buffered and rewound: the handler downstream reads the same body, and a check that consumed
+        // it would turn every allowed request into an empty one.
+        context.Request.EnableBuffering();
+        using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true);
+        var body = await reader.ReadToEndAsync(context.RequestAborted);
+        context.Request.Body.Position = 0;
+
+        if (OutboundReach.DeclaredBy(body) is not { Count: > 0 } declared)
+        {
+            return null;
+        }
+
+        // The field is named so a partner who legitimately needs a proxy stub gets something they can
+        // act on — and so the operator reading the audit trail knows what was asked for.
+        return ("Admin.PartnerOutboundStubForbidden",
+            $"This stub declares {string.Join(" and ", declared)}, which makes this host call out to a "
+            + "target the stub names. These credentials are scoped to one tenant's data. Ask an "
+            + "operator to add the stub, or drop the field.");
+    }
 
     /// <summary>The default mock-serving port (<c>8080</c>).</summary>
     public const int DefaultPort = 8080;
@@ -785,6 +844,17 @@ public static class MockifyrHost
         // SSRF primitive against a cluster. Opt-in and inert once credentials exist, since the auth
         // middleware below already gates the same routes then.
         var blockOutbound = builder.Configuration.GetValue<bool>("block-outbound-routes");
+        if (blockOutbound && adminAuthenticated)
+        {
+            // Said out loud rather than left to be discovered (#346). The flag is scoped to the
+            // unauthenticated case by design, so on an authenticated host it is doing nothing — and a
+            // flag that silently no-ops is how an operator comes to believe in a control they do not
+            // have. The sentence names what actually scopes a credential instead.
+            Console.WriteLine("mockifyr: --block-outbound-routes has NO effect here — the admin API is "
+                + "authenticated, so those routes are already gated by credentials. To scope a specific "
+                + "credential away from them, issue it with --partner-credential.");
+        }
+
         if (blockOutbound && !adminAuthenticated)
         {
             Console.WriteLine("mockifyr: --block-outbound-routes is on — recording, outbound trust and "
@@ -841,7 +911,12 @@ public static class MockifyrHost
         if (!tenantCredentials.IsEmpty)
         {
             Console.WriteLine($"mockifyr: {tenantCredentials.Count} per-tenant admin credential(s) configured — "
-                + "each may only address its own tenant; --admin-user remains the system scope.");
+                + "each may only address its own tenant; --admin-user remains the system scope."
+                + (tenantCredentials.PartnerCount > 0
+                    ? $" {tenantCredentials.PartnerCount} of them are PARTNER credentials: refused on "
+                      + "/__admin/recordings, /__admin/outbound-trust and /__admin/git, and on any stub "
+                      + "declaring proxyBaseUrl or a post-serve action."
+                    : string.Empty));
             app.Use(async (context, next) =>
             {
                 if (context.Request.Path.StartsWithSegments("/__admin") && !IsProbePath(context.Request.Path))
@@ -850,20 +925,28 @@ public static class MockifyrHost
                     // A principal we know: it must own the tenant it is addressing. Anything else
                     // (the system credential, or no credential on an open host) falls through to the
                     // existing behavior — this middleware only ever narrows a known tenant principal.
-                    if (tenantCredentials.TenantFor(presented) is { } owned)
+                    if (tenantCredentials.PrincipalFor(presented) is { } principal)
                     {
                         var requested = context.Request.Headers.TryGetValue(TenantCredentialHeader, out var header)
                             && !string.IsNullOrEmpty(header)
                                 ? header.ToString()
                                 : TenantId.Default.Value;
-                        if (!string.Equals(owned, requested, StringComparison.Ordinal))
+                        if (!string.Equals(principal.Tenant, requested, StringComparison.Ordinal))
                         {
                             context.Response.StatusCode = StatusCodes.Status403Forbidden;
                             await context.Response.WriteAsJsonAsync(new
                             {
                                 error = "Admin.TenantForbidden",
-                                message = $"These credentials are scoped to tenant '{owned}' and cannot address '{requested}'.",
+                                message = $"These credentials are scoped to tenant '{principal.Tenant}' and cannot address '{requested}'.",
                             });
+                            return;
+                        }
+
+                        if (principal.IsPartner
+                            && await PartnerRefusal(context) is { } refusal)
+                        {
+                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            await context.Response.WriteAsJsonAsync(new { error = refusal.Error, message = refusal.Message });
                             return;
                         }
                     }
