@@ -9,9 +9,11 @@ namespace Mockifyr.Server;
 /// </summary>
 /// <remarks>
 /// Never returns any part of a secret. The system credential becomes <c>system</c>, a per-tenant
-/// credential (#224) becomes <c>tenant:&lt;name&gt;</c>, and anything else — including a wrong password
-/// and any credential on an open host — is <c>anonymous</c>. The label is an attribution claim in a
-/// record someone will rely on, so a near miss must never be attributed to the real principal.
+/// credential (#224) becomes <c>tenant:&lt;name&gt;</c>, a partner credential (#346)
+/// <c>partner:&lt;name&gt;</c>, and anything else — including a wrong password and any credential on an
+/// open host — is <c>anonymous</c>. The label is an attribution claim in a record someone will rely on,
+/// so a near miss must never be attributed to the real principal, and two credentials scoped to the
+/// same tenant must not read as the same actor.
 /// </remarks>
 public sealed class AuditPrincipalResolver(
     string? systemAuthorization,
@@ -32,9 +34,13 @@ public sealed class AuditPrincipalResolver(
             return principal is null ? "anonymous" : $"oidc:{principal.Subject}";
         }
 
-        if (tenantCredentials.TenantFor(authorization) is { } tenant)
+        if (tenantCredentials.PrincipalFor(authorization) is { } scoped)
         {
-            return $"tenant:{tenant}";
+            // A partner is labelled apart from an operator (#346). Both are scoped to one tenant, so
+            // labelling both `tenant:<name>` left a trail that could not say which of two credentials
+            // acted — and the refusals this class exists to produce are exactly the entries where that
+            // question gets asked.
+            return scoped.IsPartner ? $"partner:{scoped.Tenant}" : $"tenant:{scoped.Tenant}";
         }
 
         // Constant-time, and only when a system credential exists at all: comparing against an empty

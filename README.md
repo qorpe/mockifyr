@@ -126,6 +126,7 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--amqp-uri <uri>` | the same, over AMQP / RabbitMQ |
 | `--amqp-subscribe <queues>` | comma-separated queues to consume |
 | `--tenant-credential <tenant>:<user>:<pass>` | repeatable — an admin credential scoped to ONE tenant; it cannot address another by renaming `X-Mockifyr-Tenant` (403). `--admin-user` stays the system scope |
+| `--partner-credential <tenant>:<user>:<pass>` | repeatable — as above, plus refused on every route and every stub field through which the host would act on the network (recordings, outbound trust, Git; `proxyBaseUrl`, post-serve actions) |
 | `--block-outbound-routes` | while the admin API is unauthenticated, refuse the routes that act on the network (start recording, outbound trust, Git) with **403** — an open host cannot be turned into a forward proxy |
 | `--decrypt-key <base64>` | 256-bit key enabling payload cryptography: a stub's `"decrypt"` block makes encrypted request fields matchable/templatable (the journal keeps the ciphertext), and its `"protect"` block encrypts named response fields — or the whole body — on the way out |
 | `--metrics` | expose Prometheus metrics at `/__admin/metrics` (no credentials needed — a scraper cannot carry them) |
