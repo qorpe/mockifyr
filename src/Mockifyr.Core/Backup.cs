@@ -78,7 +78,13 @@ public static class BackupJson
             var values = new JsonArray();
             foreach (var value in key.Values)
             {
-                values.Add(new JsonObject { ["name"] = value.Name, ["value"] = value.Value });
+                // A secret literal never enters a bundle (#348). Bundles are exactly the artefact that
+                // gets attached to a ticket and committed to a repository, so redaction that stopped at
+                // the API would be redaction that stopped short of where the leak happens. The marker
+                // stays so a restore can report what it could not carry rather than inventing "".
+                values.Add(value.Secret
+                    ? new JsonObject { ["name"] = value.Name, ["secret"] = true }
+                    : new JsonObject { ["name"] = value.Name, ["value"] = value.Value, ["secret"] = false });
             }
 
             environments.Add(new JsonObject
@@ -198,11 +204,23 @@ public static class BackupJson
             var values = new List<EnvironmentValue>();
             foreach (var valueNode in entry["values"] as JsonArray ?? [])
             {
-                if (valueNode is JsonObject value &&
-                    value["name"]?.GetValue<string>() is { } valueName &&
-                    value["value"]?.GetValue<string>() is { } literal)
+                if (valueNode is not JsonObject value ||
+                    value["name"]?.GetValue<string>() is not { } valueName)
                 {
-                    values.Add(new EnvironmentValue(valueName, literal));
+                    continue;
+                }
+
+                var secret = value["secret"]?.GetValue<bool>() ?? false;
+                if (value["value"]?.GetValue<string>() is { } literal)
+                {
+                    values.Add(new EnvironmentValue(valueName, literal, secret));
+                }
+                else if (secret)
+                {
+                    // Exported redacted (#348). Carried through as a secret with no literal so the
+                    // restore reports it rather than writing an empty string that would leave a stub
+                    // signing with nothing and reporting success.
+                    values.Add(new EnvironmentValue(valueName, string.Empty, Secret: true));
                 }
             }
 

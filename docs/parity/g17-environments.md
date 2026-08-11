@@ -105,3 +105,53 @@ The dashboard export includes the tenant's environments so a re-import restores 
   independence, verbatim storage, non-templated stubs, and the full tenant-isolation matrix.
 - `G17EnvironmentExportImportTests` — bundle restore (keys/values/active), backward compatibility,
   overwrite-by-key, skip-on-invalid, hostile section shapes, and tenant scoping of imports.
+
+## Secret values (#348)
+
+`EnvironmentValue` was `(Name, Value)` with no notion of sensitivity, and a sandbox handed to partners
+is exactly where a webhook signing secret or a partner token ends up. It gains an optional `Secret`
+flag; the literal is withheld from every surface that reports one and still resolved when a stub is
+served, because a secret nobody can use is not a feature.
+
+**Two leak points, not one.** The obvious one is `values[].value`. The second is `resolved` — the
+literal the admin projection computes from the active value — and reporting that while hiding the
+first would have been redaction in name only.
+
+**The hazard redaction itself creates.** Withholding on read means the dashboard holds a key whose
+secrets have no literal. Hand that straight back on save and, taken at face value, it stores empty
+strings: opening the screen and pressing save would destroy a credential nobody touched. So a
+submitted value that is marked secret and carries no literal means *unchanged*, resolved against what
+is stored (`EnvironmentSecrets.Merge`). An explicit literal still replaces it, so rotation works. A
+value that is new and secret with no literal is **dropped** rather than stored empty — an empty secret
+is a stub that signs with nothing and reports success, which is the failure that looks like it worked.
+
+The same rule covers a case that is not hypothetical: restoring a redacted bundle stores a secret
+marker with no literal, because the export refused to carry one. Carrying that forward on the next
+save would turn "we could not restore this" into a key that silently resolves to `""`.
+
+**Bundles are where the leak actually happens.** Redaction that stopped at the API would stop short of
+the artefact people attach to tickets and commit to repositories, so an export carries the marker and
+never the literal, and an import reads a value-less secret as absent rather than as `""`.
+
+**The dashboard would have destroyed secrets.** Found by driving the real screen rather than by
+reading it: the UI typed `value` as required, filtered out any row whose value was blank before
+saving, and sent the list back verbatim. A secret therefore vanished from the payload *and* lost its
+marker — so the server saw a value that was neither present nor flagged and dropped it. Pressing save
+on an untouched key would have deleted the credential. The type is now `value?` + `secret?`, a kept
+secret is submitted as the marker alone, and the editor shows a masked input reading "unchanged — type
+to replace". Verified in a browser end to end: open the key, save without touching anything, and the
+stub still renders the literal.
+
+**Validation.** `SecretEnvironmentValueTests` (10 unit cases on the merge rule) and
+`SecretEnvironmentWireTests` (5 wire cases across the admin API, the served response, the save
+round-trip, rotation and an export bundle). The assertions are phrased as *the value we want* wherever
+possible: "the secret does not appear" passes just as well when the key is missing, the endpoint 404s,
+or a typo makes the request fetch nothing — which is how a redaction test comes to guard nothing.
+**Stryker: no survivors in the new logic** (`EnvironmentSecrets`, `ResolvesToSecret`). The file's
+remaining survivors are in the substitution scanner and the reserved-helper list, both untouched here
+and predating this change.
+
+**A test that was right and stopped being right.** `BackupJsonTests.The_token_never_appears_in_an_archive`
+forbade the string `"secret"` anywhere in an archive — equivalent to its intent while "secret" could
+only mean an API key's. It now asserts against the API-key entries themselves, because a bare
+substring ban would fail for a change that leaks nothing.

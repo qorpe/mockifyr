@@ -10,16 +10,26 @@
 // Resolution here exists only to PREVIEW what the server will produce, and to flag a reference that
 // names no key. It is never written anywhere.
 
-/** One selectable value of a key, e.g. `dev` -> `https://dev.example.com`. */
+/**
+ * One selectable value of a key, e.g. `dev` -> `https://dev.example.com`.
+ *
+ * `value` is OPTIONAL because a secret one is withheld by the admin API (#348) — the read carries the
+ * marker and no literal. Writing the value back is therefore how a secret gets destroyed, so a row
+ * with `secret` and no `value` means "unchanged" and the server resolves it against what it holds.
+ */
 export interface EnvironmentValue {
   name: string
-  value: string
+  value?: string
+  /** Withheld from every reporting surface; still resolved when a stub is served. */
+  secret?: boolean
 }
 
 /** A key and its values, one of which is active. */
 export interface EnvironmentKey {
   key: string
   activeValue: string
+  /** True when the active value is a secret — `resolved` is then withheld rather than absent (#348). */
+  secret?: boolean
   /** What the key currently resolves to, computed server-side; null when activeValue names nothing. */
   resolved: string | null
   values: EnvironmentValue[]

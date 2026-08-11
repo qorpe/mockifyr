@@ -380,4 +380,18 @@ from the specification's template text, so a nested collection answered a Locati
 and reload on all four backends with no per-backend code; holding them in memory would have let them
 vanish on restart while their documents survived, quietly restoring the very defect.
 
+**G22 Phase 1** is under way. **#346 — a partner-safe principal** shipped: `--partner-credential` is
+`--tenant-credential`'s scoping plus a refusal on every way this host acts on the network. The issue
+listed three admin routes; half the capability turned out to live in the data plane, because
+`POST /__admin/mappings` accepts `proxyBaseUrl` and post-serve actions — so blocking routes alone would
+have shipped a control that looks like it holds and does not. Proving the "refusals are audited"
+criterion rather than asserting it found that an operator and a partner scoped to the same tenant both
+read as `tenant:<name>`, in the very entries the class exists to produce; a partner is now
+`partner:<name>`. **#348 — secret environment values** followed, taken ahead of #347 because that
+issue's checklist promises a partner may read environment values but never secrets, which was
+unenforceable while every value was plaintext. A secret is withheld from the admin API, the dashboard
+and export bundles, and still resolves at serve time; a redacted read handed back on save means
+*unchanged* rather than empty. Driving the real dashboard found it would have **deleted** secrets on an
+untouched save.
+
 Builds clean (0 warnings); 1122 tests green across the four suites.

@@ -13,13 +13,15 @@ namespace Mockifyr.Server;
 /// </summary>
 internal static class EnvironmentJson
 {
-    private sealed record StoredValue(string Name, string Value);
+    // Secret is last and optional (#348): a row written before secrets existed carries no such
+    // property and reads back as false, which is what it was.
+    private sealed record StoredValue(string Name, string Value, bool Secret = false);
 
     private sealed record StoredKey(string Key, string ActiveValue, IReadOnlyList<StoredValue> Values);
 
     public static string Serialize(EnvironmentKey key) =>
         System.Text.Json.JsonSerializer.Serialize(new StoredKey(
-            key.Key, key.ActiveValue, [.. key.Values.Select(v => new StoredValue(v.Name, v.Value))]));
+            key.Key, key.ActiveValue, [.. key.Values.Select(v => new StoredValue(v.Name, v.Value, v.Secret))]));
 
     /// <summary>Reads a key back, returning null for anything unparseable rather than failing startup.</summary>
     public static EnvironmentKey? Deserialize(string json)
@@ -32,7 +34,7 @@ internal static class EnvironmentJson
                 : new EnvironmentKey(
                     stored.Key,
                     stored.ActiveValue,
-                    [.. (stored.Values ?? []).Select(v => new EnvironmentValue(v.Name, v.Value))]);
+                    [.. (stored.Values ?? []).Select(v => new EnvironmentValue(v.Name, v.Value, v.Secret))]);
         }
         catch (JsonException)
         {

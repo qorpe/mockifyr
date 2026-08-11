@@ -7,7 +7,13 @@ namespace Mockifyr.Core;
 /// </summary>
 /// <param name="Name">The value's name, unique within its key.</param>
 /// <param name="Value">The literal substituted into a stub when this value is active.</param>
-public sealed record EnvironmentValue(string Name, string Value);
+/// <param name="Secret">
+/// Whether the literal is withheld from every surface that reports it (#348). A sandbox handed to
+/// partners is exactly where a webhook signing secret or a partner token ends up, and the admin API,
+/// the dashboard and export bundles are the artefacts people paste into tickets and commit to
+/// repositories. Serve-time resolution is unaffected — a secret nobody can use is not a feature.
+/// </param>
+public sealed record EnvironmentValue(string Name, string Value, bool Secret = false);
 
 /// <summary>
 /// An environment key and its selectable values (G17, issue #165). Each key carries its own active
@@ -35,6 +41,67 @@ public sealed record EnvironmentKey(string Key, string ActiveValue, IReadOnlyLis
         }
 
         return null;
+    }
+
+    /// <summary>Whether the value currently in effect is a secret — so a reporting surface withholds it.</summary>
+    public bool ResolvesToSecret()
+    {
+        foreach (var value in Values)
+        {
+            if (string.Equals(value.Name, ActiveValue, StringComparison.Ordinal))
+            {
+                return value.Secret;
+            }
+        }
+
+        return false;
+    }
+}
+
+/// <summary>
+/// How a secret environment value survives a read-modify-write (#348).
+/// </summary>
+/// <remarks>
+/// Redacting on read creates a hazard that redaction alone does not solve: the dashboard reads a key
+/// (secret withheld), the operator renames one value, and the write sends back what it was shown —
+/// which no longer contains the secret. Taken literally that stores an empty string, so opening a
+/// screen and pressing save would destroy a credential without anyone touching it.
+/// <para>
+/// A submitted value that is marked secret and carries no literal therefore means "unchanged", and
+/// resolves against what is already stored. Sending an explicit literal still replaces it, so a
+/// deliberate rotation works; a value that is new and secret with no literal is dropped rather than
+/// stored empty, because an empty secret is a stub that silently signs with nothing.
+/// </para>
+/// </remarks>
+public static class EnvironmentSecrets
+{
+    /// <summary>
+    /// Resolves a submitted key against the stored one, carrying forward the literal of every secret
+    /// the submission withheld. <paramref name="stored"/> is null when the key is being created.
+    /// </summary>
+    public static EnvironmentKey Merge(EnvironmentKey submitted, EnvironmentKey? stored)
+    {
+        var merged = new List<EnvironmentValue>(submitted.Values.Count);
+        foreach (var value in submitted.Values)
+        {
+            if (!value.Secret || value.Value.Length > 0)
+            {
+                merged.Add(value);
+                continue;
+            }
+
+            var existing = stored?.Values.FirstOrDefault(
+                v => string.Equals(v.Name, value.Name, StringComparison.Ordinal));
+
+            // A withheld secret for a value we have never seen carries nothing to preserve. Storing it
+            // as an empty string would leave a stub signing with nothing and reporting success.
+            if (existing is { Secret: true, Value.Length: > 0 })
+            {
+                merged.Add(existing);
+            }
+        }
+
+        return submitted with { Values = merged };
     }
 }
 
