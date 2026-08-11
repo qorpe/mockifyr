@@ -102,7 +102,11 @@ public sealed class G19cOpenApiGeneratorTests
         Assert.Null(StateOp(Assert.Single(mappings, m => m.RootElement.GetProperty("name").GetString() == "health")));
 
         var create = Assert.Single(mappings, m => RequestOf(m) is { Method: "POST", Path: "/api/orders" });
-        Assert.Equal("/api/orders/{{state.id}}",
+        // Composed from the request's own path rather than the specification's template text. For this
+        // top-level collection both forms render to the same "/api/orders/<id>"; for a nested one the
+        // template still carries "{customerId}", and building the header from it handed the client a
+        // Location it could not follow (found by serving a nested spec, ADR 0015).
+        Assert.Equal("{{request.path}}/{{state.id}}",
             create.RootElement.GetProperty("response").GetProperty("headers").GetProperty("Location").GetString());
     }
 

@@ -12,10 +12,25 @@ namespace Mockifyr.Server;
 /// </summary>
 internal static class ResourceJson
 {
-    private sealed record Stored(string Id, string Collection, string Body, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, long Version);
+    /// <remarks>
+    /// <c>Parent</c> (ADR 0015) is last and optional on purpose: a row written before relations
+    /// existed carries no such property, and an absent optional constructor parameter reads as null
+    /// rather than failing the row. That is what makes the four backends forward-readable without a
+    /// migration — asserted, not assumed, by the round-trip tests.
+    /// </remarks>
+    private sealed record Stored(
+        string Id,
+        string Collection,
+        string Body,
+        DateTimeOffset CreatedAt,
+        DateTimeOffset UpdatedAt,
+        long Version,
+        ResourceLink? Parent = null);
 
     public static string Serialize(ResourceDocument document) => System.Text.Json.JsonSerializer.Serialize(
-        new Stored(document.Id, document.Collection, document.Body, document.CreatedAt, document.UpdatedAt, document.Version));
+        new Stored(
+            document.Id, document.Collection, document.Body,
+            document.CreatedAt, document.UpdatedAt, document.Version, document.Parent));
 
     /// <summary>Reads a stored document, or null when the row is not one (a hand-edited file, an old shape).</summary>
     public static ResourceDocument? Deserialize(string json)
@@ -23,7 +38,9 @@ internal static class ResourceJson
         try
         {
             return System.Text.Json.JsonSerializer.Deserialize<Stored>(json) is { } stored
-                ? new ResourceDocument(stored.Id, stored.Collection, stored.Body, stored.CreatedAt, stored.UpdatedAt, stored.Version)
+                ? new ResourceDocument(
+                    stored.Id, stored.Collection, stored.Body,
+                    stored.CreatedAt, stored.UpdatedAt, stored.Version, stored.Parent)
                 : null;
         }
         catch (JsonException)

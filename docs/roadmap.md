@@ -678,3 +678,22 @@ test (1.10.1): a `publish` action on a host with no broker did nothing and said 
 publish recorded that it failed but not what it was carrying. Both closed; both recorded.
 
 - [x] Adopt the published @qorpe/ui kit — M1 drop-ins + M2 (facet/search/tooltip/sheet/json-editor on kit 0.1.2; five locals deleted); M3 (all eleven form selects onto the family Select; NativeSelect deleted). Every remaining local carries a written reason or a trigger in ADR 0014; the dashboard has a kit-freshness gate + lint in CI. **M4 done**: the shell set moved onto the kit's `AppShell` and `CommandPalette` (249-line sidebar deleted, 340 lines out against 157 in), after seven kit gaps found — three by reading, four only by using the screens — went back as 0.2.0 through 0.3.2.
+
+## G22 — the sandbox as a partner-facing platform (epic #345, ADR 0015)
+
+An analysis of what the sandbox would need to be handed to an external partner rather than only used
+internally. Filed as an epic with thirteen children in three phases; the register of what is open is
+`docs/parity/deferred-edges.md`, not this list.
+
+- [x] **#350 — relations.** Not an enhancement: a spec with `/customers/{customerId}/orders` imported
+  to a flat collection, so every modelled customer listed every other customer's orders. Relations are
+  declared once per collection and derived from the path shape at import; the key lives in the body
+  when the contract declares it and in an optional metadata pointer otherwise, so the document still
+  round-trips byte-for-byte and `POST /__admin/openapi/verify` cannot report our own sandbox as
+  drifted. `onDelete` defaults to `restrict` — deleting a Stripe customer does not delete their
+  charges — and enforcement is presence-triggered, which keeps mutually referencing collections
+  creatable and makes cycles legal. Serving the imported spec found a second bug that had been there
+  since G19c and that no unit test could see: the created-resource `Location` header carried a literal
+  `{customerId}`. Relations are stored as documents under a reserved collection, so they persist,
+  restore and reload on all four backends with no per-backend code — the alternative being ~400 lines
+  mirrored four times, for state that must not outlive the documents it describes.

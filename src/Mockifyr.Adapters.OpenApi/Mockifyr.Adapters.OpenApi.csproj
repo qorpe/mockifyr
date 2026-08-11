@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- Relations derived from a nested path shape are Core values (ADR 0015), so the generator
+         returns them as such rather than as a second dialect the Application layer must translate. -->
+    <ProjectReference Include="..\Mockifyr.Core\Mockifyr.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.OpenApi.Readers" />
     <!-- Contract conformance (#287) judges a stub's response body against the specification's schema
          with the same validator that backs matchesJsonSchema, so both answer the same way. -->

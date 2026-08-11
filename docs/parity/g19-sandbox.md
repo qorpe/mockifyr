@@ -357,3 +357,87 @@ writes until it restarts), and per-key scenario isolation.
 - **Discovered while testing:** the schema validator reports absent required properties as **one**
   error naming them all, not one per property. The first version of the cap test therefore asserted
   nothing; it now uses several separately wrong types, which is what actually reaches the cap.
+
+---
+
+## Relations (ADR 0015, issue #350)
+
+A defect, not a missing feature — and reachable through the path the quick-start recommends. A spec
+containing `/customers`, `/customers/{customerId}` and `/customers/{customerId}/orders` imported to a
+flat global `orders` collection with nothing recording who owned a document, so every modelled
+customer listed every other customer's orders, an order could be created under a customer that did
+not exist, and deleting a customer left its orders behind. Two lines produced all four:
+`CollectionName` took the last path segment, and `state.list` returned `store.List(tenant,
+collection)`.
+
+**What was learned, and what changed because of it:**
+
+- **The name was never the problem.** The obvious fix — calling the collection `customers-orders` —
+  is wrong: a spec may expose the same resource both ways (`/orders` and `/customers/{id}/orders`),
+  and in a real API those are one collection with one id space. The collection keeps its name; the
+  relation is what was missing.
+- **Where the key lives is the contract's decision, not ours.** Stamping the parent id into every
+  stored document is what json-server's data looks like, but json-server's documents are authored by
+  the user while ours arrive from a request against an imported spec. If the spec's `Order` schema
+  declares no `customerId`, adding one means `POST /__admin/openapi/verify` (#287) reports our own
+  sandbox as drifted from the document we generated it from. So: body when the contract declares the
+  field, an optional metadata pointer otherwise, and one accessor answering for both.
+- **`onDelete` defaults to `restrict`.** Deleting a Stripe customer cancels their subscriptions and
+  leaves their charges, with the customer still retrievable as `{"deleted": true}`. Cascade as a
+  default would give an imported spec destructive behaviour the API it models does not have — a *less*
+  faithful sandbox.
+- **Enforcement is presence-triggered.** A key that is present must resolve; an absent one is not
+  checked. Mandatory relations would make two mutually referencing collections impossible to populate,
+  because neither can be created first. This is also why cycles in the relation graph are legal —
+  `employees.managerId → employees` is a real model — and why a cascade terminates through a visited
+  set rather than through a rejected declaration.
+- **A missing parent named by the route is 404; one named by the body is 422.** They are different
+  failures and collapsing them misreports one of the two.
+
+**Found by serving rather than by reading.** The generated `Location` header was composed from the
+specification's template text, so a nested collection answered
+`/customers/{customerId}/orders/<id>` — a Location containing a literal brace, which no client can
+follow. Present since G19c and invisible to every unit test, because the two forms agree for a
+top-level collection. It is now built from the request's own path.
+
+**Where relations are kept.** As documents in the resource store, under the reserved collection
+`!relations`. The alternative was a persistence surface of its own: a writer and a loader for each of
+four backends, mirroring ~400 lines that already do exactly this. Riding the resource store means
+relations persist, restore, export and reload through the change feed everywhere with no per-backend
+code — and it is not a convenience: relations held only in memory would vanish on restart while their
+documents survived, and a scoped list would quietly answer with the whole collection again. The
+reserved name deliberately fails `ReservedEnvironmentKeys.IsWellFormed`, which every user-facing path
+applies, so a colliding collection cannot be created rather than merely being discouraged.
+
+**Compatible by construction, not by care.** The parent pointer is optional so documents written by
+earlier versions stay valid; scoping happens only where a relation is declared; integrity applies only
+to declared relations. All three are asserted, not assumed.
+
+**Validation.** No oracle has a sandbox resource model, so a self-test throughout:
+`RelationalResourceTests` (35 unit cases over the pure decisions and the reserved-collection
+isolation), `RelationalStateDirectiveTests` (10 over the directive), and `RelationalSandboxTests`
+(9 wire cases that import a nested spec and then **serve** it — import claims proven by serving, the
+G19c rule). The differential suite stayed green at 425 untouched, which is the proof that relations
+did not move the parity surface.
+
+**Stryker 100 %** on `Relations.cs`, reached from 80 % — and the 20 % it found was not decoration:
+
+- **A customer with no orders was untested.** Every scoping test had at least one match, so returning
+  `null` instead of an empty list survived undetected. The commonest case in any sandbox, and `null`
+  here is a `NullReferenceException` at serve time rather than an empty page.
+- **The named relation was never proven to be the one used.** A collection can belong to two things;
+  nothing asserted that scoping by one is not satisfied by the other's key, which is how a supplier's
+  order would appear under a customer's route. Both the list side and the cascade side had the gap.
+- **The order of a refusal was arbitrary.** Two relations can block one delete, and nothing pinned
+  which is reported first — including the tie-break when both name the same collection through
+  different fields (an order belonging to a customer as buyer *and* as payer).
+- **`MaxCascadeDepth` had an untested boundary.** `>` versus `>=` differ by one level, so the wrong
+  bound is a delete that reports success and silently leaves a level of children behind. Only an exact
+  count over a chain deeper than the limit can tell the two apart, so the test builds one.
+
+None of the five survivors turned out to be an equivalent mutant, which is the useful outcome: the
+suite was measuring the paths that were easy to write rather than the ones that fail.
+
+**Out of scope, deliberately** (ADR 0015): joins, cross-collection transactions, a query language,
+schema migrations. A sandbox should behave like the API it stands in for, not become a database
+harder to reason about than the service it replaces.

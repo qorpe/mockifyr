@@ -32,7 +32,13 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 ## Tracked — real gaps with issues
 
-**None.** The one entry this section held — change-feed reload for environments and sandbox resources
+| Gap | Why it is open | Issue |
+|---|---|---|
+| Resource querying — filter, sort, field selection | The primitive it needs (`IResourceStore.Find`) shipped with relations, because scoping a relation *is* a field lookup. The public surface over it has not. | [#353](https://github.com/qorpe/mockifyr/issues/353) |
+| Resource embedding (`?expand=customer`) | ADR 0015 was its precondition and is now met. Deliberately not bundled: relations were a defect fix and embedding is a feature, and shipping them together would have made the defect fix impossible to review. | [#350](https://github.com/qorpe/mockifyr/issues/350) |
+| Relations have no dashboard screen | Declared through `/__admin/relations` and derived by OpenAPI import; the Sandbox → Resources screen does not yet show what a collection belongs to. | [#350](https://github.com/qorpe/mockifyr/issues/350) |
+
+The one entry this section previously held — change-feed reload for environments and sandbox resources
 ([#279](https://github.com/qorpe/mockifyr/issues/279)) — shipped; see `g16-persistence.md` for what the
 fix turned up along the way.
 

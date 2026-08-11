@@ -151,6 +151,21 @@ public sealed record ResetResourcesCommand(string? Collection, TenantId Tenant) 
 /// <summary>Seeds a collection from a JSON array; transactional — on any invalid item nothing lands.</summary>
 public sealed record SeedResourcesCommand(string Collection, IReadOnlyList<SeedResourceItem> Items, TenantId Tenant) : ICommand<Result<int>>;
 
+/// <summary>Lists the tenant's declared relations (ADR 0015), collection-name ordered.</summary>
+public sealed record GetRelationsQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<ResourceSchema>>>;
+
+/// <summary>
+/// Declares or replaces one collection's relations (ADR 0015). Replaces rather than merges: a
+/// declaration a reader cannot see in full is a declaration they will get wrong.
+/// </summary>
+public sealed record PutRelationCommand(
+    string Collection,
+    IReadOnlyList<ResourceRelation> BelongsTo,
+    TenantId Tenant) : ICommand<Result<ResourceSchema>>;
+
+/// <summary>Removes one collection's relations; the documents themselves are untouched.</summary>
+public sealed record DeleteRelationCommand(string Collection, TenantId Tenant) : ICommand<Result>;
+
 /// <summary>
 /// Imports an OpenAPI 3.x document (JSON or YAML) as ordinary mappings; with <c>Stateful</c>,
 /// resource-shaped path pairs emit a G19b state-wired CRUD set. Transactional: on any refusal

@@ -719,15 +719,23 @@ public sealed class SeedResourcesHandler(
 /// SAME reader as any bundle — dialect compliance by construction. Fully transactional: every
 /// mapping parses before anything is stored.
 /// </summary>
-public sealed class ImportOpenApiHandler(IStubStore store, IMatcherRegistry matchers, IStubPersistence persistence)
+public sealed class ImportOpenApiHandler(
+    IStubStore store,
+    IMatcherRegistry matchers,
+    IStubPersistence persistence,
+    IResourceSchemaStore schemas)
     : ICommandHandler<ImportOpenApiCommand, Result<int>>
 {
     public ValueTask<Result<int>> Handle(ImportOpenApiCommand command, CancellationToken cancellationToken)
     {
         List<(StubMapping Stub, string Source)> stubs = [];
+        IReadOnlyList<ResourceSchema> relations = [];
         try
         {
-            foreach (var mappingJson in Mockifyr.Adapters.OpenApi.OpenApiStubGenerator.Generate(command.SpecText, command.Stateful))
+            var generated = Mockifyr.Adapters.OpenApi.OpenApiStubGenerator.GenerateWithRelations(
+                command.SpecText, command.Stateful);
+            relations = generated.Relations;
+            foreach (var mappingJson in generated.Mappings)
             {
                 stubs.AddRange(MappingJsonReader.ReadWithSource(mappingJson, command.Tenant, matchers));
             }
@@ -748,8 +756,108 @@ public sealed class ImportOpenApiHandler(IStubStore store, IMatcherRegistry matc
             persistence.Save(stub, source);
         }
 
+        // The relations the path shapes declared (ADR 0015). Applied after the mappings for the same
+        // reason the mappings are applied only once they all parse: an import that half-landed would
+        // leave a sandbox whose stubs and whose relations disagree.
+        foreach (var relation in relations)
+        {
+            schemas.Put(command.Tenant, relation);
+        }
+
         return ValueTask.FromResult<Result<int>>(stubs.Count);
     }
+}
+
+// ---- Sandbox relations (ADR 0015) --------------------------------------------------------------
+
+/// <summary>
+/// The validation a declared relation must pass. Shared by the admin path so a hand-written
+/// declaration and an OpenAPI-derived one cannot mean different things.
+/// </summary>
+internal static class RelationRules
+{
+    /// <summary>How many relations one collection may declare.</summary>
+    /// <remarks>
+    /// A bound rather than none: every declared relation is walked on each create and delete, so an
+    /// unbounded list turns one write into unbounded work. Sixteen is far past any real model — the
+    /// deepest specs in the wild declare two or three — and the refusal names the limit.
+    /// </remarks>
+    public const int MaxRelations = 16;
+
+    public static Error? Check(string collection, IReadOnlyList<ResourceRelation> belongsTo)
+    {
+        if (!IsCollectionName(collection))
+        {
+            return Error.Validation("Relation.InvalidCollection", $"'{collection}' is not a usable collection name.");
+        }
+
+        if (belongsTo.Count > MaxRelations)
+        {
+            return Error.Validation(
+                "Relation.TooMany", $"A collection may declare at most {MaxRelations} relations.");
+        }
+
+        foreach (var relation in belongsTo)
+        {
+            if (!IsCollectionName(relation.Collection))
+            {
+                return Error.Validation(
+                    "Relation.InvalidCollection", $"'{relation.Collection}' is not a usable collection name.");
+            }
+
+            if (relation.Via.Length is 0 or > 64 || relation.Via.Any(char.IsControl))
+            {
+                return Error.Validation(
+                    "Relation.InvalidField", $"'{relation.Via}' is not a usable document field name.");
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsCollectionName(string name) =>
+        ReservedEnvironmentKeys.IsWellFormed(name) && name.Length <= 64;
+}
+
+/// <summary>Lists the tenant's declared relations.</summary>
+public sealed class GetRelationsHandler(IResourceSchemaStore store)
+    : IQueryHandler<GetRelationsQuery, Result<IReadOnlyList<ResourceSchema>>>
+{
+    public ValueTask<Result<IReadOnlyList<ResourceSchema>>> Handle(GetRelationsQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(store.List(query.Tenant)));
+}
+
+/// <summary>
+/// Declares one collection's relations. Nothing is checked against the documents already stored: a
+/// sandbox is seeded and re-shaped constantly, and refusing a declaration because yesterday's test
+/// data does not satisfy it would make the feature unusable exactly when it is most wanted.
+/// Enforcement starts with the next write.
+/// </summary>
+public sealed class PutRelationHandler(IResourceSchemaStore store)
+    : ICommandHandler<PutRelationCommand, Result<ResourceSchema>>
+{
+    public ValueTask<Result<ResourceSchema>> Handle(PutRelationCommand command, CancellationToken cancellationToken)
+    {
+        if (RelationRules.Check(command.Collection, command.BelongsTo) is { } invalid)
+        {
+            return ValueTask.FromResult<Result<ResourceSchema>>(invalid);
+        }
+
+        var schema = new ResourceSchema(command.Collection, command.BelongsTo);
+        store.Put(command.Tenant, schema);
+        return ValueTask.FromResult<Result<ResourceSchema>>(schema);
+    }
+}
+
+/// <summary>Removes one collection's relations; a collection that declared none is a not-found.</summary>
+public sealed class DeleteRelationHandler(IResourceSchemaStore store)
+    : ICommandHandler<DeleteRelationCommand, Result>
+{
+    public ValueTask<Result> Handle(DeleteRelationCommand command, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(store.Delete(command.Tenant, command.Collection)
+            ? Result.Success()
+            : Result.Failure(Error.NotFound(
+                "Relation.NotFound", $"Collection '{command.Collection}' declares no relations.")));
 }
 
 // ---- Sandbox access (G19d, ADR 0011) -----------------------------------------------------------
