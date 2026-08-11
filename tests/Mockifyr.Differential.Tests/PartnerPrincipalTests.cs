@@ -35,6 +35,8 @@ public sealed class PartnerPrincipalTests : IAsyncLifetime
             "--admin-user", "root", "--admin-pass", "rootpass",
             "--tenant-credential", $"{Tenant}:operator:operatorpass",
             "--partner-credential", $"{Tenant}:partner:partnerpass",
+            // A bare "--audit" is not a value the configuration binder reads as true.
+            "--audit", "true",
         ]);
         await _host.StartAsync();
 
@@ -172,6 +174,51 @@ public sealed class PartnerPrincipalTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Contains("proxyBaseUrl", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_refusal_reaches_the_audit_trail_naming_the_partner_and_the_route()
+    {
+        // The acceptance criterion that was asserted in prose and nowhere in code. A refusal nobody can
+        // read afterwards is a refusal that never happened, as far as a reviewer is concerned.
+        var refused = await As(Partner, HttpMethod.Post, "/__admin/recordings/start",
+            """{"targetBaseUrl":"http://example.invalid"}""");
+        Assert.Equal(HttpStatusCode.Forbidden, refused);
+
+        // The trail is tenant-scoped like every other admin query, so the header goes on this read too —
+        // without it the system credential asks the default tenant, which saw none of this.
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/__admin/audit")
+        {
+            Headers = { Authorization = Basic("root", "rootpass") },
+        };
+        request.Headers.Add("X-Mockifyr-Tenant", Tenant);
+        using var response = await _client!.SendAsync(request);
+        var trail = await response.Content.ReadAsStringAsync();
+
+        // `partner:acme`, not `tenant:acme`: this tenant has both credentials, and a trail that cannot
+        // say which of the two acted answers the wrong question.
+        Assert.Contains("partner:acme", trail, StringComparison.Ordinal);
+        Assert.Contains("/__admin/recordings/start", trail, StringComparison.Ordinal);
+        Assert.Contains("403", trail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_operator_is_not_recorded_as_a_partner()
+    {
+        // The other half: if both labels collapsed to the same string this would pass by accident.
+        await As(Operator, HttpMethod.Put, "/__admin/resources/audited/x", """{"a":1}""");
+
+        // The trail is tenant-scoped like every other admin query, so the header goes on this read too —
+        // without it the system credential asks the default tenant, which saw none of this.
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/__admin/audit")
+        {
+            Headers = { Authorization = Basic("root", "rootpass") },
+        };
+        request.Headers.Add("X-Mockifyr-Tenant", Tenant);
+        using var response = await _client!.SendAsync(request);
+        var trail = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("tenant:acme", trail, StringComparison.Ordinal);
     }
 
     [Fact]

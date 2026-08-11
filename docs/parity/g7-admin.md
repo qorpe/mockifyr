@@ -418,7 +418,16 @@ nothing and *said* nothing. It now says so at startup and names what actually sc
 behaviour is unchanged — the flag is still scoped to the unauthenticated case by design — but a flag that
 silently no-ops is how an operator comes to believe in a control they do not have.
 
-**Validation.** `PartnerPrincipalTests` (12 wire cases) and `OutboundReachTests` (16 unit cases). The
+**An attribution weakness found while proving the audit criterion.** The issue asked for refusals to be
+audited "with the principal and the route". They are — `IsAuditable` excludes reads, so a refused *change*
+is recorded and a refused *read* is not, which is exactly the existing behaviour for a cross-tenant attempt
+and therefore what "same as" meant. But the label was wrong: `AuditPrincipalResolver` mapped every
+per-tenant credential to `tenant:<name>`, so an operator and a partner scoped to the same tenant read as
+the same actor — in the very entries this class exists to produce. A partner is now `partner:<name>`. The
+weakness was invisible until the criterion was tested rather than asserted, which is the argument for
+testing it.
+
+**Validation.** `PartnerPrincipalTests` (14 wire cases) and `OutboundReachTests` (16 unit cases). The
 operator principal is asserted beside the partner in nearly every case on purpose: a test that only showed
 the partner refused would pass just as well if the route were broken for everybody, which is a different
 bug wearing the same 403. **Stryker 96.55 %** on `OutboundReach.cs`, one survivor, analysed and confirmed
