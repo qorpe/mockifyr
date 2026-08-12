@@ -112,6 +112,34 @@ public static class SandboxEndpoints
                 : Results.Json(new { error = result.Error.Code, message = result.Error.Description }, statusCode: StatusCodes.Status404NotFound);
         });
 
+        // A partner's own usage (#356). Same numbers the operator sees for this key's tenant, reached
+        // with the key the partner already holds — "your calls are failing" is answerable by the person
+        // making the calls, without anybody being given an admin credential.
+        sandbox.MapGet("/usage", async (HttpContext context, ISender sender) =>
+        {
+            if (Tenant(context) is not { } tenant) return Refused(context);
+            var hours = context.Request.Query.TryGetValue("hours", out var raw)
+                && int.TryParse(raw.FirstOrDefault(), out var parsed)
+                    ? parsed
+                    : 24;
+            var result = await sender.Send(new GetUsageQuery(tenant, hours));
+            return Results.Json(new
+            {
+                keys = result.Value.Select(entry => new
+                {
+                    name = entry.Name,
+                    prefix = entry.Prefix,
+                    total = entry.Usage.Total,
+                    matched = entry.Usage.Matched,
+                    unmatched = entry.Usage.Unmatched,
+                    unauthorized = entry.Usage.Unauthorized,
+                    rateLimited = entry.Usage.RateLimited,
+                    forbidden = entry.Usage.Forbidden,
+                    topUnmatchedPaths = entry.Usage.TopUnmatchedPaths.Select(p => new { path = p.Path, count = p.Count }),
+                }),
+            });
+        });
+
         sandbox.MapGet("/resources", async (HttpContext context, ISender sender) =>
         {
             if (Tenant(context) is not { } tenant) return Refused(context);

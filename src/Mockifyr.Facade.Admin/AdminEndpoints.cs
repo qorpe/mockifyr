@@ -804,6 +804,17 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Ok() : ApiKeyFailure(result.Error);
         });
 
+        // Per-consumer usage (#356): bounded counts per key, never a second journal. Empty unless the
+        // host runs with --usage.
+        admin.MapGet("/usage", async (HttpRequest request, ISender sender) =>
+        {
+            var hours = request.Query.TryGetValue("hours", out var raw) && int.TryParse(raw.FirstOrDefault(), out var parsed)
+                ? parsed
+                : 24;
+            var result = await sender.Send(new GetUsageQuery(TenantOf(request), hours));
+            return Results.Json(new { keys = result.Value.Select(UsageJson) });
+        });
+
         // OpenAPI import (G19c, ADR 0011): spec in, working sandbox out. The body is the raw
         // OpenAPI 3.x document (JSON or YAML); ?stateful=true wires resource-shaped path pairs to
         // the G19b state directive. Refusals are typed 422s (413 for the size guard).
@@ -1687,6 +1698,21 @@ public static class AdminEndpoints
         revokedAt = key.Revocation?.At,
         revokedBy = key.Revocation?.By,
         revokedReason = key.Revocation?.Reason,
+    };
+
+    private static object UsageJson(KeyUsageWithName entry) => new
+    {
+        id = entry.Usage.KeyId,
+        name = entry.Name,
+        prefix = entry.Prefix,
+        total = entry.Usage.Total,
+        matched = entry.Usage.Matched,
+        unmatched = entry.Usage.Unmatched,
+        unauthorized = entry.Usage.Unauthorized,
+        rateLimited = entry.Usage.RateLimited,
+        forbidden = entry.Usage.Forbidden,
+        topPaths = entry.Usage.TopPaths.Select(p => new { path = p.Path, count = p.Count }),
+        topUnmatchedPaths = entry.Usage.TopUnmatchedPaths.Select(p => new { path = p.Path, count = p.Count }),
     };
 
     private static string ScopeName(ApiKeyScope scope) => scope == ApiKeyScope.ReadOnly ? "read" : "readwrite";

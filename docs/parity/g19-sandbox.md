@@ -730,3 +730,55 @@ its expiry, the read-only refusal on both the mock surface and `/__sandbox/*`, r
 without overlap, and the principal named on a host without `--audit`). **Stryker: 96.67 %** on
 `ApiKeys.cs`; the one survivor predates this work and is equivalent (`<=` versus `<` in
 `DisplayPrefix`, where a token of exactly the prefix length takes either branch to the same string).
+
+
+## What a consumer actually did (#356)
+
+**The question with no answer.** The journal records requests and the metrics endpoint exposes
+counters whose label cardinality was deliberately bounded (#246) — a good decision that also means
+metrics cannot answer anything per key. So "what did this partner do this month" had no answer, and
+three ordinary conversations had nowhere to start: is this quota right or did we guess, is one
+consumer hammering a shared sandbox, and why are somebody's calls failing.
+
+**`--usage` keeps counts, not requests.** Per key: total, matched, unmatched, and each refusal
+separately — unauthorised, rate-limited, forbidden — because those three are different conversations
+and collapsing them into "failed" is what turns a support question into an afternoon. Plus the
+most-called paths, and the unmatched ones tracked **separately**, since a busy matched path would
+otherwise crowd out of a bounded table the very rows worth reading.
+
+**Deliberately not a second journal.** Nothing but a path, an outcome and a count is kept — no
+headers, no bodies, no per-request timestamps — so the masking that keeps secrets out of the journal
+(#227) cannot be walked around by reading usage instead. A test asserts on the shape of the whole
+document rather than on one field, because the claim is about what is *absent*.
+
+**Bounded three ways**: one hourly bucket per key for 24 hours, 50 distinct paths per bucket, and a
+cap on tracked keys. The path table is an approximate heavy-hitters counter (Space-Saving): when it is
+full the smallest entry is replaced and the newcomer inherits its count. That is stated rather than
+hidden — a rare path can be overstated; what the table is accurate about is which paths dominate.
+Exactness would cost one entry per distinct path, which is precisely the unbounded growth the design
+refuses.
+
+**Eviction runs before the cap is checked.** A host up for a week holds buckets nobody can ask about
+any more; refusing today's key while keeping last Tuesday's would report nothing for the consumer
+somebody is actually looking at.
+
+**A match is recorded, not inferred.** A stub is free to answer 404, so the status code cannot tell a
+modelled 404 from a call the sandbox does not model at all — and those are opposite findings. The
+serving path notes the match and the outcome is classified at the end.
+
+**Instrumented by wrapping, not by sprinkling.** The serve method has a dozen exits — refusals,
+faults, proxies, degradation — and one of them would eventually be added without its counter. A
+`finally` cannot be forgotten by the next person to add an exit.
+
+**Two things it deliberately does not count.** An unknown token: recording it would let a stranger
+grow this host's memory by presenting tokens. And a partner's own read of `/__sandbox/usage`: their
+self-service surface is a control plane, and counting it would mean looking at your usage changes it.
+
+**Not billing.** ADR 0011 ruled billing out and this does not reopen it — the numbers are for
+operations, and nothing about them is durable across a restart.
+
+**Validation.** `UsageTests` (20 unit cases: outcome separation, tenant isolation, window and
+retention boundaries, both bounds under load, the heavy-hitter behaviour, tie ordering, parallel
+recording) and `UsageWireTests`/`UsageOffByDefaultTests` (7 wire cases including the modelled 404, the
+unknown token, anonymous traffic, the partner's self-service read, and an unconfigured host).
+**Stryker: 100 %** on `Usage.cs`.

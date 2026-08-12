@@ -1125,6 +1125,28 @@ public sealed class RotateApiKeyHandler(IApiKeyStore store, IApiKeyPersistence p
 }
 
 /// <summary>
+/// Reads per-key usage (#356), joined to the key names so a report can be read without a second call.
+/// </summary>
+/// <remarks>
+/// A key that was revoked keeps its usage until the window rolls past it — what a withdrawn credential
+/// did before it was withdrawn is the most interesting row on the page, not the least.
+/// </remarks>
+public sealed class GetUsageHandler(IUsageRecorder usage, IApiKeyStore keys)
+    : IQueryHandler<GetUsageQuery, Result<IReadOnlyList<KeyUsageWithName>>>
+{
+    public ValueTask<Result<IReadOnlyList<KeyUsageWithName>>> Handle(GetUsageQuery query, CancellationToken cancellationToken)
+    {
+        var named = keys.GetKeys(query.Tenant).ToDictionary(key => key.Id, StringComparer.Ordinal);
+        return ValueTask.FromResult(Result.Success<IReadOnlyList<KeyUsageWithName>>(
+            [.. usage.Report(query.Tenant, query.Hours, DateTimeOffset.UtcNow)
+                .Select(report => new KeyUsageWithName(
+                    report,
+                    named.TryGetValue(report.KeyId, out var key) ? key.Name : "(deleted)",
+                    named.TryGetValue(report.KeyId, out var known) ? known.Prefix : string.Empty))]));
+    }
+}
+
+/// <summary>
 /// Reads the tenant's audit entries (#247). Tenant-scoped like every other query here: one tenant's
 /// administrative history is not another's to read, and the limit is clamped so a caller cannot ask
 /// for a response big enough to hurt the host.

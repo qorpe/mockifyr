@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Check, Copy, KeyRound, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { fetchApiKeys, issueApiKey, revokeApiKey, rotateApiKey } from '@/lib/api'
-import type { ApiKeyEntry } from '@/lib/api'
+import { fetchApiKeys, fetchUsage, issueApiKey, revokeApiKey, rotateApiKey } from '@/lib/api'
+import type { ApiKeyEntry, KeyUsageEntry } from '@/lib/api'
 import { useUi } from '@/components/providers'
 import { Button } from '@qorpe/ui'
 import { Input, Label } from '@/components/ui/field'
@@ -25,6 +25,9 @@ export function AccessPage() {
 
   const { data } = useQuery({ queryKey: ['apikeys', tenant], queryFn: () => fetchApiKeys(tenant) })
   const keys = useMemo(() => data?.keys ?? [], [data])
+  // Usage is a separate query because it is a separate decision: a host without --usage answers an
+  // empty list, and the keys table must still render exactly as it always did.
+  const { data: usage } = useQuery({ queryKey: ['usage', tenant], queryFn: () => fetchUsage(tenant) })
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['apikeys', tenant] })
 
   const [issuing, setIssuing] = useState(false)
@@ -152,6 +155,8 @@ export function AccessPage() {
         )}
       </div>
 
+      {(usage?.length ?? 0) > 0 && <UsagePanel entries={usage!} />}
+
       {/* How a key authenticates — the host-side contract, spelled out where the keys are made. */}
       <div className="mt-4 space-y-1.5 rounded-2xl border border-border bg-muted/30 p-4 text-sm leading-relaxed text-muted-foreground">
         <p>{t('access.hint1')}</p>
@@ -249,6 +254,61 @@ export function AccessPage() {
         </div>
       </ConfirmDialog>
     </div>
+  )
+}
+
+/**
+ * What each consumer actually did over the last 24 hours (#356). Shown only when the host is keeping
+ * counts; the unmatched paths come first inside each row, because a call the sandbox does not model is
+ * the integration going wrong and is the reason anybody opens this.
+ */
+function UsagePanel({ entries }: { entries: KeyUsageEntry[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-background shadow-surface">
+      <div className="border-b border-border bg-muted/40 px-4 py-2.5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('access.usageTitle')}</h2>
+      </div>
+      <div className="divide-y divide-border">
+        {entries.map((entry) => (
+          <div key={entry.id} className="px-4 py-3">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span className="text-sm font-medium">{entry.name}</span>
+              <span className="font-mono text-[11.5px] text-muted-foreground">{entry.prefix}…</span>
+              <span className="text-xs tabular-nums text-muted-foreground">{t('access.usageTotal', { count: entry.total })}</span>
+              <Tally label={t('access.usageMatched')} value={entry.matched} />
+              <Tally label={t('access.usageUnmatched')} value={entry.unmatched} tone={entry.unmatched > 0 ? 'warning' : undefined} />
+              <Tally label={t('access.usageRateLimited')} value={entry.rateLimited} tone={entry.rateLimited > 0 ? 'warning' : undefined} />
+              <Tally label={t('access.usageUnauthorized')} value={entry.unauthorized} tone={entry.unauthorized > 0 ? 'danger' : undefined} />
+              <Tally label={t('access.usageForbidden')} value={entry.forbidden} tone={entry.forbidden > 0 ? 'danger' : undefined} />
+            </div>
+            {entry.topUnmatchedPaths.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t('access.usageTopUnmatched')}</p>
+                <ul className="mt-1 space-y-0.5">
+                  {entry.topUnmatchedPaths.map((path) => (
+                    <li key={path.path} className="flex items-baseline gap-2 font-mono text-[12px]">
+                      <span className="tabular-nums text-muted-foreground">{path.count}×</span>
+                      <span className="break-all">{path.path}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Tally({ label, value, tone }: { label: string; value: number; tone?: 'warning' | 'danger' }) {
+  if (value === 0 && tone === undefined) return null
+  return (
+    <span className={cn('text-xs tabular-nums',
+      tone === 'danger' ? 'text-danger' : tone === 'warning' ? 'text-warning' : 'text-muted-foreground')}>
+      {label} {value}
+    </span>
   )
 }
 

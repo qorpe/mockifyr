@@ -242,6 +242,19 @@ public sealed record RotateApiKeyCommand(
     string Id, TenantId Tenant, int OverlapMinutes, string By = "unknown")
     : ICommand<Result<IssuedApiKey>>;
 
+/// <summary>
+/// Reads per-key usage for the tenant over the last <paramref name="Hours"/> hours (#356).
+/// </summary>
+/// <remarks>
+/// Operations, not billing: ADR 0011 ruled billing out and this does not reopen it. The question it
+/// answers is whether a quota was guessed too low, whether one consumer is hammering a shared
+/// sandbox, and what a partner is calling that nobody modelled.
+/// </remarks>
+public sealed record GetUsageQuery(TenantId Tenant, int Hours) : IQuery<Result<IReadOnlyList<KeyUsageWithName>>>;
+
+/// <summary>A key's usage beside the name an operator recognises it by (#356).</summary>
+public sealed record KeyUsageWithName(KeyUsage Usage, string Name, string Prefix);
+
 // Admin audit trail (#247): read-only from the management API — entries are appended by the host's
 // audit middleware, never by an API caller, so a trail cannot be edited through the surface it audits.
 
