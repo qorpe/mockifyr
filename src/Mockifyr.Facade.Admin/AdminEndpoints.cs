@@ -254,6 +254,7 @@ public static class AdminEndpoints
             string? id = null;
             string? name = null;
             long? limit = null;
+            bool? idempotency = null;
             try
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(await ReadBody(request));
@@ -262,12 +263,17 @@ public static class AdminEndpoints
                 limit = doc.RootElement.TryGetProperty("storageLimitBytes", out var l) && l.TryGetInt64(out var parsed)
                     ? parsed
                     : null;
+                idempotency = doc.RootElement.TryGetProperty("idempotency", out var replay)
+                    && replay.ValueKind is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False
+                        ? replay.GetBoolean()
+                        : null;
             }
             catch (System.Text.Json.JsonException)
             {
             }
 
-            var result = await sender.Send(new DeclareTenantCommand(id ?? string.Empty, name ?? string.Empty, limit));
+            var result = await sender.Send(
+                new DeclareTenantCommand(id ?? string.Empty, name ?? string.Empty, limit, idempotency));
             return result.IsSuccess
                 ? Results.Json(TenantJson(new TenantWithUsage(result.Value, 0, 0)), statusCode: StatusCodes.Status201Created)
                 : TenantFailure(result.Error);
@@ -597,6 +603,9 @@ public static class AdminEndpoints
                     wasMatched = e.MatchedStub is not null,
                     stubId = e.MatchedStub?.Id,
                     loggedDate = e.Timestamp,
+                    // A replayed write really did arrive, and saying so is what keeps verification
+                    // honest: two entries, one of which states that nothing ran the second time (#358).
+                    replayed = e.Replayed,
                 }),
             });
         });
@@ -1776,6 +1785,7 @@ public static class AdminEndpoints
         status = entry.Tenant.Status == TenantStatus.Suspended ? "suspended" : "active",
         storageLimitBytes = entry.LimitBytes,
         storageUsedBytes = entry.UsedBytes,
+        idempotency = entry.Tenant.Idempotency,
     };
 
     private static IResult TenantFailure(Mediant.Results.Error error) =>

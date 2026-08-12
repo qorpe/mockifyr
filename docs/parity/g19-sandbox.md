@@ -845,3 +845,53 @@ serving, an offboarding receipt, a refusal carrying both numbers, a tenant's own
 host default, and a declaration surviving a restart). **Stryker: 100 %** on `Tenants.cs`. Declarations
 persist through the G16 seam on all four providers, announcing on the change feed so a suspension
 takes effect on every replica rather than only the one that decided it.
+
+
+## A retry does not create a second payment (#358)
+
+**The gap.** Every payment API a partner integrates against accepts an `Idempotency-Key` on writes,
+and their client library sends one and retries on timeouts. The sandbox ignored it, so a retried
+`POST /payments` created a second payment — behaviour their production integration is built
+specifically never to see, and which looks like their bug.
+
+**Replay, conflict, or fresh.** The same key with the same request replays the stored response; the
+same key with a *different* request is refused with **409** and `Idempotency.KeyReused`, because
+answering it would hand a caller somebody else's payment; anything else is served and remembered.
+
+**The fingerprint is method, path, query and body — not headers.** A client that retries with a fresh
+trace id or a refreshed token is making the same request, and treating that as different would turn
+every real retry into a conflict.
+
+**Only unsafe methods.** A GET carrying the header is served normally: replaying reads would hide the
+state the caller is asking about, and no API this stands in for does it.
+
+**Off by default, per tenant when on.** `--idempotency` turns it on host-wide and a declared tenant
+(#357) can say otherwise, because on a shared host one team testing double submission has to be able
+to keep it off while the partner beside them keeps it on. A suite that exists to test double
+submission must not be quietly fixed by a host setting.
+
+**Bounded twice.** A 24-hour window — what the APIs this stands in for publish — *and* a count, because
+a window alone is not a bound: a caller sending a fresh key per request would otherwise hold a day of
+traffic in memory. Expired entries are dropped when read rather than swept by a timer.
+
+**A server failure is not remembered.** Replaying a 500 for a day would make a transient failure
+permanent for the one key the client is retrying with.
+
+**The journal records both requests and marks the replay.** Both really arrived, so hiding the second
+would disagree with the client about what happened, and showing it as a fresh serve would claim the
+sandbox did the work twice. The entry carries `replayed: true`, and the response carries an
+`Idempotency-Replayed` header so a client can tell without diffing bodies.
+
+**Buffered only where it applies.** Capturing a response means buffering it, so that happens only for
+a request that actually carries a key on an unsafe method; everything else writes straight to the wire
+exactly as before.
+
+**Validation.** `IdempotencyTests` (24 unit cases: method eligibility, fingerprint composition, key
+validation and its bound, the window, tenant isolation, both bounds, and the per-tenant override in
+both directions) and `IdempotencyWireTests`/`IdempotencyOffByDefaultTests` (6 wire cases: a retry that
+does not create a second payment, a retry without a key that still does, the conflict, the journal
+showing two entries with one marked, a tenant keeping it off while the host has it on, and an
+unconfigured host ignoring the header entirely). **Stryker: 94.74 %** on `Idempotency.cs`; the two
+survivors are equivalent — removing an expired entry from the store and the eviction order is memory
+hygiene with no observable behaviour, since a re-read re-checks the window and a dead entry is the
+first to be evicted anyway.

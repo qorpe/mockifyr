@@ -12,7 +12,8 @@ namespace Mockifyr.Server;
 internal static class TenantJson
 {
     private sealed record StoredTenant(
-        string Id, string DisplayName, DateTimeOffset CreatedAt, string Status, long? StorageLimitBytes);
+        string Id, string DisplayName, DateTimeOffset CreatedAt, string Status, long? StorageLimitBytes,
+        bool? Idempotency = null);
 
     public static string Serialize(TenantRecord tenant) =>
         System.Text.Json.JsonSerializer.Serialize(new StoredTenant(
@@ -20,7 +21,8 @@ internal static class TenantJson
             tenant.DisplayName,
             tenant.CreatedAt,
             tenant.Status == TenantStatus.Suspended ? "suspended" : "active",
-            tenant.StorageLimitBytes));
+            tenant.StorageLimitBytes,
+            tenant.Idempotency));
 
     /// <summary>Reads a declaration back, returning null for anything unparseable rather than failing startup.</summary>
     public static TenantRecord? Deserialize(string json)
@@ -39,7 +41,8 @@ internal static class TenantJson
                     string.Equals(stored.Status, "suspended", StringComparison.Ordinal)
                         ? TenantStatus.Suspended
                         : TenantStatus.Active,
-                    stored.StorageLimitBytes);
+                    stored.StorageLimitBytes,
+                    stored.Idempotency);
         }
         catch (System.Text.Json.JsonException)
         {

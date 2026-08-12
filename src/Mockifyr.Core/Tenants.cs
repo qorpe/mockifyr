@@ -40,7 +40,24 @@ public sealed record TenantRecord(
     string DisplayName,
     DateTimeOffset CreatedAt,
     TenantStatus Status = TenantStatus.Active,
-    long? StorageLimitBytes = null);
+    long? StorageLimitBytes = null,
+    bool? Idempotency = null);
+
+/// <summary>
+/// Whether a tenant replays retried writes carrying an <c>Idempotency-Key</c> (#358): its own answer
+/// when it has declared one, else the host default.
+/// </summary>
+/// <remarks>
+/// Per tenant rather than host-only because a sandbox deliberately testing double-submission has to
+/// be able to keep it off while the partner beside it keeps it on — on a shared host those are two
+/// different teams with two different intentions.
+/// </remarks>
+public static class TenantIdempotency
+{
+    /// <summary>Whether replay is in force for this tenant.</summary>
+    public static bool EnabledFor(TenantRecord? tenant, bool hostDefault) =>
+        tenant?.Idempotency ?? hostDefault;
+}
 
 /// <summary>Host-wide store of declared tenants (#357).</summary>
 public interface ITenantStore

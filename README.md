@@ -155,6 +155,7 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--resource-max-body <bytes>` | per-document body cap for `/__admin/resources` (default 1 MiB; 413 beyond it) |
 | `--sandbox-auth` | sandbox API keys (`/__admin/apikeys`): `mfk_…` tokens select the tenant via `X-Api-Key`/Bearer, with optional per-key hourly quotas (`429` + rate headers), an optional expiry, a read-only scope, and rotation with an overlap. With `--redis` the quota is counted in Redis, so replicas share one budget and a restart does not refund it |
 | `--tenant-storage-limit <bytes>` | per-tenant ceiling on sandbox document bytes (a declared tenant may carry its own); the refusal names the limit and the current usage |
+| `--idempotency` · `--idempotency-window <seconds>` | replay the first response for a retried write carrying the same `Idempotency-Key` (default window 24h); a declared tenant may keep it off |
 | `--usage` | keep bounded per-key request counts (total, matched, unmatched, and each refusal) plus the most-called paths nothing models, readable at `/__admin/usage` and by a partner at `/__sandbox/usage` |
 | `--rate-burst <n>/<seconds>` | a host-wide burst ceiling counted beside each key's hourly quota — applies to keys with no quota too; the binding limit is the one reported in the rate headers |
 | `--dashboard <dir>` | serve the built dashboard under `/__mockifyr` |

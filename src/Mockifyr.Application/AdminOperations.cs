@@ -250,7 +250,8 @@ public sealed record TenantWithUsage(TenantRecord Tenant, long UsedBytes, long L
 
 /// <summary>Declares a tenant, or updates the declaration of one already declared.</summary>
 public sealed record DeclareTenantCommand(
-    string Id, string DisplayName, long? StorageLimitBytes) : ICommand<Result<TenantRecord>>;
+    string Id, string DisplayName, long? StorageLimitBytes, bool? Idempotency = null)
+    : ICommand<Result<TenantRecord>>;
 
 /// <summary>Lists declared tenants with their storage usage.</summary>
 public sealed record GetTenantsQuery : IQuery<Result<IReadOnlyList<TenantWithUsage>>>;

@@ -580,6 +580,22 @@ public static class MockifyrHost
             builder.Services.AddSingleton(bodyLimits);
         }
 
+        // Idempotent replay (#358): --idempotency turns it on for every tenant, and a declared tenant
+        // can say otherwise — on a shared host, one team testing double submission must be able to
+        // keep it off while the partner beside them keeps it on.
+        var idempotencyWindow = int.TryParse(builder.Configuration["idempotency-window"], out var windowSeconds)
+            && windowSeconds > 0
+                ? TimeSpan.FromSeconds(windowSeconds)
+                : Idempotency.DefaultWindow;
+        var idempotencyOn = builder.Configuration.GetValue<bool>("idempotency");
+        builder.Services.AddSingleton(new IdempotencyOptions(idempotencyOn, idempotencyWindow));
+        builder.Services.AddSingleton<IIdempotencyStore>(new InMemoryIdempotencyStore(idempotencyWindow));
+        if (idempotencyOn)
+        {
+            Console.WriteLine($"mockifyr: --idempotency is on — a retried write carrying the same "
+                + $"Idempotency-Key replays the first response for {idempotencyWindow.TotalHours:0.##}h.");
+        }
+
         // Per-consumer usage reporting (#356): bounded, aggregated counts per key at /__admin/usage
         // and /__sandbox/usage. Opt-in, and deliberately not a second journal — no headers or bodies
         // are kept, so the masking that keeps secrets out of the journal cannot be walked around here.
