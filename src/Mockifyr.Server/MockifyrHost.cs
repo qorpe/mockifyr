@@ -578,6 +578,16 @@ public static class MockifyrHost
             builder.Services.AddSingleton(bodyLimits);
         }
 
+        // Per-consumer usage reporting (#356): bounded, aggregated counts per key at /__admin/usage
+        // and /__sandbox/usage. Opt-in, and deliberately not a second journal — no headers or bodies
+        // are kept, so the masking that keeps secrets out of the journal cannot be walked around here.
+        if (builder.Configuration.GetValue<bool>("usage"))
+        {
+            builder.Services.AddSingleton<IUsageRecorder, InMemoryUsageRecorder>();
+            Console.WriteLine("mockifyr: --usage is on — per-key request counts are kept for "
+                + $"{InMemoryUsageRecorder.RetainedHours}h and readable at /__admin/usage.");
+        }
+
         // A burst ceiling beside the per-key hourly quota (#354): --rate-burst <requests>/<seconds>.
         // Host-level because it protects the host rather than a consumer's budget — making every key
         // restate it would leave the one key nobody updated as the way in.

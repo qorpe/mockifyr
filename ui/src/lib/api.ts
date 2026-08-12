@@ -1107,6 +1107,36 @@ export async function rotateApiKey(
   return (await res.json()) as { key: string; prefix: string }
 }
 
+/** One key's traffic over the reported window (#356). Bounded and aggregated — never a journal. */
+export interface KeyUsageEntry {
+  id: string
+  name: string
+  prefix: string
+  total: number
+  matched: number
+  unmatched: number
+  unauthorized: number
+  rateLimited: number
+  forbidden: number
+  topPaths: { path: string; count: number }[]
+  topUnmatchedPaths: { path: string; count: number }[]
+}
+
+/**
+ * Per-key usage. Empty on a host without `--usage` — which is a legitimate answer, not an error, so
+ * the screen says the flag is off rather than showing a failure.
+ */
+export async function fetchUsage(tenant: string, hours = 24): Promise<KeyUsageEntry[]> {
+  try {
+    const res = await adminFetch(`/usage?hours=${hours}`, tenant)
+    if (!res.ok) return []
+    const body = (await res.json()) as { keys?: KeyUsageEntry[] }
+    return body.keys ?? []
+  } catch {
+    return []
+  }
+}
+
 /** One recorded administrative change (#247). */
 export interface AuditEntry {
   id: string

@@ -90,6 +90,9 @@ public static class MockifyrServiceCollectionExtensions
         // In-process by default (#354): a laptop must not need Redis to run a sandbox. MockifyrHost
         // registers the shared counter on top when --redis is set, and that registration wins.
         services.AddSingleton<IRateCounter, InMemoryRateCounter>();
+        // Per-consumer usage (#356) is off unless --usage asks for it: keeping counts nobody reads is
+        // memory spent on nothing, and the decision belongs to the operator either way.
+        services.AddSingleton<IUsageRecorder, NullUsageRecorder>();
         services.AddSingleton(new SandboxAuthOptions());
         services.AddSingleton<IMessageBehaviorStore, InMemoryMessageBehaviorStore>();
         services.AddSingleton<IMessageSink>(sp => new StoreMessageSink(sp.GetRequiredService<IMessageStore>()));

@@ -49,7 +49,55 @@ public static class MockServingEndpoints
             : null;
     }
 
+    /// <summary>Where the key id waits so the usage record made at the end knows whose request this was.</summary>
+    private const string UsageKeyItem = "mockifyr.usage.key";
+
+    /// <summary>Where a match is noted, since the final status alone cannot tell 404-by-stub from no-match.</summary>
+    private const string UsageMatchedItem = "mockifyr.usage.matched";
+
+    /// <summary>
+    /// Serves one request and records what it did for the presenting key (#356).
+    /// </summary>
+    /// <remarks>
+    /// Wrapped rather than instrumented at each return: this method has a dozen exits — refusals,
+    /// faults, proxies, degradation — and one of them would eventually be added without its counter.
+    /// A <c>finally</c> cannot be forgotten by the next person to add an exit.
+    /// </remarks>
     private static async Task ServeAsync(HttpContext context)
+    {
+        var tenantForUsage = TenantId.Default;
+        try
+        {
+            tenantForUsage = await ServeCoreAsync(context);
+        }
+        finally
+        {
+            if (context.Items.TryGetValue(UsageKeyItem, out var keyId) && keyId is string presented)
+            {
+                context.RequestServices.GetRequiredService<IUsageRecorder>().Record(
+                    tenantForUsage,
+                    presented,
+                    context.Request.Path.Value ?? "/",
+                    OutcomeOf(context),
+                    DateTimeOffset.UtcNow);
+            }
+        }
+    }
+
+    /// <summary>Classifies the finished request. Status first, since every refusal has its own code.</summary>
+    private static UsageOutcome OutcomeOf(HttpContext context) => context.Response.StatusCode switch
+    {
+        StatusCodes.Status401Unauthorized => UsageOutcome.Unauthorized,
+        StatusCodes.Status403Forbidden => UsageOutcome.Forbidden,
+        StatusCodes.Status429TooManyRequests => UsageOutcome.RateLimited,
+        _ => context.Items.TryGetValue(UsageMatchedItem, out var matched) && matched is true
+            ? UsageOutcome.Matched
+            // A stub is free to answer 404, so "did anything match" is recorded rather than inferred:
+            // a modelled 404 and a call the sandbox does not model at all are opposite findings.
+            : UsageOutcome.Unmatched,
+    };
+
+    private static async Task<TenantId> ServeCoreAsync(HttpContext context)
     {
         var request = await BuildRequestAsync(context);
 
@@ -69,10 +117,15 @@ public static class MockServingEndpoints
             if (key is null)
             {
                 // An unknown token is told nothing: anything more would answer whether a guess was a
-                // real key.
+                // real key. Nor is it recorded — a stranger must not be able to grow this host's
+                // memory by presenting tokens.
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return;
+                return TenantId.Default;
             }
+
+            // From here the request belongs to a known consumer, so it is counted whatever happens to
+            // it next — including the refusals below, which are the most useful thing usage reports.
+            context.Items[UsageKeyItem] = key.Id;
 
             // Expiry and revocation say which they are (#355). A partner who has proved possession of a
             // real credential and one who mistyped a token both got the same bare 401, and the two need
@@ -85,7 +138,7 @@ public static class MockServingEndpoints
                 await context.Response.WriteAsync(status == ApiKeyStatus.Expired
                     ? """{"error":"ApiKey.Expired","message":"This sandbox key has expired — ask for a new one."}"""
                     : """{"error":"ApiKey.Revoked","message":"This sandbox key has been revoked."}""");
-                return;
+                return key.Tenant;
             }
 
             // A read-only key may use safe methods only. The rule is the method, not the effect: a stub
@@ -100,7 +153,7 @@ public static class MockServingEndpoints
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsync(
                     """{"error":"ApiKey.ReadOnly","message":"This sandbox key may only read."}""");
-                return;
+                return key.Tenant;
             }
 
             // Fixed-window quota (race-free; ADR 0011 addendum) with honest rate headers; the
@@ -125,7 +178,7 @@ public static class MockServingEndpoints
                 context.Response.Headers.RetryAfter =
                     Math.Max(1, (int)(decision.ResetAt - DateTimeOffset.UtcNow).TotalSeconds).ToString();
                 context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-                return;
+                return key.Tenant;
             }
 
             keyTenant = key.Tenant;
@@ -152,7 +205,7 @@ public static class MockServingEndpoints
             var exchange = await recorder.RecordAsync(target, request, context.RequestAborted);
             recording.Record(tenant, request, exchange.StubResponse);
             await WriteUpstreamAsync(context, exchange.CapturedResponse);
-            return;
+            return tenant;
         }
 
         var resolution = engine.Handle(tenant, request);
@@ -160,8 +213,12 @@ public static class MockServingEndpoints
         if (resolution.Response is not { } response)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
-            return;
+            return tenant;
         }
+
+        // Noted here rather than inferred from the status: a stub is free to answer 404, and a
+        // modelled 404 and a call the sandbox does not model at all are opposite findings (#356).
+        context.Items[UsageMatchedItem] = true;
 
         // Degradation profile (#289): what the whole dependency is doing today, on top of whatever this
         // stub declares. Asked for once per request so the ordinal advances exactly once — the seeded
@@ -179,13 +236,13 @@ public static class MockServingEndpoints
             // A dependency that resets the connection does not first politely explain itself, so this
             // outranks both the profile's error status and the stub's own response.
             await EmitFaultAsync(context, new FaultDirective(degradedFault));
-            return;
+            return tenant;
         }
 
         if (degradation.ErrorStatus is { } degradedStatus)
         {
             context.Response.StatusCode = degradedStatus;
-            return;
+            return tenant;
         }
 
         if (response.Delay is { Milliseconds: > 0 } delay)
@@ -204,7 +261,7 @@ public static class MockServingEndpoints
         if (response.Fault is { } fault)
         {
             await EmitFaultAsync(context, fault);
-            return;
+            return tenant;
         }
 
         // Proxy directive (G12d): forward the matched request to the upstream over HTTP and stream its
@@ -230,7 +287,7 @@ public static class MockServingEndpoints
                 context.Response.ContentType = "text/plain; charset=utf-8";
                 await context.Response.WriteAsync(failure.Message, context.RequestAborted);
             }
-            return;
+            return tenant;
         }
 
         context.Response.StatusCode = response.Status;
@@ -257,6 +314,7 @@ public static class MockServingEndpoints
         }
 
         await context.Response.Body.WriteAsync(body);
+        return tenant;
     }
 
     // Writes a proxied/recorded upstream response back to the caller verbatim: status, the upstream's
