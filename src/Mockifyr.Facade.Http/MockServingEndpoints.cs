@@ -74,8 +74,14 @@ public static class MockServingEndpoints
 
             // Fixed-window quota (race-free; ADR 0011 addendum) with honest rate headers; the
             // refusal is a realistic 429 with Retry-After.
-            var decision = context.RequestServices.GetRequiredService<FixedWindowRateLimiter>()
-                .Count(key.Id, key.QuotaPerHour);
+            // Every window the key is subject to (#354): its own hourly quota and any host-wide burst
+            // ceiling, counted through a shared counter so two replicas enforce the sum rather than
+            // twice the number the key says.
+            var decision = RateLimits.Count(
+                key.Id,
+                RateLimits.For(key.QuotaPerHour, context.RequestServices.GetService<RateWindow>()),
+                context.RequestServices.GetRequiredService<IRateCounter>(),
+                DateTimeOffset.UtcNow);
             if (decision.Limit > 0)
             {
                 context.Response.Headers["X-RateLimit-Limit"] = decision.Limit.ToString();

@@ -246,7 +246,11 @@ public sealed class G19dSandboxAccessTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
         var entry = doc.RootElement.GetProperty("keys").EnumerateArray()
             .Single(k => k.GetProperty("name").GetString() == "limited");
-        Assert.Equal(40, entry.GetProperty("usedThisHour").GetInt32());
+        // 62 attempts were made against a limit of 40, and the counter reports attempts rather than
+        // stopping at the limit (#354). A number that stops at the limit cannot distinguish a partner
+        // who fitted inside their quota from one hammering a closed door — and the second is the case
+        // an operator is looking for.
+        Assert.Equal(62, entry.GetProperty("usedThisHour").GetInt32());
     }
 
     [Fact]

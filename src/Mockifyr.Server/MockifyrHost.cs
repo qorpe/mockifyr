@@ -578,6 +578,28 @@ public static class MockifyrHost
             builder.Services.AddSingleton(bodyLimits);
         }
 
+        // A burst ceiling beside the per-key hourly quota (#354): --rate-burst <requests>/<seconds>.
+        // Host-level because it protects the host rather than a consumer's budget — making every key
+        // restate it would leave the one key nobody updated as the way in.
+        if (builder.Configuration["rate-burst"] is { Length: > 0 } burst)
+        {
+            var parts = burst.Split('/', 2);
+            if (parts.Length == 2
+                && int.TryParse(parts[0], out var burstLimit) && burstLimit > 0
+                && int.TryParse(parts[1], out var burstSeconds) && burstSeconds > 0)
+            {
+                builder.Services.AddSingleton(new RateWindow(TimeSpan.FromSeconds(burstSeconds), burstLimit));
+                Console.WriteLine($"mockifyr: a burst ceiling of {burstLimit} requests per {burstSeconds}s "
+                    + "applies to every sandbox key, including one with no hourly quota.");
+            }
+            else
+            {
+                // Off with a message rather than half on: a misread ceiling silently enforcing the
+                // wrong number is worse than none, and the operator asked for something.
+                Console.WriteLine($"mockifyr: --rate-burst '{burst}' is not <requests>/<seconds> — no burst ceiling is in force.");
+            }
+        }
+
         // Sandbox access (G19d, ADR 0011): --sandbox-auth turns on key-based tenant resolution
         // ahead of the host/header chain. Off by default — zero behavior change without the flag.
         if (builder.Configuration.GetValue<bool>("sandbox-auth"))
@@ -705,7 +727,8 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IResourcePersistence>(sp =>
                 new PostgresResourcePersistence(postgres, sp.GetRequiredService<ChangeFeedIdentity>()));
             builder.Services.AddSingleton<IResourcesLoader>(new PostgresResourcesLoader(postgres));
-            builder.Services.AddSingleton<IApiKeyPersistence>(new PostgresApiKeyPersistence(postgres));
+            builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
+                new PostgresApiKeyPersistence(postgres, sp.GetRequiredService<ChangeFeedIdentity>()));
 
             // Change-feed reload (G16f): opt-in multi-instance coherence via Postgres LISTEN/NOTIFY —
             // the same seam as Redis (G16e). Each host listens for change announcements and reconciles
@@ -795,6 +818,13 @@ public static class MockifyrHost
         {
             builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(
                 _ => StackExchange.Redis.ConnectionMultiplexer.Connect(redis));
+
+            // The quota counter moves to Redis with the rest of the shared state (#354). Registered on
+            // top of the in-process default, so it wins resolution: behind two replicas the number in
+            // a key's configuration is the number the partner gets, not that number per pod.
+            builder.Services.AddSingleton<IRateCounter>(sp =>
+                new RedisRateCounter(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+            Console.WriteLine("mockifyr: sandbox quotas are counted in Redis — replicas share one budget.");
             builder.Services.AddSingleton<IStubPersistence>(sp =>
                 new RedisStubPersistence(
                     sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(),
@@ -814,7 +844,9 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IResourcesLoader>(sp =>
                 new RedisResourcesLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
             builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
-                new RedisApiKeyPersistence(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
+                new RedisApiKeyPersistence(
+                    sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ChangeFeedIdentity>()));
 
             // Change-feed reload (G16e): opt-in multi-instance coherence. Each host subscribes to Redis
             // change announcements and reloads its in-memory state — stubs, environment keys and sandbox
@@ -823,6 +855,16 @@ public static class MockifyrHost
             if (builder.Configuration.GetValue<bool>("change-feed"))
             {
                 builder.Services.AddHostedService<RedisChangeFeedReloader>();
+            }
+            else if (builder.Configuration.GetValue<bool>("sandbox-auth"))
+            {
+                // Quotas are shared the moment Redis is configured, but a key still only reaches the
+                // other replicas over the change feed (#354). Without it, a partner gets intermittent
+                // 401s from whichever pod has not restarted since the key was issued, and a revoked
+                // key keeps working there — worth one line at startup rather than a support ticket.
+                Console.WriteLine(
+                    "mockifyr: sandbox keys are shared through Redis but --change-feed is off — another "
+                    + "replica will not see an issued or revoked key until it restarts.");
             }
         }
 
