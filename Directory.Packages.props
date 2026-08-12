@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- A PackageVersion here also pins a package we only get transitively, so a vulnerable version
+         pulled in by a dependency can be lifted without adding a reference nothing calls. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <ItemGroup>
@@ -66,6 +69,13 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- Differential harness: runs the real Java WireMock oracle in a container. -->
     <PackageVersion Include="Testcontainers" Version="4.13.0" />
+    <!-- Transitive pin, not a reference: Testcontainers 4.13.0 pulls SSH.NET 2025.1.0, which carries
+         GHSA-q939-rpr3-3284 (an SCP recursive download can write outside the target directory when the
+         server chooses the filenames). Nothing here uses SCP and the package never ships — it reaches
+         only the test harness — but the CI advisory gate is right to refuse it, and waiting for
+         Testcontainers to move would leave every PR red. Remove this line once Testcontainers pulls
+         2026.0.0 or later itself. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <!-- In-memory test host for the admin HTTP facade differential (G7b). -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
     <!-- Real PostgreSQL container for the persistence differential (G16c). -->
