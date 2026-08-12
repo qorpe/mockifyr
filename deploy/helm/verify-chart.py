@@ -6,6 +6,8 @@ makes ("runs unprivileged", "credentials never appear in args", "an Ingress requ
 are exactly the kind of thing that silently regresses in a template edit. This runs in CI next to
 `helm lint`, so a values or template change that weakens a default fails the build.
 """
+import pathlib
+import re
 import subprocess
 import sys
 
@@ -33,6 +35,15 @@ def main() -> int:
         return 1
 
     manifest = default.stdout
+
+    # values.yaml defaults the image tag to .Chart.AppVersion, so an appVersion left behind is not a
+    # cosmetic staleness — it is the chart installing an image nobody meant to install. It drifted from
+    # 0.22.0 to a 1.x product precisely because nothing checked it.
+    built = re.search(r"<Version>([^<]+)</Version>", pathlib.Path("Directory.Build.props").read_text())
+    declared = re.search(r'appVersion:\s*"([^"]+)"', pathlib.Path(f"{CHART}/Chart.yaml").read_text())
+    check(
+        f"chart appVersion matches the built version ({built and built.group(1)})",
+        built is not None and declared is not None and built.group(1) == declared.group(1))
 
     # Probes must use the endpoints that stay reachable without credentials (#242) — a probe cannot
     # authenticate, and a 401 liveness check restart-loops the pod.

@@ -10,6 +10,67 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Released
 
+### [v1.17.0](https://github.com/qorpe/mockifyr/releases/tag/v1.17.0) — 2026-08-12
+
+The sandbox becomes something you can hand to somebody outside your team. Everything here is
+**off by default**; a host that configures none of it behaves exactly as 1.16 did.
+
+#### Fixed
+
+- **A nested specification leaked every customer's data to every other customer.** Importing a spec
+  containing `/customers/{customerId}/orders` produced a flat global `orders` collection with nothing
+  recording who owned a document — so each modelled customer's order list showed all of them, an order
+  could be created under a customer who did not exist, and deleting a customer left its orders behind.
+  Collections now carry **relations**, derived from the path shape at import so nothing has to be
+  written by hand. `onDelete` defaults to `restrict`, because deleting a customer at a payment provider
+  does not delete their charges. ([#350](https://github.com/qorpe/mockifyr/issues/350), ADR 0015)
+- **A created resource's `Location` header carried a literal `{customerId}`** for nested collections —
+  present since the OpenAPI importer shipped, and invisible until a nested spec was served.
+
+#### Added
+
+- **`--partner-credential`** — a credential you can hand out: the tenant scoping of
+  `--tenant-credential` plus a refusal on every way this host acts on the network. Not only the three
+  outbound admin routes: a stub declaring `proxyBaseUrl` or a post-serve action is refused too, since
+  blocking routes alone would be a control that looks like it holds and does not.
+  ([#346](https://github.com/qorpe/mockifyr/issues/346))
+- **`/__sandbox/*`** — the surface a partner can hold with the `mfk_` key they already have: their
+  journal, inbox (including OTP extraction), resources and environment keys, plus the between-runs
+  reset. A separate namespace, because `/__admin` is bound to ignore sandbox keys entirely and that
+  rule stays literally true. There is no tenant header here at all.
+  ([#347](https://github.com/qorpe/mockifyr/issues/347))
+- **Secret environment values** — withheld from the admin API, the dashboard and export bundles, and
+  still resolved when a stub is served. A redacted read handed back on save means *unchanged*, so
+  opening the screen and pressing save cannot destroy a credential.
+  ([#348](https://github.com/qorpe/mockifyr/issues/348))
+- **Edge hardening for a host on the open internet**: `--allow-outbound-host` (checked against the
+  URL a webhook *resolves to*, not the template), `--max-request-body-bytes` with a per-tenant value
+  clamped beneath it and a 413 naming which limit was hit, and `--allow-origin` for browser
+  applications — with the admin API deliberately left same-origin.
+  ([#349](https://github.com/qorpe/mockifyr/issues/349))
+- **Filtering, sorting and field selection on a collection** — `?status=settled&_sort=-total&_fields=id,total`,
+  using the matcher words the mapping dialect already has rather than a second vocabulary, on both the
+  admin listing and the served `list`. `total` counts matches.
+  ([#353](https://github.com/qorpe/mockifyr/issues/353))
+- **Named datasets** — a scenario across collections, declared once and loaded or reset in one call,
+  with Faker reachable from a seed and a fixed seed making the data reproducible. Loading orders
+  parents first, unloading reverses it, and a load that fails leaves nothing behind.
+  ([#351](https://github.com/qorpe/mockifyr/issues/351))
+- **Relations on the Resources screen** — what a collection belongs to, shown beside its documents,
+  with `onDelete` spelled out as what it does.
+
+- **The Helm chart was installing a pre-1.0 image.** `values.yaml` defaults the image tag to
+  `.Chart.AppVersion`, which had stayed at `0.22.0` since the chart shipped — so a default install
+  pulled a version from before 1.0. It now tracks the built version, and `verify-chart.py` fails the
+  build if the two ever drift again, which is why it drifted in the first place.
+
+#### Notes
+
+- `--block-outbound-routes` on an *authenticated* host did nothing and said nothing. The behaviour is
+  unchanged — it is scoped to the unauthenticated case by design — but it now says so at startup and
+  names what actually scopes a credential.
+
+
 ### [v1.16.0](https://github.com/qorpe/mockifyr/releases/tag/v1.16.0) — 2026-08-10
 
 #### Changed

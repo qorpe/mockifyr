@@ -417,4 +417,10 @@ transaction, since integrity can only be checked against documents that exist. S
 scope rather than Bogus's process-wide static, so a load cannot make concurrently served responses
 deterministic.
 
-Builds clean (0 warnings); 1122 tests green across the four suites.
+Released as **v1.17.0 (2026-08-12)**: the sandbox becomes something you can hand to somebody outside
+your team, with everything off by default. Preparing it found that the Helm chart had been installing a
+pre-1.0 image all along — `values.yaml` defaults the tag to `.Chart.AppVersion`, which had not moved
+since the chart shipped — so `verify-chart.py` now fails the build when the two drift, the check having
+been the thing that was missing rather than the value.
+
+Builds clean (0 warnings); 1479 tests green across the four suites.
