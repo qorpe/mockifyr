@@ -40,7 +40,11 @@ public static class AdminAuditMiddleware
 
         // Resolved before the handler runs: a handler is free to rewrite the request, and the tenant
         // header is what the caller actually addressed.
-        var principal = principals.Resolve(context.Request.Headers.Authorization.ToString());
+        // Reuses the label the host already resolved for this request (#355) so the trail and a
+        // revocation record cannot name two different actors for one decision.
+        var principal = context.Items.TryGetValue("mockifyr.principal", out var resolved) && resolved is string named
+            ? named
+            : principals.Resolve(context.Request.Headers.Authorization.ToString());
         var tenant = context.Request.Headers.TryGetValue(tenantHeader, out var header) && !string.IsNullOrEmpty(header)
             ? new TenantId(header.ToString())
             : TenantId.Default;

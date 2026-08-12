@@ -1013,20 +1013,35 @@ public static class MockifyrHost
         // cross-tenant attempt (403) is exactly the event a reviewer wants, and it is recorded with the
         // principal that made it. Unauthenticated attempts are skipped inside the middleware — they
         // have no principal, and auditing them would let anyone evict the bounded trail.
+        // Resolved whether or not the trail is on (#355): a revocation records who decided, and that
+        // record is not an audit feature — it is part of the key. Tying the name to --audit would mean
+        // an authenticated operator on a host without the flag is written down as "unknown", which is
+        // false rather than merely missing.
+        var adminPrincipals = new AuditPrincipalResolver(
+            adminAuthenticated
+                ? "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"))
+                : null,
+            tenantCredentials,
+            oidcValidator);
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/__admin"))
+            {
+                context.Items["mockifyr.principal"] =
+                    adminPrincipals.Resolve(context.Request.Headers.Authorization.ToString());
+            }
+
+            await next();
+        });
+
         if (auditEnabled)
         {
             Console.WriteLine("mockifyr: --audit is on — admin changes are recorded at /__admin/audit "
                 + "and emitted as admin.audit log lines.");
             var auditLog = app.Services.GetRequiredService<IAuditLog>();
             var auditLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Mockifyr.Audit");
-            var principals = new AuditPrincipalResolver(
-                adminAuthenticated
-                    ? "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{adminUser}:{adminPass}"))
-                    : null,
-                tenantCredentials,
-                oidcValidator);
             app.Use((context, next) => AdminAuditMiddleware.InvokeAsync(
-                context, _ => next(), auditLog, principals, auditLogger, TenantCredentialHeader));
+                context, _ => next(), auditLog, adminPrincipals, auditLogger, TenantCredentialHeader));
         }
 
         if (!tenantCredentials.IsEmpty)

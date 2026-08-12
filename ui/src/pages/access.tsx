@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from 'lucide-react'
+import { Check, Copy, KeyRound, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { fetchApiKeys, issueApiKey, revokeApiKey } from '@/lib/api'
+import { fetchApiKeys, issueApiKey, revokeApiKey, rotateApiKey } from '@/lib/api'
+import type { ApiKeyEntry } from '@/lib/api'
 import { useUi } from '@/components/providers'
 import { Button } from '@qorpe/ui'
 import { Input, Label } from '@/components/ui/field'
@@ -32,14 +33,27 @@ export function AccessPage() {
   const [minted, setMinted] = useState<string | null>(null) // the one-time token
   const [copied, setCopied] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null)
-  useEffect(() => { setIssuing(false); setMinted(null); setConfirmRevoke(null) }, [tenant])
+  const [revokeReason, setRevokeReason] = useState('')
+  const [expiresInDays, setExpiresInDays] = useState('')
+  const [readOnly, setReadOnly] = useState(false)
+  const [rotating, setRotating] = useState<string | null>(null)
+  const [overlap, setOverlap] = useState('60')
+  useEffect(() => {
+    setIssuing(false); setMinted(null); setConfirmRevoke(null); setRotating(null)
+  }, [tenant])
 
   const trimmedName = name.trim()
   const quotaNumber = quota.trim() === '' ? null : Number(quota)
   const quotaInvalid = quotaNumber !== null && (!Number.isInteger(quotaNumber) || quotaNumber <= 0)
 
+  const expiryDays = expiresInDays.trim() === '' ? null : Number(expiresInDays)
+  const expiryInvalid = expiryDays !== null && (!Number.isInteger(expiryDays) || expiryDays <= 0)
+
   const issue = useMutation({
-    mutationFn: () => issueApiKey(tenant, trimmedName, quotaNumber),
+    mutationFn: () => issueApiKey(tenant, trimmedName, quotaNumber, {
+      expiresInDays: expiryDays,
+      scope: readOnly ? 'read' : 'readwrite',
+    }),
     onSuccess: (result) => {
       setIssuing(false)
       setMinted(result.key)
@@ -50,8 +64,16 @@ export function AccessPage() {
   })
 
   const revoke = useMutation({
-    mutationFn: (id: string) => revokeApiKey(tenant, id),
-    onSuccess: () => { toast.success(t('access.revoked')); void invalidate() },
+    mutationFn: (id: string) => revokeApiKey(tenant, id, revokeReason.trim() || undefined),
+    onSuccess: () => { toast.success(t('access.revoked')); setRevokeReason(''); void invalidate() },
+    onError: (error: Error) => toast.error(error.message),
+  })
+
+  // Rotation reveals its successor through the same one-time dialog as issuance: the token exists
+  // exactly once either way, and two reveal paths would be two chances to leak it.
+  const rotate = useMutation({
+    mutationFn: (id: string) => rotateApiKey(tenant, id, Number(overlap) || 0),
+    onSuccess: (result) => { setRotating(null); setMinted(result.key); setCopied(false); void invalidate() },
     onError: (error: Error) => toast.error(error.message),
   })
 
@@ -84,26 +106,42 @@ export function AccessPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                {[t('access.key'), t('access.name'), t('access.created'), t('access.quota'), t('access.usedThisHour'), ''].map((h, i) => (
+                {[t('access.key'), t('access.name'), t('access.status'), t('access.expires'), t('access.quota'), t('access.usedThisHour'), ''].map((h, i) => (
                   <th key={i} className="border-b border-border bg-muted/40 px-4 py-2.5 text-start text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {keys.map((key) => (
-                <tr key={key.id} className="border-b border-border last:border-b-0">
+                <tr key={key.id} className={cn('border-b border-border last:border-b-0', key.status !== 'active' && 'opacity-60')}>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[12.5px] font-medium">{key.prefix}…</td>
-                  <td className="max-w-0 px-4 py-3"><span className="block truncate text-sm">{key.name}</span></td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-muted-foreground">{new Date(key.createdAt).toLocaleString()}</td>
+                  <td className="max-w-0 px-4 py-3">
+                    <span className="block truncate text-sm">{key.name}</span>
+                    {key.scope === 'read' && (
+                      <span className="mt-0.5 inline-block whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {t('access.readOnly')}
+                      </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3"><StatusCell entry={key} /></td>
+                  <td className="whitespace-nowrap px-4 py-3"><ExpiryCell entry={key} /></td>
                   <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-muted-foreground">
                     {key.quotaPerHour === null ? t('access.unlimited') : t('access.perHour', { count: key.quotaPerHour })}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <UsageCell used={key.usedThisHour} quota={key.quotaPerHour} />
                   </td>
-                  <td className="w-14 px-4 py-3">
-                    <div className="flex justify-end">
-                      <Button variant="ghost" size="iconSm" aria-label={t('access.revoke')} onClick={() => setConfirmRevoke(key.id)}><Trash2 /></Button>
+                  <td className="w-24 px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      {key.status === 'active' && (
+                        <Button
+                          variant="ghost" size="iconSm" aria-label={t('access.rotate')}
+                          onClick={() => { setOverlap('60'); setRotating(key.id) }}
+                        ><RefreshCw /></Button>
+                      )}
+                      {key.status !== 'revoked' && (
+                        <Button variant="ghost" size="iconSm" aria-label={t('access.revoke')} onClick={() => { setRevokeReason(''); setConfirmRevoke(key.id) }}><Trash2 /></Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -130,7 +168,7 @@ export function AccessPage() {
         open={issuing} onOpenChange={setIssuing}
         title={t('access.issue')} body={t('access.issueHint')}
         confirmLabel={t('access.issue')} cancelLabel={t('editor.cancel')}
-        onConfirm={() => { if (trimmedName && !quotaInvalid && !issue.isPending) issue.mutate() }}
+        onConfirm={() => { if (trimmedName && !quotaInvalid && !expiryInvalid && !issue.isPending) issue.mutate() }}
       >
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div>
@@ -141,8 +179,20 @@ export function AccessPage() {
             <Label>{t('access.quota')}</Label>
             <Input value={quota} onChange={(e) => setQuota(e.target.value)} placeholder={t('access.unlimited')} inputMode="numeric" className="font-mono" />
           </div>
+          <div>
+            <Label>{t('access.expiresInDays')}</Label>
+            <Input value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} placeholder={t('access.never')} inputMode="numeric" className="font-mono" />
+          </div>
+          <div>
+            <Label>{t('access.scope')}</Label>
+            <label className="mt-1.5 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} />
+              <span>{t('access.readOnlyHint')}</span>
+            </label>
+          </div>
         </div>
         {quotaInvalid && <p className="mt-2 text-xs text-danger">{t('access.invalidQuota')}</p>}
+        {expiryInvalid && <p className="mt-2 text-xs text-danger">{t('access.invalidExpiry')}</p>}
       </ConfirmDialog>
 
       {/* One-time token reveal — deliberately hard to dismiss by accident (no outside-click worry:
@@ -177,8 +227,66 @@ export function AccessPage() {
         title={t('access.revokeTitle')} body={t('access.revokeBody')}
         confirmLabel={t('access.revoke')} cancelLabel={t('editor.cancel')}
         onConfirm={() => { if (confirmRevoke) { revoke.mutate(confirmRevoke); setConfirmRevoke(null) } }}
-      />
+      >
+        <div className="mt-3">
+          <Label>{t('access.reason')}</Label>
+          <Input value={revokeReason} onChange={(e) => setRevokeReason(e.target.value)} placeholder={t('access.reasonHint')} />
+        </div>
+      </ConfirmDialog>
+
+      {/* Rotation: issue the successor, let the old key lapse. The overlap is the whole reason this
+          is a separate gesture from revoke — zero means "the credential is already out there". */}
+      <ConfirmDialog
+        open={rotating !== null} onOpenChange={(o) => { if (!o) setRotating(null) }}
+        title={t('access.rotateTitle')} body={t('access.rotateBody')}
+        confirmLabel={t('access.rotate')} cancelLabel={t('editor.cancel')}
+        onConfirm={() => { if (rotating && !rotate.isPending) rotate.mutate(rotating) }}
+      >
+        <div className="mt-3">
+          <Label>{t('access.overlapMinutes')}</Label>
+          <Input value={overlap} onChange={(e) => setOverlap(e.target.value)} inputMode="numeric" className="font-mono" />
+          <p className="mt-1.5 text-xs text-muted-foreground">{t('access.overlapHint')}</p>
+        </div>
+      </ConfirmDialog>
     </div>
+  )
+}
+
+/** Active / expired / revoked, as the host computed it — never recomputed here. */
+function StatusCell({ entry }: { entry: ApiKeyEntry }) {
+  const { t } = useTranslation()
+  const tone = entry.status === 'active' ? 'bg-success/10 text-success'
+    : entry.status === 'expired' ? 'bg-warning-bg text-warning'
+    : 'bg-danger/10 text-danger'
+  return (
+    <span className={cn('inline-block rounded px-2 py-0.5 text-[11px] font-medium', tone)}
+      title={entry.revokedBy ? `${entry.revokedBy}${entry.revokedReason ? ` — ${entry.revokedReason}` : ''}` : undefined}>
+      {t(`access.status_${entry.status}`)}
+    </span>
+  )
+}
+
+/**
+ * When the key dies, and — while it is still alive — how soon. A key that dies unannounced is an
+ * incident on a Sunday, so the warning appears a week before rather than after.
+ */
+function ExpiryCell({ entry }: { entry: ApiKeyEntry }) {
+  const { t } = useTranslation()
+  if (entry.expiresAt === null) return <span className="text-xs text-muted-foreground">{t('access.never')}</span>
+
+  // Rounded to the unit that means something: a rotation overlap is measured in minutes, and
+  // "in 1 d" for a key that dies in an hour is worse than no number at all.
+  const remaining = new Date(entry.expiresAt).getTime() - Date.now()
+  const hours = remaining / 3_600_000
+  const label = hours >= 48 ? t('access.inDays', { count: Math.ceil(hours / 24) })
+    : hours >= 1 ? t('access.inHours', { count: Math.floor(hours) })
+    : t('access.inMinutes', { count: Math.max(0, Math.floor(remaining / 60_000)) })
+  const soon = entry.status === 'active' && hours <= 7 * 24
+  return (
+    <span className={cn('text-xs tabular-nums', soon ? 'font-medium text-warning' : 'text-muted-foreground')}
+      title={new Date(entry.expiresAt).toLocaleString()}>
+      {entry.status === 'expired' ? t('access.expired') : label}
+    </span>
   )
 }
 

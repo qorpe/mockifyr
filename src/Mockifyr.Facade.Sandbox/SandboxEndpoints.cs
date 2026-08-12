@@ -62,7 +62,7 @@ public static class SandboxEndpoints
 
         sandbox.MapGet("/requests", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var unmatchedOnly = context.Request.Query.TryGetValue("unmatched", out var u) && u == "true";
             var result = await sender.Send(new GetServeEventsQuery(tenant, unmatchedOnly));
             return Results.Json(new
@@ -81,7 +81,7 @@ public static class SandboxEndpoints
 
         sandbox.MapGet("/messages", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var query = context.Request.Query;
             var result = await sender.Send(new GetMessagesQuery(
                 tenant,
@@ -98,7 +98,7 @@ public static class SandboxEndpoints
         // rather than list-then-parse, which is what every integrator would otherwise write.
         sandbox.MapGet("/messages/otp", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var query = context.Request.Query;
             var result = await sender.Send(new ExtractOtpQuery(
                 tenant,
@@ -114,14 +114,14 @@ public static class SandboxEndpoints
 
         sandbox.MapGet("/resources", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var result = await sender.Send(new GetResourceCollectionsQuery(tenant));
             return Results.Json(new { collections = result.Value.Select(c => new { name = c.Name, count = c.Count }) });
         });
 
         sandbox.MapGet("/resources/{collection}", async (string collection, HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var query = context.Request.Query;
             var result = await sender.Send(new ListResourcesQuery(
                 collection,
@@ -136,7 +136,7 @@ public static class SandboxEndpoints
 
         sandbox.MapGet("/resources/{collection}/{id}", async (string collection, string id, HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var result = await sender.Send(new GetResourceQuery(collection, id, tenant));
             return result.IsSuccess ? Results.Json(ResourceJson(result.Value)) : Failure(result.Error);
         });
@@ -145,7 +145,7 @@ public static class SandboxEndpoints
         // sandbox currently points at; they have no business with the signing key it holds.
         sandbox.MapGet("/environments", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var result = await sender.Send(new GetEnvironmentsQuery(tenant));
             return Results.Json(new
             {
@@ -163,28 +163,28 @@ public static class SandboxEndpoints
 
         sandbox.MapPost("/resources/reset", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             await sender.Send(new ResetResourcesCommand(Collection: null, tenant));
             return Results.Ok();
         });
 
         sandbox.MapPost("/resources/{collection}/reset", async (string collection, HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             var result = await sender.Send(new ResetResourcesCommand(collection, tenant));
             return result.IsSuccess ? Results.Ok() : Failure(result.Error);
         });
 
         sandbox.MapPost("/messages/reset", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             await sender.Send(new ResetMessagesCommand(tenant));
             return Results.Ok();
         });
 
         sandbox.MapPost("/requests/reset", async (HttpContext context, ISender sender) =>
         {
-            if (Tenant(context) is not { } tenant) return Unauthorized();
+            if (Tenant(context) is not { } tenant) return Refused(context);
             await sender.Send(new ResetRequestsCommand(tenant));
             return Results.Ok();
         });
@@ -209,8 +209,43 @@ public static class SandboxEndpoints
 
         var keys = context.RequestServices.GetRequiredService<IApiKeyStore>();
         var key = keys.GetAll().FirstOrDefault(k => ApiKeyMaterial.Verify(presented, k.Salt, k.Hash));
-        return key is null ? null : key.Tenant;
+        if (key is null)
+        {
+            return null;
+        }
+
+        // The lifecycle refusals (#355) name themselves. A partner whose key expired and a partner
+        // holding a typo both get 401 today, and they need to do completely different things about it —
+        // the first has proved possession of a real credential, so telling them why costs nothing.
+        var status = key.StatusAt(DateTimeOffset.UtcNow);
+        if (status is not ApiKeyStatus.Active)
+        {
+            context.Items[RefusalKey] = status == ApiKeyStatus.Expired
+                ? Results.Json(
+                    new { error = "Sandbox.KeyExpired", message = "This sandbox key has expired — ask for a new one." },
+                    statusCode: StatusCodes.Status401Unauthorized)
+                : Results.Json(
+                    new { error = "Sandbox.KeyRevoked", message = "This sandbox key has been revoked." },
+                    statusCode: StatusCodes.Status401Unauthorized);
+            return null;
+        }
+
+        // Read-only is a 403, not a 401: the credential is fine, the operation is not, and answering
+        // 401 would send an integrator to re-check a key that has nothing wrong with it.
+        if (key.Scope == ApiKeyScope.ReadOnly && !IsSafe(context.Request.Method))
+        {
+            context.Items[RefusalKey] = Results.Json(
+                new { error = "Sandbox.ReadOnly", message = "This sandbox key may only read." },
+                statusCode: StatusCodes.Status403Forbidden);
+            return null;
+        }
+
+        return key.Tenant;
     }
+
+    /// <summary>Safe methods, in the HTTP sense: they are the ones a read-only key may use.</summary>
+    private static bool IsSafe(string method) =>
+        HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
 
     /// <summary>The presented credential: <c>X-Api-Key</c> (any casing) or a Bearer token.</summary>
     private static string? PresentedKey(HttpContext context)
@@ -226,6 +261,18 @@ public static class SandboxEndpoints
             ? authorization["Bearer ".Length..].Trim()
             : null;
     }
+
+    /// <summary>Where a named refusal waits between resolution and the route that reports it.</summary>
+    private const string RefusalKey = "mockifyr.sandbox.refusal";
+
+    /// <summary>
+    /// The refusal for this request: the specific one resolution recorded, or the generic "present a
+    /// key" when there was nothing to be specific about.
+    /// </summary>
+    private static IResult Refused(HttpContext context) =>
+        context.Items.TryGetValue(RefusalKey, out var refusal) && refusal is IResult named
+            ? named
+            : Unauthorized();
 
     private static IResult Unauthorized() => Results.Json(
         new

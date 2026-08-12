@@ -210,14 +210,37 @@ public sealed record IssuedApiKey(ApiKey Key, string Token);
 /// <summary>A key with its current-window usage, for the admin listing.</summary>
 public sealed record ApiKeyWithUsage(ApiKey Key, int Used);
 
-/// <summary>Issues a key for the tenant (optionally quota-limited per hour).</summary>
-public sealed record IssueApiKeyCommand(string Name, int? QuotaPerHour, TenantId Tenant) : ICommand<Result<IssuedApiKey>>;
+/// <summary>Issues a key for the tenant (optionally quota-limited per hour, expiring, or read-only).</summary>
+public sealed record IssueApiKeyCommand(
+    string Name,
+    int? QuotaPerHour,
+    TenantId Tenant,
+    DateTimeOffset? ExpiresAt = null,
+    ApiKeyScope Scope = ApiKeyScope.ReadWrite) : ICommand<Result<IssuedApiKey>>;
 
 /// <summary>Lists the tenant's keys (hashes never leave the handler — prefixes only).</summary>
 public sealed record GetApiKeysQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<ApiKeyWithUsage>>>;
 
-/// <summary>Revokes one of the tenant's keys.</summary>
-public sealed record RevokeApiKeyCommand(string Id, TenantId Tenant) : ICommand<Result>;
+/// <summary>
+/// Revokes one of the tenant's keys, recording who decided and why (#355). The key stays listed,
+/// marked revoked — deleting it would erase the only record that the decision was ever made.
+/// </summary>
+public sealed record RevokeApiKeyCommand(
+    string Id, TenantId Tenant, string By = "unknown", string? Reason = null) : ICommand<Result>;
+
+/// <summary>
+/// Issues a successor to a key and puts the predecessor on a clock (#355).
+/// </summary>
+/// <remarks>
+/// Rotation without overlap is an outage: the old credential stops the instant the new one starts, so
+/// a partner cannot deploy the new one first — and a rotation that causes an outage does not happen.
+/// The predecessor expires after <paramref name="OverlapMinutes"/> instead, so the sequence is issue,
+/// deploy, and let it lapse. An overlap of zero revokes it immediately, for the case rotation is a
+/// response to a leak.
+/// </remarks>
+public sealed record RotateApiKeyCommand(
+    string Id, TenantId Tenant, int OverlapMinutes, string By = "unknown")
+    : ICommand<Result<IssuedApiKey>>;
 
 // Admin audit trail (#247): read-only from the management API — entries are appended by the host's
 // audit middleware, never by an API caller, so a trail cannot be edited through the surface it audits.

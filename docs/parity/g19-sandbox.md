@@ -667,3 +667,66 @@ passes every single-host test perfectly and is wrong in exactly the deployment t
 **Stryker: 98.04 %** on `RateLimits.cs`. The one survivor is equivalent — `<=` versus `<` when
 collapsing two windows of equal length whose limits are also equal, where both branches produce a
 `RateWindow` record with the same duration and limit, so no observation can tell them apart.
+
+
+## The life of a key (#355)
+
+**What the model was missing.** The cryptography around a sandbox key was right from G19d — `mfk_`
+prefix, salted SHA-256, constant-time verification, one-time reveal, resolution ahead of the tenant
+header. What was missing was everything about a key's *life*: no expiry, so a key issued for a
+two-week pilot outlived the pilot forever; no revocation, only deletion, so the trail could show a key
+being used and then not without ever showing the decision; no rotation overlap, so rotating was an
+outage and therefore did not happen; and no scopes, so a partner's monitoring key could write.
+
+**Three optional fields, defaulting to what a pre-#355 key meant.** `ExpiresAt` (null), `Revocation`
+(null) and `Scope` (read-write) — so a row written by an older host reads back as exactly the key it
+was, on all four providers, because one JSON shape serves all four (the G17 pattern). The claim is
+tested against the literal old shape rather than against a record this version wrote.
+
+**The refusal names itself.** An expired key and a mistyped token both answered a bare 401, and the
+two send an integrator to completely different places — one re-reads their configuration, the other
+asks for a new credential. Expired and revoked keys now say which they are; an **unknown token still
+learns nothing**, because anything more would answer whether a guess was a real key.
+
+**Revocation is a state, not a delete.** The key stays listed with who ended it and why. Deleting it
+would erase the only record that the decision was ever made, and "when did we turn this off, and who
+decided?" is the first question after an incident. Revoking twice keeps the first decision — the
+second must not rewrite the pair the record exists to hold.
+
+**Who revoked it does not depend on `--audit`.** Resolving the principal used to live inside the audit
+middleware, so on a host with credentials but no trail an authenticated operator would have been
+written down as `unknown` — false rather than merely missing. The label is resolved once per admin
+request and both the trail and the revocation record read it, so they cannot name two different actors
+for one decision.
+
+**Rotation is issue, deploy, lapse.** `POST /__admin/apikeys/{id}/rotate?overlapMinutes=60` issues a
+successor and puts the predecessor on a clock. Without the overlap, rotating means the old credential
+stops the instant the new one starts, a partner cannot deploy first, and a rotation that causes an
+outage does not get done. An overlap of **zero** revokes immediately, which is the right answer when
+rotation is the response to a leak. The successor inherits quota, scope and any expiry — a rotation
+changes the secret and nothing else a partner was told about their access — and the overlap **never
+extends** a key already expiring sooner, or rotating would quietly resurrect it.
+
+**Scope is the method, not the effect.** A read-only key may use GET/HEAD/OPTIONS and is refused
+anything else with **403** — not 401, because the credential is fine and the operation is not, and a
+401 would send an integrator to re-check a key with nothing wrong with it. A stub whose GET mutates
+sandbox state through the `state` directive is *not* stopped by this. That is stated rather than
+hidden: an effect-based rule would have to read a response template to answer whether a request is
+allowed, which is not a rule anybody can hold in their head.
+
+**Expiry does not follow the tenant clock (#290).** That clock is one API call away, and an expiry an
+API call can undo is not an expiry. The consequence is that the only honest way to watch a key lapse
+is to let it, so the wire test waits two real seconds.
+
+**Found by driving the dashboard.** The expiry column rounded to days, so a 60-minute rotation overlap
+displayed as "in 1 d" — a number worse than none for the exact case the column exists to serve. It now
+reports minutes, hours or days, whichever the remaining time actually is, and warns in colour for a
+week beforehand: a key that dies unannounced is an incident on a Sunday.
+
+**Validation.** `ApiKeyLifecycleTests` (16 unit cases: status precedence, the expiry boundary,
+idempotent revocation, tenant isolation, overlap bounds, the round trip through stored JSON, and a
+literal pre-#355 row) and `ApiKeyLifecycleWireTests` (9 wire cases including a key actually reaching
+its expiry, the read-only refusal on both the mock surface and `/__sandbox/*`, rotation with and
+without overlap, and the principal named on a host without `--audit`). **Stryker: 96.67 %** on
+`ApiKeys.cs`; the one survivor predates this work and is equivalent (`<=` versus `<` in
+`DisplayPrefix`, where a token of exactly the prefix length takes either branch to the same string).
