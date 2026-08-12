@@ -68,7 +68,38 @@ public static class MockServingEndpoints
             var key = keys.GetAll().FirstOrDefault(k => ApiKeyMaterial.Verify(presented, k.Salt, k.Hash));
             if (key is null)
             {
+                // An unknown token is told nothing: anything more would answer whether a guess was a
+                // real key.
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            // Expiry and revocation say which they are (#355). A partner who has proved possession of a
+            // real credential and one who mistyped a token both got the same bare 401, and the two need
+            // to do completely different things about it.
+            var status = key.StatusAt(DateTimeOffset.UtcNow);
+            if (status is not ApiKeyStatus.Active)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(status == ApiKeyStatus.Expired
+                    ? """{"error":"ApiKey.Expired","message":"This sandbox key has expired — ask for a new one."}"""
+                    : """{"error":"ApiKey.Revoked","message":"This sandbox key has been revoked."}""");
+                return;
+            }
+
+            // A read-only key may use safe methods only. The rule is the method, not the effect: a stub
+            // whose GET mutates state through the `state` directive is not stopped by this, and saying
+            // so is better than a rule that needs a response template read to predict.
+            if (key.Scope == ApiKeyScope.ReadOnly
+                && !(HttpMethods.IsGet(context.Request.Method)
+                    || HttpMethods.IsHead(context.Request.Method)
+                    || HttpMethods.IsOptions(context.Request.Method)))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(
+                    """{"error":"ApiKey.ReadOnly","message":"This sandbox key may only read."}""");
                 return;
             }
 

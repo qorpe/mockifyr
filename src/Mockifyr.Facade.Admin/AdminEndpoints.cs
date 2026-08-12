@@ -714,6 +714,8 @@ public static class AdminEndpoints
         {
             string? name = null;
             int? quota = null;
+            DateTimeOffset? expiresAt = null;
+            var scope = ApiKeyScope.ReadWrite;
             try
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(await ReadBody(request));
@@ -721,12 +723,36 @@ public static class AdminEndpoints
                 quota = doc.RootElement.TryGetProperty("quotaPerHour", out var q) && q.TryGetInt32(out var parsed)
                     ? parsed
                     : null;
+
+                // Two spellings on purpose (#355): an absolute date is what a policy states, and
+                // "90 days" is what a person says. Both land on the same absolute instant here, so the
+                // key itself carries no ambiguity about which clock it was issued against.
+                if (doc.RootElement.TryGetProperty("expiresAt", out var at)
+                    && at.ValueKind == System.Text.Json.JsonValueKind.String
+                    && DateTimeOffset.TryParse(at.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal, out var absolute))
+                {
+                    expiresAt = absolute;
+                }
+                else if (doc.RootElement.TryGetProperty("expiresInDays", out var days)
+                    && days.TryGetInt32(out var span) && span > 0)
+                {
+                    expiresAt = DateTimeOffset.UtcNow.AddDays(span);
+                }
+
+                if (doc.RootElement.TryGetProperty("scope", out var s) && s.GetString() is { } requested)
+                {
+                    scope = string.Equals(requested, "read", StringComparison.OrdinalIgnoreCase)
+                        ? ApiKeyScope.ReadOnly
+                        : ApiKeyScope.ReadWrite;
+                }
             }
             catch (System.Text.Json.JsonException)
             {
             }
 
-            var result = await sender.Send(new IssueApiKeyCommand(name ?? string.Empty, quota, TenantOf(request)));
+            var result = await sender.Send(
+                new IssueApiKeyCommand(name ?? string.Empty, quota, TenantOf(request), expiresAt, scope));
             return result.IsSuccess
                 ? Results.Json(new
                 {
@@ -736,13 +762,45 @@ public static class AdminEndpoints
                     name = result.Value.Key.Name,
                     quotaPerHour = result.Value.Key.QuotaPerHour,
                     createdAt = result.Value.Key.CreatedAt,
+                    expiresAt = result.Value.Key.ExpiresAt,
+                    scope = ScopeName(result.Value.Key.Scope),
+                }, statusCode: StatusCodes.Status201Created)
+                : ApiKeyFailure(result.Error);
+        });
+
+        // Rotation (#355): issue a successor and put this key on a clock, so a partner can deploy the
+        // new credential before the old one stops. ?overlapMinutes=0 revokes it at once, for a leak.
+        admin.MapPost("/apikeys/{id}/rotate", async (string id, HttpRequest request, ISender sender) =>
+        {
+            var overlap = request.Query.TryGetValue("overlapMinutes", out var raw)
+                && int.TryParse(raw.FirstOrDefault(), out var parsed)
+                    ? parsed
+                    : 60;
+
+            var result = await sender.Send(new RotateApiKeyCommand(id, TenantOf(request), overlap, PrincipalOf(request)));
+            return result.IsSuccess
+                ? Results.Json(new
+                {
+                    id = result.Value.Key.Id,
+                    key = result.Value.Token,
+                    prefix = result.Value.Key.Prefix,
+                    name = result.Value.Key.Name,
+                    quotaPerHour = result.Value.Key.QuotaPerHour,
+                    createdAt = result.Value.Key.CreatedAt,
+                    expiresAt = result.Value.Key.ExpiresAt,
+                    scope = ScopeName(result.Value.Key.Scope),
+                    rotatedFrom = id,
                 }, statusCode: StatusCodes.Status201Created)
                 : ApiKeyFailure(result.Error);
         });
 
         admin.MapDelete("/apikeys/{id}", async (string id, HttpRequest request, ISender sender) =>
         {
-            var result = await sender.Send(new RevokeApiKeyCommand(id, TenantOf(request)));
+            var reason = request.Query.TryGetValue("reason", out var given)
+                ? given.FirstOrDefault()
+                : null;
+            var result = await sender.Send(
+                new RevokeApiKeyCommand(id, TenantOf(request), PrincipalOf(request), reason));
             return result.IsSuccess ? Results.Ok() : ApiKeyFailure(result.Error);
         });
 
@@ -1615,7 +1673,34 @@ public static class AdminEndpoints
         createdAt = key.CreatedAt,
         quotaPerHour = key.QuotaPerHour,
         usedThisHour = used,
+        expiresAt = key.ExpiresAt,
+        scope = ScopeName(key.Scope),
+        // The computed status is projected as well as the raw fields: every reader would otherwise
+        // reimplement "expired means now is past expiresAt unless it is revoked", and one of them
+        // would get it wrong.
+        status = key.StatusAt(DateTimeOffset.UtcNow) switch
+        {
+            ApiKeyStatus.Revoked => "revoked",
+            ApiKeyStatus.Expired => "expired",
+            _ => "active",
+        },
+        revokedAt = key.Revocation?.At,
+        revokedBy = key.Revocation?.By,
+        revokedReason = key.Revocation?.Reason,
     };
+
+    private static string ScopeName(ApiKeyScope scope) => scope == ApiKeyScope.ReadOnly ? "read" : "readwrite";
+
+    /// <summary>
+    /// Who is making this change, for the record a revocation leaves (#355). The audit middleware
+    /// resolves it from the credential and stashes it; on a host with <c>--audit</c> off there is
+    /// nobody to name, and "unknown" says that rather than inventing an actor.
+    /// </summary>
+    private static string PrincipalOf(HttpRequest request) =>
+        request.HttpContext.Items.TryGetValue("mockifyr.principal", out var principal)
+            && principal is string named && named.Length > 0
+                ? named
+                : "unknown";
 
     private static IResult ApiKeyFailure(Mediant.Results.Error error) =>
         Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch

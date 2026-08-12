@@ -936,6 +936,13 @@ export interface ApiKeyEntry {
   createdAt: string
   quotaPerHour: number | null
   usedThisHour: number
+  /** #355 — the key's life. `status` is computed by the host so no two readers can disagree. */
+  expiresAt: string | null
+  scope: 'read' | 'readwrite'
+  status: 'active' | 'expired' | 'revoked'
+  revokedAt: string | null
+  revokedBy: string | null
+  revokedReason: string | null
 }
 
 /** Reads a typed admin error ({error, message}) off a failed response, falling back to the status. */
@@ -1061,18 +1068,43 @@ export async function fetchApiKeys(tenant: string): Promise<{ keys: ApiKeyEntry[
 }
 
 /** Issues a key. The returned `key` is the ONLY time the token exists — show it once, never store it. */
-export async function issueApiKey(tenant: string, name: string, quotaPerHour: number | null): Promise<{ key: string; prefix: string }> {
+export async function issueApiKey(
+  tenant: string,
+  name: string,
+  quotaPerHour: number | null,
+  options: { expiresInDays?: number | null; scope?: 'read' | 'readwrite' } = {},
+): Promise<{ key: string; prefix: string }> {
   const res = await adminFetch('/apikeys', tenant, {
     method: 'POST',
-    body: JSON.stringify(quotaPerHour === null ? { name } : { name, quotaPerHour }),
+    body: JSON.stringify({
+      name,
+      ...(quotaPerHour === null ? {} : { quotaPerHour }),
+      ...(options.expiresInDays ? { expiresInDays: options.expiresInDays } : {}),
+      ...(options.scope === 'read' ? { scope: 'read' } : {}),
+    }),
   })
   if (!res.ok) throw await sandboxError(res)
   return (await res.json()) as { key: string; prefix: string }
 }
 
-export async function revokeApiKey(tenant: string, id: string): Promise<void> {
-  const res = await adminFetch(`/apikeys/${encodeURIComponent(id)}`, tenant, { method: 'DELETE' })
+/** Revocation is a state, not a delete (#355): the key stays listed, carrying who ended it and why. */
+export async function revokeApiKey(tenant: string, id: string, reason?: string): Promise<void> {
+  const query = reason ? `?reason=${encodeURIComponent(reason)}` : ''
+  const res = await adminFetch(`/apikeys/${encodeURIComponent(id)}${query}`, tenant, { method: 'DELETE' })
   if (!res.ok) throw await sandboxError(res)
+}
+
+/**
+ * Issues a successor and puts this key on a clock (#355), so a partner can deploy the new credential
+ * before the old one stops. An overlap of zero revokes it at once — the response to a leak.
+ */
+export async function rotateApiKey(
+  tenant: string, id: string, overlapMinutes: number,
+): Promise<{ key: string; prefix: string }> {
+  const res = await adminFetch(
+    `/apikeys/${encodeURIComponent(id)}/rotate?overlapMinutes=${overlapMinutes}`, tenant, { method: 'POST' })
+  if (!res.ok) throw await sandboxError(res)
+  return (await res.json()) as { key: string; prefix: string }
 }
 
 /** One recorded administrative change (#247). */

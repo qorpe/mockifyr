@@ -998,10 +998,20 @@ public sealed class IssueApiKeyHandler(IApiKeyStore store, IApiKeyPersistence pe
                 "ApiKey.InvalidQuota", "A quota must be a positive number of requests per hour."));
         }
 
+        var now = DateTimeOffset.UtcNow;
+        if (command.ExpiresAt is { } expiry && expiry <= now)
+        {
+            // Refused rather than accepted-and-dead: a key that is already expired at issue would be
+            // handed to a partner and fail on their first call, and the reveal happens exactly once.
+            return ValueTask.FromResult<Result<IssuedApiKey>>(Error.Validation(
+                "ApiKey.InvalidExpiry", "An expiry must be in the future."));
+        }
+
         var (token, salt, hash) = ApiKeyMaterial.Generate();
         var key = new ApiKey(
             Guid.NewGuid().ToString("D"), command.Tenant, name, salt, hash,
-            ApiKeyMaterial.DisplayPrefix(token), DateTimeOffset.UtcNow, command.QuotaPerHour);
+            ApiKeyMaterial.DisplayPrefix(token), now, command.QuotaPerHour,
+            command.ExpiresAt, Revocation: null, command.Scope);
 
         store.Put(key);
         persistence.Save(key);
@@ -1038,10 +1048,80 @@ public sealed class RevokeApiKeyHandler(IApiKeyStore store, IApiKeyPersistence p
                 "ApiKey.NotFound", $"No API key '{command.Id}'.")));
         }
 
-        store.Remove(command.Id);
-        persistence.Remove(command.Id);
+        if (key.Revocation is not null)
+        {
+            // Idempotent, and the first decision stands: re-revoking must not rewrite who ended the
+            // key or when, which is the pair the record exists to hold.
+            return ValueTask.FromResult(Result.Success());
+        }
+
+        var revoked = key with { Revocation = new ApiKeyRevocation(DateTimeOffset.UtcNow, command.By, command.Reason) };
+        store.Put(revoked);
+        persistence.Save(revoked);
         return ValueTask.FromResult(Result.Success());
     }
+}
+
+/// <summary>
+/// Issues a successor and lapses the predecessor after an overlap (#355). Tenant-checked like every
+/// other operation on a key.
+/// </summary>
+public sealed class RotateApiKeyHandler(IApiKeyStore store, IApiKeyPersistence persistence)
+    : ICommandHandler<RotateApiKeyCommand, Result<IssuedApiKey>>
+{
+    /// <summary>
+    /// The longest overlap this will grant. An unbounded one is not an overlap, it is two live
+    /// credentials nobody is tracking.
+    /// </summary>
+    public const int MaxOverlapMinutes = 30 * 24 * 60;
+
+    public ValueTask<Result<IssuedApiKey>> Handle(RotateApiKeyCommand command, CancellationToken cancellationToken)
+    {
+        var previous = store.Get(command.Id);
+        if (previous is null || previous.Tenant != command.Tenant)
+        {
+            return ValueTask.FromResult<Result<IssuedApiKey>>(Error.NotFound(
+                "ApiKey.NotFound", $"No API key '{command.Id}'."));
+        }
+
+        if (previous.Revocation is not null)
+        {
+            return ValueTask.FromResult<Result<IssuedApiKey>>(Error.Validation(
+                "ApiKey.Revoked", "A revoked key cannot be rotated — issue a new one instead."));
+        }
+
+        if (command.OverlapMinutes is < 0 or > MaxOverlapMinutes)
+        {
+            return ValueTask.FromResult<Result<IssuedApiKey>>(Error.Validation(
+                "ApiKey.InvalidOverlap", $"An overlap must be 0..{MaxOverlapMinutes} minutes."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var (token, salt, hash) = ApiKeyMaterial.Generate();
+        var successor = new ApiKey(
+            Guid.NewGuid().ToString("D"), previous.Tenant, previous.Name, salt, hash,
+            ApiKeyMaterial.DisplayPrefix(token), now, previous.QuotaPerHour,
+            previous.ExpiresAt, Revocation: null, previous.Scope);
+
+        // The successor inherits everything the partner was told about their access — quota, scope and
+        // any expiry — because a rotation is meant to change the secret and nothing else.
+        var lapsing = command.OverlapMinutes == 0
+            ? previous with { Revocation = new ApiKeyRevocation(now, command.By, "rotated") }
+            : previous with { ExpiresAt = Earliest(previous.ExpiresAt, now.AddMinutes(command.OverlapMinutes)) };
+
+        store.Put(successor);
+        persistence.Save(successor);
+        store.Put(lapsing);
+        persistence.Save(lapsing);
+        return ValueTask.FromResult<Result<IssuedApiKey>>(new IssuedApiKey(successor, token));
+    }
+
+    /// <summary>
+    /// An overlap never extends a key's life: a key already expiring inside the overlap keeps its own
+    /// date, or rotating would quietly resurrect a credential that was on its way out.
+    /// </summary>
+    private static DateTimeOffset Earliest(DateTimeOffset? existing, DateTimeOffset candidate) =>
+        existing is { } already && already < candidate ? already : candidate;
 }
 
 /// <summary>

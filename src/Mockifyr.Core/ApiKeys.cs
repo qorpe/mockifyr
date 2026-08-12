@@ -8,6 +8,14 @@ namespace Mockifyr.Core;
 /// once at issue time, and after that the <see cref="Prefix"/> is the only identifying fragment
 /// that appears anywhere.
 /// </summary>
+/// <remarks>
+/// <para>
+/// The lifecycle fields (#355) are all optional and default to what a key issued before them meant:
+/// no expiry, not revoked, full access. A row written by an older version therefore reads back
+/// unchanged on every one of the four persistence providers, which is the whole reason they are
+/// optional rather than required.
+/// </para>
+/// </remarks>
 public sealed record ApiKey(
     string Id,
     TenantId Tenant,
@@ -16,7 +24,61 @@ public sealed record ApiKey(
     string Hash,
     string Prefix,
     DateTimeOffset CreatedAt,
-    int? QuotaPerHour);
+    int? QuotaPerHour,
+    DateTimeOffset? ExpiresAt = null,
+    ApiKeyRevocation? Revocation = null,
+    ApiKeyScope Scope = ApiKeyScope.ReadWrite)
+{
+    /// <summary>Whether this key may still be used at <paramref name="now"/>, and if not, why.</summary>
+    /// <remarks>
+    /// Why the reason travels with the answer: "expired" and "unknown" send an integrator to entirely
+    /// different places — one re-reads their config, the other asks for a new credential — and a
+    /// single 401 for both costs a support round trip every time.
+    /// </remarks>
+    public ApiKeyStatus StatusAt(DateTimeOffset now) =>
+        Revocation is not null ? ApiKeyStatus.Revoked
+        : ExpiresAt is { } expiry && now >= expiry ? ApiKeyStatus.Expired
+        : ApiKeyStatus.Active;
+}
+
+/// <summary>Why a key was withdrawn, and by whom (#355).</summary>
+/// <remarks>
+/// Revocation is a state rather than a delete: the audit trail could otherwise show a key being used
+/// and then not, without ever showing the decision that ended it — and "when did we turn this off,
+/// and who decided?" is the first question asked after an incident.
+/// </remarks>
+public sealed record ApiKeyRevocation(DateTimeOffset At, string By, string? Reason = null);
+
+/// <summary>Whether a key may change anything, or only read (#355).</summary>
+public enum ApiKeyScope
+{
+    /// <summary>Full access to the key's tenant — what every key issued before #355 had.</summary>
+    ReadWrite = 0,
+
+    /// <summary>
+    /// Safe methods only. GET/HEAD/OPTIONS pass; anything else is refused before it reaches a stub.
+    /// </summary>
+    /// <remarks>
+    /// The rule is the HTTP method, not the effect: a stub can be written whose GET mutates sandbox
+    /// state through the <c>state</c> directive, and this will not stop it. Method-based is the rule a
+    /// gateway states and an integrator can predict; an effect-based one would have to read a
+    /// response template to answer whether a request is allowed, which is not a rule anybody can hold.
+    /// </remarks>
+    ReadOnly = 1,
+}
+
+/// <summary>Whether a presented key is usable, and if not, why (#355).</summary>
+public enum ApiKeyStatus
+{
+    /// <summary>Usable.</summary>
+    Active = 0,
+
+    /// <summary>Past its <see cref="ApiKey.ExpiresAt"/>.</summary>
+    Expired = 1,
+
+    /// <summary>Withdrawn by an operator.</summary>
+    Revoked = 2,
+}
 
 /// <summary>
 /// Host-wide API key store (G19d). Listing is tenant-scoped (the admin surface), but resolution

@@ -12,13 +12,26 @@ namespace Mockifyr.Server;
 /// </summary>
 internal static class ApiKeyJson
 {
+    /// <remarks>
+    /// The lifecycle fields (#355) are nullable with defaults that reproduce pre-#355 behaviour, so a
+    /// row written by an older host reads back as a never-expiring, unrevoked, read-write key — which
+    /// is exactly what it was. One shape for all four providers, as in G17.
+    /// </remarks>
     private sealed record StoredKey(
         string Id, string Tenant, string Name, string Salt, string Hash, string Prefix,
-        DateTimeOffset CreatedAt, int? QuotaPerHour);
+        DateTimeOffset CreatedAt, int? QuotaPerHour,
+        DateTimeOffset? ExpiresAt = null,
+        DateTimeOffset? RevokedAt = null,
+        string? RevokedBy = null,
+        string? RevokedReason = null,
+        string? Scope = null);
 
     public static string Serialize(ApiKey key) =>
         System.Text.Json.JsonSerializer.Serialize(new StoredKey(
-            key.Id, key.Tenant.Value, key.Name, key.Salt, key.Hash, key.Prefix, key.CreatedAt, key.QuotaPerHour));
+            key.Id, key.Tenant.Value, key.Name, key.Salt, key.Hash, key.Prefix, key.CreatedAt, key.QuotaPerHour,
+            key.ExpiresAt,
+            key.Revocation?.At, key.Revocation?.By, key.Revocation?.Reason,
+            key.Scope == ApiKeyScope.ReadOnly ? "read" : null));
 
     /// <summary>Reads a key back, returning null for anything unparseable rather than failing startup.</summary>
     public static ApiKey? Deserialize(string json)
@@ -30,7 +43,14 @@ internal static class ApiKeyJson
                 ? null
                 : new ApiKey(
                     stored.Id, new TenantId(stored.Tenant), stored.Name, stored.Salt, stored.Hash,
-                    stored.Prefix, stored.CreatedAt, stored.QuotaPerHour);
+                    stored.Prefix, stored.CreatedAt, stored.QuotaPerHour,
+                    stored.ExpiresAt,
+                    stored.RevokedAt is { } at
+                        ? new ApiKeyRevocation(at, stored.RevokedBy ?? "unknown", stored.RevokedReason)
+                        : null,
+                    string.Equals(stored.Scope, "read", StringComparison.Ordinal)
+                        ? ApiKeyScope.ReadOnly
+                        : ApiKeyScope.ReadWrite);
         }
         catch (System.Text.Json.JsonException)
         {
