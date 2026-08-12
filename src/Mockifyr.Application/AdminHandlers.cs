@@ -1010,12 +1010,16 @@ public sealed class IssueApiKeyHandler(IApiKeyStore store, IApiKeyPersistence pe
 }
 
 /// <summary>Lists the tenant's keys with their current-window usage.</summary>
-public sealed class GetApiKeysHandler(IApiKeyStore store, FixedWindowRateLimiter limiter)
+public sealed class GetApiKeysHandler(IApiKeyStore store, IRateCounter counter)
     : IQueryHandler<GetApiKeysQuery, Result<IReadOnlyList<ApiKeyWithUsage>>>
 {
     public ValueTask<Result<IReadOnlyList<ApiKeyWithUsage>>> Handle(GetApiKeysQuery query, CancellationToken cancellationToken) =>
         ValueTask.FromResult(Result.Success<IReadOnlyList<ApiKeyWithUsage>>(
-            [.. store.GetKeys(query.Tenant).Select(key => new ApiKeyWithUsage(key, limiter.Used(key.Id)))]));
+            [.. store.GetKeys(query.Tenant).Select(key => new ApiKeyWithUsage(
+                key,
+                // Peeked, never counted (#354): looking at a consumer's usage must not spend their
+                // budget. Reported against the hourly window, which is the number on the key.
+                counter.Peek(key.Id, new RateWindow(TimeSpan.FromHours(1), key.QuotaPerHour ?? 1), DateTimeOffset.UtcNow)))]));
 }
 
 /// <summary>

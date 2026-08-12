@@ -596,3 +596,68 @@ nothing changes, which is asserted rather than assumed.
 loading, rollback and unloading), `FakerSeedTests` (5 on determinism) and `DatasetWireTests` (9 wire
 cases including load-twice and the reserved collections staying hidden). **Stryker: 97.30 % on the
 model** (one equivalent survivor) and **100 % on the loader and the seed scope**.
+
+
+## Quota that survives a second replica and a restart (#354)
+
+**The claim that was not true.** A per-key hourly quota shipped with G19d, counted in a dictionary in
+the serving process. Behind two replicas a partner got their number *per pod*, and a deploy in the
+middle of an hour refunded whatever they had spent. A number that changes when we scale, or when we
+release, is not a quota — and it is exactly the number an external partner is told they have.
+
+**What shipped.** `IRateCounter` — increment-and-read for a key in a window — with the in-process
+counter as the default and a Redis-backed one registered on top when `--redis` is set. Redis is
+already one of this project's persistence providers, so a shared quota is a second use of a
+connection an operator has configured rather than new infrastructure to run. The counter is a plain
+`INCR` on a key naming the window's bucket: atomic across clients, which is the entire requirement.
+The key expires after twice the window, because a counter is not a store and nothing here needs to
+survive.
+
+**Buckets are aligned to the epoch, not to the first request.** Two hosts that started at different
+times must place the same instant in the same bucket, or the counter is shared in name only.
+
+**A second window beside the per-key one.** `--rate-burst <n>/<seconds>` is a host-wide ceiling. Two
+windows protect different things — a hundred requests in a second is a runaway loop, a hundred
+thousand in a day is a consumer who should be paying — and one number cannot say both. It is
+host-level rather than per key because it protects the host, and making every key restate it would
+leave the one key nobody updated as the way in. It applies to a key with *no* hourly quota too:
+"unlimited" is a statement about a consumer's budget, not permission to melt the host.
+
+**Every window is counted even after one refuses.** Counting only until the first refusal would let a
+caller stopped by the burst limit spend the rest of the day invisible to the sustained one.
+
+**When several windows refuse, the reported reset is the latest.** Retrying when the burst window
+reopens would still fail the daily budget; a `Retry-After` that is too short is worse than none,
+because it invites a client to hammer a door that is still shut. When nothing refuses, the reported
+window is the one with the least left — the limit the caller is about to meet.
+
+**Two defects found by running it, not by reading it:**
+
+- **The same length twice was counted twice.** A counter identifies a bucket by key *and duration*, so
+  `--rate-burst 600/3600` beside an hourly quota put both windows on one bucket and charged every
+  request to it twice — enforcing half of what the operator wrote. Windows of equal length now
+  collapse to the tighter limit. Found by a wire test whose burst happened to be an hour, which is an
+  entirely ordinary thing to configure.
+- **A key issued on one replica was invalid on the others.** Keys were loaded at startup and never
+  again, so behind a load balancer a partner saw intermittent 401s until every pod had restarted —
+  and, worse, a *revoked* key kept working on every replica that had not. API keys are now the fourth
+  kind of state the change feed reconciles (#279 established the mechanism for stubs, environments and
+  sandbox documents). The prune is the half that matters: issuing late costs a retry, revoking late
+  means a withdrawn credential still serves traffic. A host with `--sandbox-auth` and `--redis` but no
+  `--change-feed` now says so at startup rather than leaving it to be discovered.
+
+**Not done, deliberately.** No sliding window and no token bucket: a fixed window is what the rate
+headers describe, and a shared sliding window costs a sorted set per key per request to buy precision
+nobody is measuring here. No cross-key or per-tenant aggregate ceiling — that is a different question
+(what a tenant costs) and belongs with usage reporting.
+
+**Validation.** `RateLimitTests` (29 unit cases: bucket alignment, multi-window composition and its
+tie-breaks, stale buckets, concurrency), `RateLimitWireTests`/`RateLimitWithoutBurstTests` (4 wire
+cases including an unconfigured host and a key with no quota), and `SharedQuotaTests` — four cases
+against a **real Redis container with two hosts**, proving the sum is enforced rather than doubled,
+that a restart does not refund, that reported usage spans replicas, and that a revocation lands on the
+other host. Two hosts against real Redis is the only test that can fail here: an in-process counter
+passes every single-host test perfectly and is wrong in exactly the deployment the feature exists for.
+**Stryker: 98.04 %** on `RateLimits.cs`. The one survivor is equivalent — `<=` versus `<` when
+collapsing two windows of equal length whose limits are also equal, where both branches produce a
+`RateWindow` record with the same duration and limit, so no observation can tell them apart.

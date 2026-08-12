@@ -124,6 +124,9 @@ public sealed record QuotaDecision(bool Allowed, int Limit, int Remaining, DateT
 /// parallel requests across the limit never admit more than the budget. Usage is in-memory by
 /// design (counters reset on restart; the keys themselves persist).
 /// </summary>
+[Obsolete("Superseded by RateLimits.Count over an IRateCounter (#354), which counts the same fixed "
+    + "window through a shared counter so two replicas enforce one budget. Kept for source compatibility; "
+    + "it is no longer on the serving path and will be removed in the next major version.")]
 public sealed class FixedWindowRateLimiter(TimeProvider? clock = null)
 {
     private readonly Dictionary<string, (DateTimeOffset WindowStart, int Count)> _windows = [];

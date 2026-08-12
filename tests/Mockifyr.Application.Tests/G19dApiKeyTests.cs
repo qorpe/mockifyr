@@ -1,3 +1,6 @@
+// The quota path moved to RateLimits/IRateCounter (#354); FixedWindowRateLimiter is deprecated but
+// still shipped, so its behaviour stays covered until it is removed at the next major version.
+#pragma warning disable CS0618
 using System.Text;
 using Mockifyr.Core;
 using Mockifyr.Server;
@@ -210,3 +213,4 @@ public sealed class G19dApiKeyTests
         }
     }
 }
+#pragma warning restore CS0618

@@ -87,7 +87,9 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<HostReadiness>();
         services.AddSingleton<IApiKeyStore, InMemoryApiKeyStore>();
         services.AddSingleton<IApiKeyPersistence, NullApiKeyPersistence>();
-        services.AddSingleton<FixedWindowRateLimiter>();
+        // In-process by default (#354): a laptop must not need Redis to run a sandbox. MockifyrHost
+        // registers the shared counter on top when --redis is set, and that registration wins.
+        services.AddSingleton<IRateCounter, InMemoryRateCounter>();
         services.AddSingleton(new SandboxAuthOptions());
         services.AddSingleton<IMessageBehaviorStore, InMemoryMessageBehaviorStore>();
         services.AddSingleton<IMessageSink>(sp => new StoreMessageSink(sp.GetRequiredService<IMessageStore>()));
@@ -98,7 +100,7 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IEnvironmentPersistence, NullEnvironmentPersistence>();
         services.AddSingleton<IResourcePersistence, NullResourcePersistence>();
 
-        // What a change-feed reload reconciles (#279): all three kinds of shared state, resolved from the
+        // What a change-feed reload reconciles (#279, extended by #354): every kind of shared state, resolved from the
         // same singletons the serve path uses. Registered here (not only where a feed is configured) so a
         // host that later adds one has nothing else to wire.
         services.AddSingleton(ChangeFeedIdentity.New());
@@ -109,6 +111,10 @@ public static class MockifyrServiceCollectionExtensions
             sp.GetServices<IEnvironmentsLoader>(),
             sp.GetRequiredService<IResourceStore>(),
             sp.GetServices<IResourcesLoader>(),
+            sp.GetRequiredService<IApiKeyStore>(),
+            // The in-memory default is filtered out here rather than in the reconciler: it loads
+            // nothing, and reconciling against nothing would revoke every key the host is holding.
+            sp.GetServices<IApiKeyPersistence>().Where(p => p is not NullApiKeyPersistence),
             sp.GetRequiredService<ChangeFeedIdentity>()));
 
         // Git sync (ADR 0007): unconfigured by default; MockifyrHost registers the real service on

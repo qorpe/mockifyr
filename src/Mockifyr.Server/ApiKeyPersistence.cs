@@ -131,13 +131,20 @@ internal static class PostgresApiKeySchema
 }
 
 /// <summary>PostgreSQL-backed API key persistence (G19d).</summary>
+/// <remarks>
+/// Writes announce on the change feed (#354): a key issued on one replica has to be usable on the
+/// next request whichever replica serves it, or a partner behind a load balancer sees intermittent
+/// 401s — and a revoked key has to stop working everywhere at once, which is the half that matters.
+/// </remarks>
 public sealed class PostgresApiKeyPersistence : IApiKeyPersistence
 {
     private readonly string _connectionString;
+    private readonly ChangeFeedIdentity? _writer;
 
-    public PostgresApiKeyPersistence(string connectionString)
+    public PostgresApiKeyPersistence(string connectionString, ChangeFeedIdentity? writer = null)
     {
         _connectionString = connectionString;
+        _writer = writer;
         PostgresApiKeySchema.Ensure(connectionString);
     }
 
@@ -151,6 +158,7 @@ public sealed class PostgresApiKeyPersistence : IApiKeyPersistence
         command.Parameters.AddWithValue("id", key.Id);
         command.Parameters.AddWithValue("json", ApiKeyJson.Serialize(key));
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -160,6 +168,7 @@ public sealed class PostgresApiKeyPersistence : IApiKeyPersistence
         using var command = new NpgsqlCommand("DELETE FROM apikeys WHERE id = @id", connection);
         command.Parameters.AddWithValue("id", id);
         command.ExecuteNonQuery();
+        ChangeFeedAnnouncement.Postgres(connection, _writer);
     }
 
     /// <inheritdoc />
@@ -191,15 +200,24 @@ public sealed class PostgresApiKeyPersistence : IApiKeyPersistence
 // ---- Redis ------------------------------------------------------------------------------------
 
 /// <summary>Redis-backed API key persistence (G19d): one hash (<c>mockifyr:apikeys</c>) keyed by id.</summary>
-public sealed class RedisApiKeyPersistence(IConnectionMultiplexer redis) : IApiKeyPersistence
+public sealed class RedisApiKeyPersistence(IConnectionMultiplexer redis, ChangeFeedIdentity? writer = null)
+    : IApiKeyPersistence
 {
     internal const string HashKey = "mockifyr:apikeys";
 
     /// <inheritdoc />
-    public void Save(ApiKey key) => redis.GetDatabase().HashSet(HashKey, key.Id, ApiKeyJson.Serialize(key));
+    public void Save(ApiKey key)
+    {
+        redis.GetDatabase().HashSet(HashKey, key.Id, ApiKeyJson.Serialize(key));
+        ChangeFeedAnnouncement.Redis(redis, writer);
+    }
 
     /// <inheritdoc />
-    public void Remove(string id) => redis.GetDatabase().HashDelete(HashKey, id);
+    public void Remove(string id)
+    {
+        redis.GetDatabase().HashDelete(HashKey, id);
+        ChangeFeedAnnouncement.Redis(redis, writer);
+    }
 
     /// <inheritdoc />
     public IReadOnlyList<ApiKey> LoadAll() =>

@@ -14,6 +14,8 @@ public sealed class ChangeFeedTargets(
     IEnumerable<IEnvironmentsLoader> environmentsLoaders,
     IResourceStore resources,
     IEnumerable<IResourcesLoader> resourcesLoaders,
+    IApiKeyStore apiKeys,
+    IEnumerable<IApiKeyPersistence> apiKeyBackends,
     ChangeFeedIdentity identity)
 {
     /// <summary>This host's identity, so its own announcements are recognised and skipped.</summary>
@@ -37,6 +39,16 @@ public sealed class ChangeFeedTargets(
     public IResourceStore Resources { get; } = resources;
 
     public IEnumerable<IResourcesLoader> ResourcesLoaders { get; } = resourcesLoaders;
+
+    /// <summary>Sandbox API keys — the fourth kind of shared state (#354).</summary>
+    public IApiKeyStore ApiKeys { get; } = apiKeys;
+
+    /// <summary>
+    /// The durable backends to read keys back from; empty when none is configured, which means "no
+    /// opinion" rather than "nothing persisted". The composition root filters the in-memory default
+    /// out, since a null backend loading nothing would otherwise revoke every key on the host.
+    /// </summary>
+    public IEnumerable<IApiKeyPersistence> ApiKeyBackends { get; } = apiKeyBackends;
 }
 
 /// <summary>
@@ -87,6 +99,7 @@ internal static class ChangeFeedReconciler
             ReloadStubs(targets.Stubs, targets.MappingsLoaders);
             ReloadEnvironments(targets.Environments, targets.EnvironmentsLoaders);
             ReloadResources(targets.Resources, targets.ResourcesLoaders);
+            ReloadApiKeys(targets.ApiKeys, targets.ApiKeyBackends);
         }
     }
 
@@ -198,6 +211,44 @@ internal static class ChangeFeedReconciler
                         store.Delete(tenant, collection.Name, existing.Id);
                     }
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Brings this host's key set into line with what is stored (#354). Keys are host-level rather than
+    /// tenant-scoped — the resolution path searches across tenants — so this reconciles one flat set.
+    /// </summary>
+    /// <remarks>
+    /// The prune is the point. Issuing propagates a request or two late at worst; a revocation that
+    /// only takes effect on the replica that performed it means a withdrawn credential keeps working,
+    /// which is the failure nobody forgives.
+    /// </remarks>
+    private static void ReloadApiKeys(IApiKeyStore store, IEnumerable<IApiKeyPersistence> backends)
+    {
+        List<ApiKey>? loaded = null;
+        foreach (var backend in backends)
+        {
+            loaded ??= [];
+            loaded.AddRange(backend.LoadAll());
+        }
+
+        if (loaded is null)
+        {
+            return;
+        }
+
+        var loadedIds = loaded.Select(key => key.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var key in loaded)
+        {
+            store.Put(key);
+        }
+
+        foreach (var existing in store.GetAll().ToList())
+        {
+            if (!loadedIds.Contains(existing.Id))
+            {
+                store.Remove(existing.Id);
             }
         }
     }

@@ -153,7 +153,8 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--journal-disabled` | record nothing in the request journal (load tests); `--no-request-journal` is a kept alias |
 | `--resource-limit <n>` | per-collection sandbox document bound (default 1000, oldest evicted first) |
 | `--resource-max-body <bytes>` | per-document body cap for `/__admin/resources` (default 1 MiB; 413 beyond it) |
-| `--sandbox-auth` | sandbox API keys (`/__admin/apikeys`): `mfk_…` tokens select the tenant via `X-Api-Key`/Bearer, with optional per-key hourly quotas (`429` + rate headers) |
+| `--sandbox-auth` | sandbox API keys (`/__admin/apikeys`): `mfk_…` tokens select the tenant via `X-Api-Key`/Bearer, with optional per-key hourly quotas (`429` + rate headers). With `--redis` the quota is counted in Redis, so replicas share one budget and a restart does not refund it |
+| `--rate-burst <n>/<seconds>` | a host-wide burst ceiling counted beside each key's hourly quota — applies to keys with no quota too; the binding limit is the one reported in the rate headers |
 | `--dashboard <dir>` | serve the built dashboard under `/__mockifyr` |
 | `--admin-user <u>` · `--admin-pass <p>` | require HTTP Basic auth on the admin API (`/__admin/*`); the dashboard shows a login screen. `/__admin/health` stays open so Kubernetes probes keep working |
 | `--postgres <connstr>` · `--redis <connstr>` · `--litedb <path>` | durable persistence backend |
