@@ -446,6 +446,17 @@ public sealed record ServeEvent
     /// <summary>The response produced, if any.</summary>
     public CanonicalResponse? Response { get; init; }
 
+    /// <summary>
+    /// Whether this response was replayed from an earlier request carrying the same
+    /// <c>Idempotency-Key</c> rather than served afresh (#358).
+    /// </summary>
+    /// <remarks>
+    /// Recorded rather than omitted: the request really did arrive, and a journal that hid it would
+    /// disagree with the client about what happened. Marking it is what keeps verification honest —
+    /// two entries, one of which says plainly that nothing ran the second time.
+    /// </remarks>
+    public bool Replayed { get; init; }
+
     /// <summary>A snapshot of the correlated sub-events (e.g. webhook request/response).</summary>
     public IReadOnlyList<SubEvent> SubEvents
     {

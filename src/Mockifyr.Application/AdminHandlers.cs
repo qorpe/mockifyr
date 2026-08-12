@@ -1178,7 +1178,10 @@ public sealed class DeclareTenantHandler(ITenantStore store, ITenantPersistence 
             name.Length == 0 ? existing?.DisplayName ?? id : name,
             existing?.CreatedAt ?? DateTimeOffset.UtcNow,
             existing?.Status ?? TenantStatus.Active,
-            command.StorageLimitBytes);
+            command.StorageLimitBytes,
+            // Absent means "no opinion" and keeps whatever was declared, so raising a ceiling does not
+            // silently turn replay off (#358).
+            command.Idempotency ?? existing?.Idempotency);
 
         store.Put(record);
         persistence.Save(record);

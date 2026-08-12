@@ -189,6 +189,58 @@ public static class MockServingEndpoints
                 ? new TenantId(t!)
                 : TenantId.Default);
 
+        // Idempotent replay (#358): a retried write carrying the same Idempotency-Key gets the first
+        // response back instead of running the directive again. Every payment API this sandbox stands
+        // in for behaves this way, and a partner's client library retries automatically — so without
+        // it a timeout creates a second payment, and the bug looks like theirs.
+        var idempotency = context.RequestServices.GetService<IdempotencyOptions>();
+        var presentedKey = context.Request.Headers[Idempotency.HeaderName].FirstOrDefault();
+        if (idempotency is not null
+            && Idempotency.IsWellFormed(presentedKey)
+            && Idempotency.AppliesTo(context.Request.Method)
+            && TenantIdempotency.EnabledFor(
+                context.RequestServices.GetService<ITenantStore>()?.Get(tenant), idempotency.Enabled))
+        {
+            var store = context.RequestServices.GetRequiredService<IIdempotencyStore>();
+            var fingerprint = Idempotency.Fingerprint(
+                context.Request.Method, context.Request.Path.Value ?? "/", context.Request.QueryString.Value ?? string.Empty,
+                request.Body);
+            var stored = store.Get(tenant, presentedKey!, DateTimeOffset.UtcNow);
+
+            switch (Idempotency.Decide(stored, fingerprint))
+            {
+                case IdempotencyOutcome.Replay:
+                    await ReplayAsync(context, tenant, request, stored!);
+                    return tenant;
+
+                case IdempotencyOutcome.Conflict:
+                    // Refused rather than answered: reusing a key for a different request would hand a
+                    // caller somebody else's result, which is worse than any error.
+                    context.Response.StatusCode = StatusCodes.Status409Conflict;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync(
+                        """{"error":"Idempotency.KeyReused","message":"This Idempotency-Key was already used with a different request."}""");
+                    return tenant;
+
+                default:
+                    await CaptureAsync(context, tenant, request, presentedKey!, fingerprint, store);
+                    return tenant;
+            }
+        }
+
+        return await ServeRestAsync(context, tenant, request);
+    }
+
+    /// <summary>
+    /// Everything after the tenant is known: suspension, recording, matching and writing the response.
+    /// </summary>
+    /// <remarks>
+    /// Split out for idempotent capture (#358), which needs to run exactly this and keep the bytes.
+    /// </remarks>
+    private static async Task<TenantId> ServeRestAsync(HttpContext context, TenantId tenant, CanonicalRequest request)
+    {
+        var engine = context.RequestServices.GetRequiredService<StubEngine>();
+
         // A suspended tenant is refused at the door (#357): the sandbox is still there and nothing has
         // been deleted, which is the entire reason suspension exists. 403 rather than 401 — the
         // credential is fine and the account is not — and the body says suspended, because a partner
@@ -398,5 +450,87 @@ public static class MockServingEndpoints
         // values the transport did.
         return CanonicalRequestBuilder.Build(
             context.Request.Method, url, headers, buffer.ToArray(), context.Request.Scheme);
+    }
+
+    /// <summary>
+    /// Writes a stored response back and journals it as a replay (#358).
+    /// </summary>
+    /// <remarks>
+    /// Journaled rather than silent: the request really did arrive, and a journal that omitted it
+    /// would disagree with the client about what happened. The entry says plainly that nothing ran.
+    /// </remarks>
+    private static async Task ReplayAsync(
+        HttpContext context, TenantId tenant, CanonicalRequest request, IdempotentResponse stored)
+    {
+        context.Response.StatusCode = stored.Status;
+        foreach (var header in stored.Headers)
+        {
+            if (!SkipHeaders.Contains(header.Key))
+            {
+                context.Response.Headers.Append(header.Key, header.Value);
+            }
+        }
+
+        // Named so a client can tell a replay from a fresh serve without diffing bodies.
+        context.Response.Headers["Idempotency-Replayed"] = "true";
+        await context.Response.Body.WriteAsync(stored.Body);
+
+        context.RequestServices.GetRequiredService<IRequestJournal>().Record(new ServeEvent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant,
+            Request = request,
+            Response = new CanonicalResponse
+            {
+                Status = stored.Status,
+                Headers = stored.Headers.ToLookup(header => header.Key, header => header.Value),
+                Body = stored.Body,
+            },
+            Timestamp = DateTimeOffset.UtcNow,
+            Replayed = true,
+        });
+    }
+
+    /// <summary>
+    /// Serves normally while buffering the response, then remembers it against the key (#358).
+    /// </summary>
+    /// <remarks>
+    /// Buffered only for a request that actually carries a key on an unsafe method — every other
+    /// request writes straight to the wire, so nothing changes for the traffic this has nothing to do
+    /// with.
+    /// </remarks>
+    private static async Task CaptureAsync(
+        HttpContext context, TenantId tenant, CanonicalRequest request, string key, string fingerprint,
+        IIdempotencyStore store)
+    {
+        var original = context.Response.Body;
+        using var buffer = new MemoryStream();
+        context.Response.Body = buffer;
+        try
+        {
+            await ServeRestAsync(context, tenant, request);
+        }
+        finally
+        {
+            context.Response.Body = original;
+        }
+
+        var body = buffer.ToArray();
+
+        // A server failure is not remembered: replaying a 500 for a day would make a transient failure
+        // permanent for the one key the client is retrying with.
+        if (context.Response.StatusCode < 500)
+        {
+            store.Put(tenant, key, new IdempotentResponse(
+                fingerprint,
+                context.Response.StatusCode,
+                [.. context.Response.Headers
+                    .Where(header => !SkipHeaders.Contains(header.Key))
+                    .Select(header => new KeyValuePair<string, string>(header.Key, header.Value.ToString()))],
+                body,
+                DateTimeOffset.UtcNow), DateTimeOffset.UtcNow);
+        }
+
+        await original.WriteAsync(body);
     }
 }
