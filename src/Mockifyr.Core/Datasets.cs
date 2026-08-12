@@ -67,6 +67,27 @@ public interface IDatasetStore
     void ClearLoad(TenantId tenant, string name);
 }
 
+/// <summary>The outcome of loading a dataset: what it created, or why it created nothing.</summary>
+public sealed record DatasetLoadOutcome(IReadOnlyList<ResourceLink> Created, string? Refusal)
+{
+    /// <summary>Whether the dataset landed.</summary>
+    public bool IsLoaded => Refusal is null;
+}
+
+/// <summary>
+/// Loads and unloads a dataset (#351). A Core contract implemented at the edge, because a dataset
+/// document is a <em>template</em> and Core neither renders nor does I/O — the same shape
+/// <see cref="IResponseRenderer"/> and the crypto seams already use.
+/// </summary>
+public interface IDatasetLoader
+{
+    /// <summary>Loads the dataset atomically: on any failure nothing it wrote survives.</summary>
+    DatasetLoadOutcome Load(TenantId tenant, DatasetDefinition dataset);
+
+    /// <summary>Removes exactly these documents, children first. Returns how many were there.</summary>
+    int Unload(TenantId tenant, IReadOnlyList<ResourceLink> created);
+}
+
 /// <summary>The pure decisions a dataset load rests on (#351): what order, and is it usable at all.</summary>
 public static class Datasets
 {

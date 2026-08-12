@@ -2,13 +2,6 @@ using Mockifyr.Core;
 
 namespace Mockifyr.Templating;
 
-/// <summary>The outcome of loading a dataset: what it created, or why it created nothing.</summary>
-public sealed record DatasetLoadResult(IReadOnlyList<ResourceLink> Created, string? Refusal)
-{
-    /// <summary>Whether the dataset landed.</summary>
-    public bool IsLoaded => Refusal is null;
-}
-
 /// <summary>
 /// Loads and unloads a named dataset (#351): renders each document, writes them in dependency order,
 /// and takes the whole thing back out again on failure or on request.
@@ -21,7 +14,7 @@ public sealed class DatasetLoader(
     IResourceStore documents,
     IResourceSchemaStore schemas,
     IResourceIdGenerator ids,
-    ResourceOptions? options = null)
+    ResourceOptions? options = null) : IDatasetLoader
 {
     private readonly CompiledTemplateCache _templates = CompiledTemplateCache.Create();
     private readonly ResourceOptions _options = options ?? new ResourceOptions();
@@ -31,11 +24,11 @@ public sealed class DatasetLoader(
     /// because a dataset that half-landed leaves the sandbox in a state no scenario describes — and
     /// the person who ran it would have no way to know which half they got.
     /// </summary>
-    public DatasetLoadResult Load(TenantId tenant, DatasetDefinition dataset)
+    public DatasetLoadOutcome Load(TenantId tenant, DatasetDefinition dataset)
     {
         if (Datasets.Invalid(dataset) is { } invalid)
         {
-            return new DatasetLoadResult([], invalid);
+            return new DatasetLoadOutcome([], invalid);
         }
 
         var created = new List<ResourceLink>();
@@ -93,7 +86,7 @@ public sealed class DatasetLoader(
             }
         }
 
-        return new DatasetLoadResult(created, null);
+        return new DatasetLoadOutcome(created, null);
     }
 
     /// <summary>
@@ -119,9 +112,9 @@ public sealed class DatasetLoader(
         return removed;
     }
 
-    private DatasetLoadResult Undo(TenantId tenant, IReadOnlyList<ResourceLink> created, string refusal)
+    private DatasetLoadOutcome Undo(TenantId tenant, IReadOnlyList<ResourceLink> created, string refusal)
     {
         Unload(tenant, created);
-        return new DatasetLoadResult([], refusal);
+        return new DatasetLoadOutcome([], refusal);
     }
 }

@@ -548,3 +548,51 @@ each confirmed equivalent:
 - Short-circuiting the empty-filter case: `Filters.All(...)` over an empty list is true, so the
   unfiltered branch and the filtered one return the same documents. The branch is an allocation
   optimisation, not a semantic.
+
+---
+
+## Named datasets (#351)
+
+Seeding was per collection and literal. Two things followed. "The delinquent customer" is a customer,
+three orders, two failed payments and a dunning record — across four collections and only meaningful
+together, so it lived in somebody's shell script, which is the one place nobody else can find it. And
+Faker had been in the box since G15, reachable only from response templates: a sandbox needing two
+hundred plausible customers got two hundred hand-written ones.
+
+**Two orderings, two different reasons.** Loading goes parent-first, because referential integrity
+(ADR 0015) refuses a child whose parent does not exist yet — a dataset written child-first is loadable
+only because the loader sorts it, and asking the author to sort it is asking them to know a relation
+graph they did not write. Unloading goes the other way: `restrict` refuses to delete a parent while
+children exist, so removing in load order would refuse on the first parent and leave the rest behind.
+
+**Atomicity is a compensating rollback**, not a pretend transaction. Documents are written as they
+render; any failure removes every one written so far. Integrity can only be checked against documents
+that exist, so "validate everything then write everything" is not available — and a half-loaded dataset
+leaves the sandbox in a state no scenario describes, with no way for the person who ran it to tell
+which half they got.
+
+**Unloading removes what THIS load created**, tracked by id. "Clear the collections it touched" would
+take a colleague's work with it, and people would stop loading datasets.
+
+**Loading twice leaves one copy.** It is the gesture people repeat between runs; two copies would make
+the second run fail for reasons unrelated to the code under test.
+
+**Seeded determinism, without a global.** Bogus offers `Randomizer.Seed`, and using it would have been
+wrong: it is a process-wide static, so seeding it for a load would also make every concurrently served
+response deterministic, and two overlapping loads would draw from each other's sequence. `FakerSeed` is
+an ambient scope — the idiom `RenderClock` already uses for the tenant clock — with one generator per
+scope, not one per value, or a seed would hand every document the same "random" name. Outside a scope
+nothing changes, which is asserted rather than assumed.
+
+**Two defects found by writing the tests:**
+
+- Validation required a document template to be well-formed JSON *at declaration*. But `{"total":
+  {{random 'Number.digit'}}}` is an ordinary template and is not JSON until rendered — the check
+  refused every numeric helper outright. The guard belongs after rendering, where the loader applies it.
+- The load handler asked for a `TimeProvider` the container does not register, so every load answered
+  500. Caught by the first wire test, not by the build.
+
+**Validation.** `DatasetTests` (24 unit cases on ordering and validation), `DatasetLoaderTests` (14 on
+loading, rollback and unloading), `FakerSeedTests` (5 on determinism) and `DatasetWireTests` (9 wire
+cases including load-twice and the reserved collections staying hidden). **Stryker: 97.30 % on the
+model** (one equivalent survivor) and **100 % on the loader and the seed scope**.

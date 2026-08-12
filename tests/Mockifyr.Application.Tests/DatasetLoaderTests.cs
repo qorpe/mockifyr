@@ -18,10 +18,10 @@ public sealed class DatasetLoaderTests
         public IResourceSchemaStore Schemas { get; }
         public DatasetLoader Loader { get; }
 
-        public Fixture()
+        public Fixture(ResourceOptions? options = null)
         {
             Schemas = new ResourceBackedSchemaStore(Documents);
-            Loader = new DatasetLoader(Documents, Schemas, new SequentialIds());
+            Loader = new DatasetLoader(Documents, Schemas, new SequentialIds(), options);
         }
 
         public IEnumerable<string> Ids(string collection) =>
@@ -165,6 +165,78 @@ public sealed class DatasetLoaderTests
         fixture.Loader.Unload(Acme, result.Created);
 
         Assert.Equal(["not-mine"], fixture.Ids("customers"));
+    }
+
+    [Fact]
+    public void A_document_over_the_body_cap_is_refused_and_rolled_back()
+    {
+        // The cap is the resource store's own (ADR 0011), applied here too: a dataset is just another
+        // way to write documents, and a way in that skipped the limit would make the limit decorative.
+        var fixture = new Fixture(new ResourceOptions(MaxBodyBytes: 100));
+        var oversized = "{\"padding\":\"" + new string('x', 2_000) + "\"}";
+
+        var result = fixture.Loader.Load(Acme, new DatasetDefinition("big", [
+            Item("customers", 1, """{"name":"Ada"}"""),
+            Item("blobs", 1, oversized),
+        ]));
+
+        Assert.False(result.IsLoaded);
+        Assert.Contains("exceeds the body limit", result.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("blobs", result.Refusal!, StringComparison.Ordinal);
+        Assert.Empty(fixture.Documents.List(Acme, "customers"));
+    }
+
+    [Fact]
+    public void A_document_can_name_the_dataset_it_came_from()
+    {
+        // So a scenario's data is traceable back to the scenario without a separate convention.
+        var fixture = new Fixture();
+
+        fixture.Loader.Load(Acme, new DatasetDefinition("delinquent", [
+            Item("customers", 1, """{"scenario":"{{dataset}}"}"""),
+        ]));
+
+        Assert.Equal("""{"scenario":"delinquent"}""", fixture.Documents.List(Acme, "customers").Single().Body);
+    }
+
+    [Fact]
+    public void A_template_that_throws_is_refused_rather_than_taking_the_load_down()
+    {
+        // An unknown helper throws out of the engine. That has to become a refusal naming the
+        // collection, not an exception surfacing as a 500 with the dataset half-loaded.
+        var fixture = new Fixture();
+
+        var result = fixture.Loader.Load(Acme, new DatasetDefinition("broken", [
+            Item("customers", 1, """{"name":"Ada"}"""),
+            Item("notes", 1, """{"text":"{{noSuchHelper 'x'}}"}"""),
+        ]));
+
+        Assert.False(result.IsLoaded);
+        Assert.Contains("did not render", result.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("notes", result.Refusal!, StringComparison.Ordinal);
+        Assert.Empty(fixture.Documents.List(Acme, "customers"));
+    }
+
+    [Fact]
+    public void A_refusal_lists_every_reference_that_does_not_resolve()
+    {
+        // With one it reads the same either way; two is what pins the separator, and an operator
+        // fixing a dataset wants both names at once rather than one per attempt.
+        var fixture = new Fixture();
+        fixture.Schemas.Put(Acme, new ResourceSchema("orders", [
+            new ResourceRelation("customers", "customerId"),
+            new ResourceRelation("products", "productId"),
+        ]));
+
+        var result = fixture.Loader.Load(Acme, new DatasetDefinition("d", [
+            Item("orders", 1, """{"customerId":"nobody","productId":"also-nobody"}"""),
+        ]));
+
+        Assert.False(result.IsLoaded);
+        Assert.Contains("customers.customerId, products.productId", result.Refusal!, StringComparison.Ordinal);
+        // The sentence around them, and which collection they were on: the refusal is what an operator
+        // reads to find the line they mistyped.
+        Assert.Contains("A document for 'orders' references", result.Refusal!, StringComparison.Ordinal);
     }
 
     [Fact]
