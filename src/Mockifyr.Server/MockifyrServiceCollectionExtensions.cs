@@ -86,6 +86,13 @@ public static class MockifyrServiceCollectionExtensions
         // Readiness state (#242): startup flips it on, shutdown flips it off.
         services.AddSingleton<HostReadiness>();
         services.AddSingleton<IApiKeyStore, InMemoryApiKeyStore>();
+        // Declared tenants (#357) — additive: a host that never declares one keeps the derived listing.
+        services.AddSingleton<ITenantStore, InMemoryTenantStore>();
+        services.AddSingleton<ITenantPersistence, NullTenantPersistence>();
+        services.AddSingleton(sp => new TenantStorageGuard(
+            sp.GetRequiredService<IResourceStore>(),
+            sp.GetRequiredService<ResourceOptions>().TenantStorageLimitBytes,
+            sp.GetRequiredService<ITenantStore>()));
         services.AddSingleton<IApiKeyPersistence, NullApiKeyPersistence>();
         // In-process by default (#354): a laptop must not need Redis to run a sandbox. MockifyrHost
         // registers the shared counter on top when --redis is set, and that registration wins.

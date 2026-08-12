@@ -336,6 +336,8 @@ public static class MockifyrHost
             // redeploy is not a credential. Host-level directory — the key selects the tenant.
             var apiKeysDir = Path.Combine(rootDir, "apikeys");
             builder.Services.AddSingleton<IApiKeyPersistence>(new FileSystemApiKeyPersistence(apiKeysDir));
+            builder.Services.AddSingleton<ITenantPersistence>(
+                new FileSystemTenantPersistence(Path.Combine(rootDir, "tenants")));
 
             // gRPC serving (G13, verified by the differential suite): compiled proto descriptors live in
             // the conventional <root-dir>/grpc/*.dsc location. The index is registered even when the
@@ -624,10 +626,28 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IResourceStore>(new InMemoryResourceStore(resourceLimit));
         }
 
-        if (int.TryParse(builder.Configuration["resource-max-body"], out var resourceMaxBody) && resourceMaxBody > 0)
+        // Both resource bounds land in ONE registration. Registering ResourceOptions twice would let
+        // the later call silently drop the earlier one's number, which is how a configured ceiling
+        // becomes a ceiling that is not enforced (#357).
+        var maxBodyBytes = int.TryParse(builder.Configuration["resource-max-body"], out var resourceMaxBody)
+            && resourceMaxBody > 0
+                ? resourceMaxBody
+                : ResourceOptions.DefaultMaxBodyBytes;
+
+        // The per-tenant storage ceiling (#357): --resource-max-body caps one document and
+        // --resource-limit caps one collection, so nothing stopped one partner filling a shared host
+        // across many collections — the neighbour problem the tenant model exists to prevent.
+        var storageLimit = long.TryParse(builder.Configuration["tenant-storage-limit"], out var configuredLimit)
+            && configuredLimit > 0
+                ? configuredLimit
+                : TenantStorage.Unlimited;
+        if (storageLimit > TenantStorage.Unlimited)
         {
-            builder.Services.AddSingleton(new ResourceOptions(resourceMaxBody));
+            Console.WriteLine($"mockifyr: each tenant may hold {storageLimit} bytes of sandbox documents "
+                + "unless its own declaration raises or lowers that.");
         }
+
+        builder.Services.AddSingleton(new ResourceOptions(maxBodyBytes, storageLimit));
 
         builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(
             new StoreMessageSink(sp.GetRequiredService<IMessageStore>()),
@@ -721,6 +741,8 @@ public static class MockifyrHost
                 new LiteDbResourcesLoader(sp.GetRequiredService<LiteDB.LiteDatabase>()));
             builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
                 new LiteDbApiKeyPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
+            builder.Services.AddSingleton<ITenantPersistence>(sp =>
+                new LiteDbTenantPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
         }
 
         // PostgreSQL persistence (G16c): stubs persist to a SQL table and reload on startup.
@@ -739,6 +761,8 @@ public static class MockifyrHost
             builder.Services.AddSingleton<IResourcesLoader>(new PostgresResourcesLoader(postgres));
             builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
                 new PostgresApiKeyPersistence(postgres, sp.GetRequiredService<ChangeFeedIdentity>()));
+            builder.Services.AddSingleton<ITenantPersistence>(sp =>
+                new PostgresTenantPersistence(postgres, sp.GetRequiredService<ChangeFeedIdentity>()));
 
             // Change-feed reload (G16f): opt-in multi-instance coherence via Postgres LISTEN/NOTIFY —
             // the same seam as Redis (G16e). Each host listens for change announcements and reconciles
@@ -855,6 +879,10 @@ public static class MockifyrHost
                 new RedisResourcesLoader(sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>()));
             builder.Services.AddSingleton<IApiKeyPersistence>(sp =>
                 new RedisApiKeyPersistence(
+                    sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ChangeFeedIdentity>()));
+            builder.Services.AddSingleton<ITenantPersistence>(sp =>
+                new RedisTenantPersistence(
                     sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>(),
                     sp.GetRequiredService<ChangeFeedIdentity>()));
 
@@ -1329,6 +1357,7 @@ public static class MockifyrHost
         ApplyStartupEnvironments(app);
         ApplyStartupResources(app);
         ApplyStartupApiKeys(app);
+        ApplyStartupTenants(app);
 
         // Everything the host needs in memory is loaded — only now may traffic be routed here (#242).
         app.Services.GetRequiredService<HostReadiness>().MarkReady();
@@ -1379,6 +1408,19 @@ public static class MockifyrHost
     }
 
     /// <summary>Rehydrates persisted API keys (G19d) — issued credentials survive restarts.</summary>
+    /// <summary>
+    /// Loads declared tenants from the configured backend (#357): a suspension that forgot itself on
+    /// restart would be a suspension in name only.
+    /// </summary>
+    private static void ApplyStartupTenants(WebApplication app)
+    {
+        var store = app.Services.GetRequiredService<ITenantStore>();
+        foreach (var tenant in app.Services.GetRequiredService<ITenantPersistence>().LoadAll())
+        {
+            store.Put(tenant);
+        }
+    }
+
     private static void ApplyStartupApiKeys(WebApplication app)
     {
         var store = app.Services.GetRequiredService<IApiKeyStore>();
