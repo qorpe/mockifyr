@@ -184,15 +184,14 @@ public sealed class DatasetTests
     }
 
     [Fact]
-    public void A_document_template_that_is_not_json_is_refused_at_declaration()
+    public void A_template_need_not_be_json_before_it_is_rendered()
     {
-        // Caught once, up front, rather than halfway through a load — the same guard the state
-        // directive applies, applied before anything is written.
-        var refusal = Datasets.Invalid(new DatasetDefinition("d", [new DatasetItem("customers", 1, "not json")]));
+        // {"total": {{random 'Number.digit'}}} is an ordinary document template and is not JSON until
+        // rendered. Refusing it at declaration would rule out every numeric helper — the guard belongs
+        // after rendering, which is where the loader applies it.
+        var dataset = new DatasetDefinition("d", [new DatasetItem("customers", 1, "{\"total\": {{random 'Number.digit'}}}")]);
 
-        Assert.NotNull(refusal);
-        Assert.Contains("customers", refusal, StringComparison.Ordinal);
-        Assert.Contains("not JSON", refusal, StringComparison.Ordinal);
+        Assert.Null(Datasets.Invalid(dataset));
     }
 
     [Fact]

@@ -168,12 +168,10 @@ public static class Datasets
                 return $"'{item.Collection}' asks for {item.Count} documents.";
             }
 
-            if (!ResourceGuards.IsWellFormedJson(item.Document))
-            {
-                // Checked before templating, so a template that renders to nonsense is still caught at
-                // load time by the same guard the state directive applies.
-                return $"The document template for '{item.Collection}' is not JSON.";
-            }
+            // A template is deliberately NOT required to be JSON here. `{"total": {{random
+            // 'Number.digit'}}}` is a legitimate and ordinary document template, and it is not JSON
+            // until it has been rendered — checking it now would refuse the numeric helpers outright.
+            // The guard belongs after rendering, where the loader applies it to what was produced.
 
             total += item.Count;
         }
