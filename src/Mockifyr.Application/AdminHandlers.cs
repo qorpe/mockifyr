@@ -788,6 +788,100 @@ public sealed class ImportOpenApiHandler(
     }
 }
 
+// ---- Named datasets (#351) ---------------------------------------------------------------------
+
+/// <summary>Lists the tenant's datasets.</summary>
+public sealed class GetDatasetsHandler(IDatasetStore store)
+    : IQueryHandler<GetDatasetsQuery, Result<IReadOnlyList<DatasetDefinition>>>
+{
+    public ValueTask<Result<IReadOnlyList<DatasetDefinition>>> Handle(GetDatasetsQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success(store.List(query.Tenant)));
+}
+
+/// <summary>
+/// Declares or replaces a dataset. Declaring one loads nothing: a definition and its data are separate
+/// so an operator can fix a scenario without first tearing down whatever is currently loaded.
+/// </summary>
+public sealed class PutDatasetHandler(IDatasetStore store) : ICommandHandler<PutDatasetCommand, Result>
+{
+    public ValueTask<Result> Handle(PutDatasetCommand command, CancellationToken cancellationToken)
+    {
+        if (Datasets.Invalid(command.Dataset) is { } invalid)
+        {
+            return ValueTask.FromResult(Result.Failure(Error.Validation("Dataset.Invalid", invalid)));
+        }
+
+        store.Put(command.Tenant, command.Dataset);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+
+/// <summary>
+/// Removes a dataset definition. Documents an earlier load created are deliberately left alone —
+/// deleting a scenario should not silently delete data somebody is still looking at.
+/// </summary>
+public sealed class DeleteDatasetHandler(IDatasetStore store) : ICommandHandler<DeleteDatasetCommand, Result>
+{
+    public ValueTask<Result> Handle(DeleteDatasetCommand command, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(store.Delete(command.Tenant, command.Name)
+            ? Result.Success()
+            : Result.Failure(Error.NotFound("Dataset.NotFound", $"No dataset named '{command.Name}'.")));
+}
+
+/// <summary>
+/// Loads a dataset and records what it created, so it can be taken back out again.
+/// </summary>
+/// <remarks>
+/// An earlier load of the same dataset is unloaded first. Loading twice is the gesture people actually
+/// repeat between test runs, and leaving two copies behind would make the second run fail for reasons
+/// that have nothing to do with the code under test.
+/// </remarks>
+public sealed class LoadDatasetHandler(IDatasetStore store, IDatasetLoader loader)
+    : ICommandHandler<LoadDatasetCommand, Result<int>>
+{
+    public ValueTask<Result<int>> Handle(LoadDatasetCommand command, CancellationToken cancellationToken)
+    {
+        if (store.Get(command.Tenant, command.Name) is not { } dataset)
+        {
+            return ValueTask.FromResult<Result<int>>(
+                Error.NotFound("Dataset.NotFound", $"No dataset named '{command.Name}'."));
+        }
+
+        if (store.GetLoad(command.Tenant, command.Name) is { } previous)
+        {
+            loader.Unload(command.Tenant, previous.Created);
+            store.ClearLoad(command.Tenant, command.Name);
+        }
+
+        var result = loader.Load(command.Tenant, dataset);
+        if (!result.IsLoaded)
+        {
+            return ValueTask.FromResult<Result<int>>(Error.Validation("Dataset.LoadFailed", result.Refusal!));
+        }
+
+        store.RecordLoad(command.Tenant, new DatasetLoad(command.Name, result.Created, DateTimeOffset.UtcNow));
+        return ValueTask.FromResult<Result<int>>(result.Created.Count);
+    }
+}
+
+/// <summary>Removes exactly what the last load created, and forgets it.</summary>
+public sealed class UnloadDatasetHandler(IDatasetStore store, IDatasetLoader loader)
+    : ICommandHandler<UnloadDatasetCommand, Result<int>>
+{
+    public ValueTask<Result<int>> Handle(UnloadDatasetCommand command, CancellationToken cancellationToken)
+    {
+        if (store.GetLoad(command.Tenant, command.Name) is not { } load)
+        {
+            // Not an error: unloading something that is not loaded is the state the caller wanted.
+            return ValueTask.FromResult<Result<int>>(0);
+        }
+
+        var removed = loader.Unload(command.Tenant, load.Created);
+        store.ClearLoad(command.Tenant, command.Name);
+        return ValueTask.FromResult<Result<int>>(removed);
+    }
+}
+
 // ---- Sandbox relations (ADR 0015) --------------------------------------------------------------
 
 /// <summary>

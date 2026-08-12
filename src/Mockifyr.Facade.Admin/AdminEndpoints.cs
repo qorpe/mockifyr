@@ -803,6 +803,48 @@ public static class AdminEndpoints
             return result.IsSuccess ? Results.Ok() : ResourceFailure(result.Error);
         });
 
+        // Named datasets (#351): a scenario across collections, loaded and reset as one thing. Its own
+        // prefix for the same reason relations got one — /resources/{collection} would shadow it.
+        admin.MapGet("/datasets", async (HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new GetDatasetsQuery(TenantOf(request)));
+            return Results.Json(new { datasets = result.Value.Select(DatasetJson) });
+        });
+
+        admin.MapPut("/datasets/{name}", async (string name, HttpRequest request, ISender sender) =>
+        {
+            DatasetDefinition dataset;
+            try
+            {
+                dataset = ReadDataset(name, await ReadBody(request));
+            }
+            catch (System.Text.Json.JsonException exception)
+            {
+                return DatasetFailure(Mediant.Results.Error.Validation("Dataset.InvalidBody", exception.Message));
+            }
+
+            var result = await sender.Send(new PutDatasetCommand(dataset, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(DatasetJson(dataset)) : DatasetFailure(result.Error);
+        });
+
+        admin.MapDelete("/datasets/{name}", async (string name, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new DeleteDatasetCommand(name, TenantOf(request)));
+            return result.IsSuccess ? Results.Ok() : DatasetFailure(result.Error);
+        });
+
+        admin.MapPost("/datasets/{name}/load", async (string name, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new LoadDatasetCommand(name, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(new { loaded = result.Value }) : DatasetFailure(result.Error);
+        });
+
+        admin.MapPost("/datasets/{name}/unload", async (string name, HttpRequest request, ISender sender) =>
+        {
+            var result = await sender.Send(new UnloadDatasetCommand(name, TenantOf(request)));
+            return result.IsSuccess ? Results.Json(new { removed = result.Value }) : DatasetFailure(result.Error);
+        });
+
         // Sandbox relations (ADR 0015). Deliberately NOT under /resources/schemas: that path would be
         // shadowed by /resources/{collection} for anyone whose sandbox holds a collection called
         // "schemas", and a route that works until someone names a collection unluckily is a trap.
@@ -1637,6 +1679,74 @@ public static class AdminEndpoints
             onDelete = relation.OnDelete.ToString().ToLowerInvariant(),
         }),
     };
+
+    /// <summary>
+    /// Reads <c>{"seed":42,"items":[{"collection":…,"count":1,"document":{…},"id":"…"}]}</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>document</c> is written as JSON rather than as a string, because a template that has to be
+    /// escaped into a string literal is one people get wrong — it is re-serialised to the text the
+    /// renderer wants. An absent <c>count</c> means one, which is what a scenario's single customer is.
+    /// </remarks>
+    private static DatasetDefinition ReadDataset(string name, string body)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+        var root = document.RootElement;
+        if (root.ValueKind != System.Text.Json.JsonValueKind.Object
+            || !root.TryGetProperty("items", out var items)
+            || items.ValueKind != System.Text.Json.JsonValueKind.Array)
+        {
+            throw new System.Text.Json.JsonException("The body must be {\"items\":[…]}.");
+        }
+
+        var parsed = new List<DatasetItem>();
+        foreach (var entry in items.EnumerateArray())
+        {
+            if (entry.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !entry.TryGetProperty("collection", out var collection)
+                || collection.ValueKind != System.Text.Json.JsonValueKind.String
+                || !entry.TryGetProperty("document", out var template))
+            {
+                throw new System.Text.Json.JsonException("Each item needs a collection and a document.");
+            }
+
+            parsed.Add(new DatasetItem(
+                collection.GetString()!,
+                entry.TryGetProperty("count", out var count) && count.TryGetInt32(out var parsedCount) ? parsedCount : 1,
+                template.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? template.GetString()!
+                    : template.GetRawText(),
+                entry.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? id.GetString()
+                    : null));
+        }
+
+        return new DatasetDefinition(
+            name,
+            parsed,
+            root.TryGetProperty("seed", out var seed) && seed.TryGetInt32(out var parsedSeed) ? parsedSeed : null);
+    }
+
+    private static object DatasetJson(DatasetDefinition dataset) => new
+    {
+        name = dataset.Name,
+        seed = dataset.Seed,
+        items = dataset.Items.Select(item => new
+        {
+            collection = item.Collection,
+            count = item.Count,
+            // Handed back as the text it will be rendered from, so what you read is what runs.
+            document = item.Document,
+            id = item.Id,
+        }),
+    };
+
+    private static IResult DatasetFailure(Mediant.Results.Error error) =>
+        Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
+        {
+            "Dataset.NotFound" => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status422UnprocessableEntity,
+        });
 
     private static IResult RelationFailure(Mediant.Results.Error error) =>
         Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch

@@ -15,6 +15,14 @@ public sealed class InMemoryResourceStore(
     /// <summary>The default per-collection document bound.</summary>
     public const int DefaultCapacity = 1000;
 
+    /// <summary>The collections this store keeps its own bookkeeping in, hidden from a tenant listing.</summary>
+    private static readonly HashSet<string> ReservedCollections = new(StringComparer.Ordinal)
+    {
+        ResourceRelations.SchemaCollection,
+        ResourceRelations.DatasetCollection,
+        ResourceRelations.DatasetLoadCollection,
+    };
+
     private readonly Dictionary<TenantId, Dictionary<string, List<ResourceDocument>>> _byTenant = [];
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly Lock _gate = new();
@@ -34,10 +42,11 @@ public sealed class InMemoryResourceStore(
 
             return [.. collections
                 .Where(pair => pair.Value.Count > 0
-                    // Relation declarations live in a reserved collection (ADR 0015). They are the
-                    // tenant's own data and no secret, but listing them beside their documents would
-                    // put internal bookkeeping in front of every operator reading the dashboard.
-                    && !string.Equals(pair.Key, ResourceRelations.SchemaCollection, StringComparison.Ordinal))
+                    // Relation declarations and dataset bookkeeping live in reserved collections
+                    // (ADR 0015, #351). They are the tenant's own data and no secret, but listing them
+                    // beside their documents would put internal bookkeeping in front of every operator
+                    // reading the dashboard.
+                    && !ReservedCollections.Contains(pair.Key))
                 .Select(pair => new ResourceCollectionInfo(pair.Key, pair.Value.Count))
                 .OrderBy(info => info.Name, StringComparer.Ordinal)];
         }

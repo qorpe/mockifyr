@@ -160,6 +160,26 @@ public sealed record ResetResourcesCommand(string? Collection, TenantId Tenant) 
 /// <summary>Seeds a collection from a JSON array; transactional — on any invalid item nothing lands.</summary>
 public sealed record SeedResourcesCommand(string Collection, IReadOnlyList<SeedResourceItem> Items, TenantId Tenant) : ICommand<Result<int>>;
 
+// Named datasets (#351): a scenario across collections, loaded and reset as one thing.
+
+/// <summary>Lists the tenant's datasets, name-ordered.</summary>
+public sealed record GetDatasetsQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<DatasetDefinition>>>;
+
+/// <summary>Declares or replaces a dataset. Nothing is loaded by declaring one.</summary>
+public sealed record PutDatasetCommand(DatasetDefinition Dataset, TenantId Tenant) : ICommand<Result>;
+
+/// <summary>Removes a dataset definition. Documents an earlier load created are left alone.</summary>
+public sealed record DeleteDatasetCommand(string Name, TenantId Tenant) : ICommand<Result>;
+
+/// <summary>
+/// Loads a dataset, atomically. An earlier load of the same dataset is unloaded first, so loading
+/// twice leaves one copy rather than two — the gesture people actually repeat between test runs.
+/// </summary>
+public sealed record LoadDatasetCommand(string Name, TenantId Tenant) : ICommand<Result<int>>;
+
+/// <summary>Removes exactly what the last load of this dataset created.</summary>
+public sealed record UnloadDatasetCommand(string Name, TenantId Tenant) : ICommand<Result<int>>;
+
 /// <summary>Lists the tenant's declared relations (ADR 0015), collection-name ordered.</summary>
 public sealed record GetRelationsQuery(TenantId Tenant) : IQuery<Result<IReadOnlyList<ResourceSchema>>>;
 

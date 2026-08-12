@@ -406,4 +406,15 @@ while the admin API stays same-origin. All three are off by default and each shi
 thrown where only container-diagnosis failures were caught, so the one proxy outcome the host can
 explain completely would have reached the caller as an opaque 500.
 
+**G22 Phase 2** follows: **#353 — resource querying** (filter, sort and field selection over a
+collection, on both the admin listing and the served `list`, sharing one evaluator so the sandbox and
+the screen watching it cannot disagree; the filter vocabulary is the dialect's own) and **#351 — named
+datasets** (a scenario across collections, loaded and reset in one call, with Faker reachable from a
+seed and a fixed seed making it reproducible). The dataset work needed two orderings for two different
+reasons — parents first on load because integrity refuses an orphan child, children first on unload
+because `restrict` refuses a parent with children — and a compensating rollback rather than a pretend
+transaction, since integrity can only be checked against documents that exist. Seeding uses an ambient
+scope rather than Bogus's process-wide static, so a load cannot make concurrently served responses
+deterministic.
+
 Builds clean (0 warnings); 1122 tests green across the four suites.

@@ -60,7 +60,9 @@ internal static class FakerHelpers
 
     private static object Evaluate(string expression) =>
         Providers.TryGetValue(expression, out var provider)
-            ? provider(new Faker())
+            // The ambient generator (#351): a seeded one inside a dataset load, a fresh unseeded one
+            // everywhere else — so serving keeps drawing new values while a load stays reproducible.
+            ? provider(FakerSeed.Current)
             : $"[ERROR: Unable to evaluate the expression {expression}]";
 
     // Pattern-matched rather than index-checked twice: 2.4.3 annotates the indexer as nullable, and

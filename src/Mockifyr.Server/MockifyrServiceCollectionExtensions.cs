@@ -73,6 +73,15 @@ public static class MockifyrServiceCollectionExtensions
         services.AddSingleton<IResourceSchemaStore>(sp =>
             new ResourceBackedSchemaStore(sp.GetRequiredService<IResourceStore>()));
         services.AddSingleton<IResourceIdGenerator, GuidResourceIdGenerator>();
+
+        // Named datasets (#351). Both ride the resource store, so they persist and restore wherever
+        // documents do, and the loader is the Core seam implemented beside the templating engine.
+        services.AddSingleton<IDatasetStore>(sp => new ResourceBackedDatasetStore(sp.GetRequiredService<IResourceStore>()));
+        services.AddSingleton<IDatasetLoader>(sp => new Mockifyr.Templating.DatasetLoader(
+            sp.GetRequiredService<IResourceStore>(),
+            sp.GetRequiredService<IResourceSchemaStore>(),
+            sp.GetRequiredService<IResourceIdGenerator>(),
+            sp.GetRequiredService<ResourceOptions>()));
         services.AddSingleton(new ResourceOptions());
         // Readiness state (#242): startup flips it on, shutdown flips it off.
         services.AddSingleton<HostReadiness>();
