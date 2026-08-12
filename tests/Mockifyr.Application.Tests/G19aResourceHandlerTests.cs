@@ -19,7 +19,7 @@ public sealed class G19aResourceHandlerTests
     private static async Task<Mediant.Results.Result<ResourceDocument>> PutAsync(
         InMemoryResourceStore store, string collection, string id, string body)
     {
-        var result = await new PutResourceHandler(store, SmallCap, new NullResourcePersistence())
+        var result = await new PutResourceHandler(store, SmallCap, new NullResourcePersistence(), Unlimited(store))
             .Handle(new PutResourceCommand(collection, id, body, Acme), CancellationToken.None);
         if (result.IsFailure)
         {
@@ -142,4 +142,8 @@ public sealed class G19aResourceHandlerTests
 
         public string NextId(string collection) => $"{collection}-{++_next}";
     }
+
+    /// <summary>No storage ceiling — what a host without --tenant-storage-limit means (#357).</summary>
+    private static TenantStorageGuard Unlimited(IResourceStore store) =>
+        new(store, TenantStorage.Unlimited);
 }

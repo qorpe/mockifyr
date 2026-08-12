@@ -189,6 +189,19 @@ public static class MockServingEndpoints
                 ? new TenantId(t!)
                 : TenantId.Default);
 
+        // A suspended tenant is refused at the door (#357): the sandbox is still there and nothing has
+        // been deleted, which is the entire reason suspension exists. 403 rather than 401 — the
+        // credential is fine and the account is not — and the body says suspended, because a partner
+        // told "unauthorised" will spend the afternoon re-checking a key with nothing wrong with it.
+        if (context.RequestServices.GetService<ITenantStore>()?.Get(tenant) is { Status: TenantStatus.Suspended })
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(
+                """{"error":"Tenant.Suspended","message":"This sandbox tenant is suspended. Contact the operator."}""");
+            return tenant;
+        }
+
         // Record mode (G12d): while THIS TENANT has a session live, its requests are proxied to that
         // tenant's target, a stub is generated from the exchange and captured, and the upstream's
         // response is returned to the caller — Mockifyr's record-through-proxy behavior (verified by

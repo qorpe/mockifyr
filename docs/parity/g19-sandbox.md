@@ -782,3 +782,66 @@ retention boundaries, both bounds under load, the heavy-hitter behaviour, tie or
 recording) and `UsageWireTests`/`UsageOffByDefaultTests` (7 wire cases including the modelled 404, the
 unknown token, anonymous traffic, the partner's self-service read, and an unconfigured host).
 **Stryker: 100 %** on `Usage.cs`.
+
+
+## A tenant you can declare, suspend and offboard (#357)
+
+**A tenant was not a thing you could create.** The only tenant route read the stub store, so a tenant
+was *derived from owning a stub*: a partner holding an API key and a sandbox full of documents did not
+appear at all until they had a stub. Onboarding was undocumented and offboarding was "delete things
+until nothing is left", with no way to say *this one is finished* or *this one is paused pending
+payment*.
+
+**Declaring is additive, never a migration.** `GET /__admin/tenants` still answers the derived list
+exactly as it did — that is what every existing deployment reads — and reports declared tenants
+beside it. A host that never calls the create route behaves identically to before.
+
+**Suspension is the state that made this worth building.** "Finished with this partner" and "paused
+pending payment" were both spelled *delete everything they own*, which is not a decision anybody wants
+to make on a Friday. A suspended tenant is refused at the door with **403 and the word suspended** —
+not 401, because the credential is fine and the account is not, and a partner told "unauthorised"
+spends the afternoon re-checking a key with nothing wrong with it. Nothing of theirs is deleted, and
+resuming puts it back exactly as it was.
+
+**Only a declared tenant can be suspended.** Suspending one that was merely inferred from owning a
+stub would be a decision with nowhere to live, lost on the next restart.
+
+**Re-declaring keeps the date and the status.** Renaming a partner or raising their ceiling is not
+un-suspending them; a rename that quietly resumed serving would be the worst kind of surprise.
+
+**Deleting answers with a receipt.** Stubs, documents, environment keys, API keys and the inbox go
+together, and the response says how many of each — because "ok" to a destructive operation tells you
+it ran, not what it did. The declaration is removed **last**: if anything before it throws, the tenant
+is still declared and the operation can be repeated, where a half-deleted tenant that no longer exists
+would be unrecoverable. Offboarding also works for a tenant nobody declared, which is all of them on a
+host that never declared any.
+
+**The bound nobody had.** `--resource-max-body` caps one document and `--resource-limit` caps one
+collection, so one partner seeding a loop across many collections could fill a shared host for
+everybody — precisely the neighbour problem the tenant model exists to prevent.
+`--tenant-storage-limit` is the host default and a declared tenant may carry its own. The refusal
+names the limit **and** the current usage, because "you are over a limit" without either number is a
+support ticket rather than an answer, and the usage is visible in the tenant listing before it is hit.
+
+**A replace only counts the difference.** A tenant sitting at its ceiling must still be able to edit
+what it already has, or the limit is a trap only a delete can escape. The guard therefore looks up
+what is being replaced rather than only what is being written — a distinction mutation testing caught,
+because nothing had exercised an edit at the ceiling.
+
+**Counted, not scanned.** The in-memory store maintains the byte total as documents come and go,
+including the one released by eviction at the collection bound — a counter that drifted upward would
+start refusing writes for storage that is not there. The interface default is a scan, so every other
+implementer keeps working.
+
+**One registration, two numbers.** `ResourceOptions` was being registered twice once the ceiling was
+added, and the second call silently dropped the first one's number — which is exactly how a configured
+ceiling becomes a ceiling that is not enforced. Both bounds now land in one registration.
+
+**Validation.** `TenantLifecycleTests` (20 unit cases: declaration rules, re-declaration, suspension
+of an undeclared tenant, the deletion receipt and its scope, the ceiling's boundaries, byte accounting
+across replace/delete/reset/eviction, and stable listing order) and `TenantLifecycleWireTests` (7 wire
+cases: the derived list still answering, refusal by name with the sandbox intact, a neighbour still
+serving, an offboarding receipt, a refusal carrying both numbers, a tenant's own limit overriding the
+host default, and a declaration surviving a restart). **Stryker: 100 %** on `Tenants.cs`. Declarations
+persist through the G16 seam on all four providers, announcing on the change feed so a suspension
+takes effect on every replica rather than only the one that decided it.

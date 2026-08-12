@@ -24,6 +24,13 @@ public sealed class InMemoryResourceStore(
     };
 
     private readonly Dictionary<TenantId, Dictionary<string, List<ResourceDocument>>> _byTenant = [];
+
+    /// <summary>
+    /// Body bytes held per tenant (#357), maintained as documents come and go rather than counted on
+    /// demand: the ceiling is checked on the write path, and a scan there would cost more than the
+    /// storage it protects.
+    /// </summary>
+    private readonly Dictionary<TenantId, long> _bytes = [];
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly Lock _gate = new();
 
@@ -131,14 +138,17 @@ public sealed class InMemoryResourceStore(
                     Parent = parent ?? previous.Parent,
                 };
                 documents[index] = updated;
+                Adjust(tenant, updated.Body.Length - previous.Body.Length);
                 return updated;
             }
 
             var created = new ResourceDocument(id, collection, body, now, now, Version: 1, parent);
             documents.Add(created);
+            Adjust(tenant, created.Body.Length);
             // One create can overflow by at most one, so evicting the single oldest entry is enough.
             if (documents.Count > Capacity)
             {
+                Adjust(tenant, -documents[0].Body.Length);
                 documents.RemoveAt(0);
             }
 
@@ -161,13 +171,16 @@ public sealed class InMemoryResourceStore(
             var index = documents.FindIndex(d => string.Equals(d.Id, document.Id, StringComparison.Ordinal));
             if (index >= 0)
             {
+                Adjust(tenant, document.Body.Length - documents[index].Body.Length);
                 documents[index] = document;
                 return;
             }
 
             documents.Add(document);
+            Adjust(tenant, document.Body.Length);
             if (documents.Count > Capacity)
             {
+                Adjust(tenant, -documents[0].Body.Length);
                 documents.RemoveAt(0);
             }
         }
@@ -178,7 +191,16 @@ public sealed class InMemoryResourceStore(
     {
         lock (_gate)
         {
-            return Documents(tenant, collection)?.RemoveAll(d => string.Equals(d.Id, id, StringComparison.Ordinal)) > 0;
+            var documents = Documents(tenant, collection);
+            if (documents is null)
+            {
+                return false;
+            }
+
+            var removed = documents.Where(d => string.Equals(d.Id, id, StringComparison.Ordinal)).ToList();
+            documents.RemoveAll(d => string.Equals(d.Id, id, StringComparison.Ordinal));
+            Adjust(tenant, -removed.Sum(d => (long)d.Body.Length));
+            return removed.Count > 0;
         }
     }
 
@@ -187,8 +209,10 @@ public sealed class InMemoryResourceStore(
     {
         lock (_gate)
         {
-            if (_byTenant.TryGetValue(tenant, out var collections))
+            if (_byTenant.TryGetValue(tenant, out var collections)
+                && collections.TryGetValue(collection, out var documents))
             {
+                Adjust(tenant, -documents.Sum(d => (long)d.Body.Length));
                 collections.Remove(collection);
             }
         }
@@ -200,7 +224,33 @@ public sealed class InMemoryResourceStore(
         lock (_gate)
         {
             _byTenant.Remove(tenant);
+            _bytes.Remove(tenant);
         }
+    }
+
+    /// <inheritdoc />
+    public long UsedBytes(TenantId tenant)
+    {
+        lock (_gate)
+        {
+            return _bytes.GetValueOrDefault(tenant);
+        }
+    }
+
+    /// <summary>
+    /// Moves the tenant's counter, dropping it at zero rather than leaving an entry behind. Callers
+    /// hold the gate — this is bookkeeping inside a write, not a write of its own.
+    /// </summary>
+    private void Adjust(TenantId tenant, long delta)
+    {
+        var updated = _bytes.GetValueOrDefault(tenant) + delta;
+        if (updated <= 0)
+        {
+            _bytes.Remove(tenant);
+            return;
+        }
+
+        _bytes[tenant] = updated;
     }
 
     private List<ResourceDocument>? Documents(TenantId tenant, string collection) =>

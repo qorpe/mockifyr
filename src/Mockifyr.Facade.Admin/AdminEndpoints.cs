@@ -236,8 +236,76 @@ public static class AdminEndpoints
 
         // The tenants that currently exist server-side (a tenant materializes once it has stubs), so the
         // dashboard's switcher can surface tenants created via the API alongside the operator's own list.
-        admin.MapGet("/tenants", (IStubStore store) =>
-            Results.Json(new { tenants = store.GetTenants().Select(t => t.Value).OrderBy(v => v) }));
+        // Tenants (#357). The derived list — every tenant that owns a stub — is kept exactly as it was,
+        // because that is what every existing deployment reads. Declared tenants are reported beside
+        // it: declaring is additive, never a migration.
+        admin.MapGet("/tenants", async (IStubStore store, ISender sender) =>
+        {
+            var declared = await sender.Send(new GetTenantsQuery());
+            return Results.Json(new
+            {
+                tenants = store.GetTenants().Select(t => t.Value).OrderBy(v => v),
+                declared = declared.Value.Select(TenantJson),
+            });
+        });
+
+        admin.MapPost("/tenants", async (HttpRequest request, ISender sender) =>
+        {
+            string? id = null;
+            string? name = null;
+            long? limit = null;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await ReadBody(request));
+                id = doc.RootElement.TryGetProperty("id", out var i) ? i.GetString() : null;
+                name = doc.RootElement.TryGetProperty("displayName", out var n) ? n.GetString() : null;
+                limit = doc.RootElement.TryGetProperty("storageLimitBytes", out var l) && l.TryGetInt64(out var parsed)
+                    ? parsed
+                    : null;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+            }
+
+            var result = await sender.Send(new DeclareTenantCommand(id ?? string.Empty, name ?? string.Empty, limit));
+            return result.IsSuccess
+                ? Results.Json(TenantJson(new TenantWithUsage(result.Value, 0, 0)), statusCode: StatusCodes.Status201Created)
+                : TenantFailure(result.Error);
+        });
+
+        admin.MapPost("/tenants/{id}/suspend", async (string id, ISender sender) =>
+        {
+            var result = await sender.Send(new SetTenantStatusCommand(id, TenantStatus.Suspended));
+            return result.IsSuccess
+                ? Results.Json(TenantJson(new TenantWithUsage(result.Value, 0, 0)))
+                : TenantFailure(result.Error);
+        });
+
+        admin.MapPost("/tenants/{id}/resume", async (string id, ISender sender) =>
+        {
+            var result = await sender.Send(new SetTenantStatusCommand(id, TenantStatus.Active));
+            return result.IsSuccess
+                ? Results.Json(TenantJson(new TenantWithUsage(result.Value, 0, 0)))
+                : TenantFailure(result.Error);
+        });
+
+        admin.MapDelete("/tenants/{id}", async (string id, ISender sender) =>
+        {
+            var result = await sender.Send(new DeleteTenantCommand(id));
+            // A receipt, not an "ok": a destructive operation that only says it ran leaves the operator
+            // to go and check whether it did what they meant.
+            return Results.Json(new
+            {
+                removed = new
+                {
+                    stubs = result.Value.Stubs,
+                    documents = result.Value.Documents,
+                    environmentKeys = result.Value.EnvironmentKeys,
+                    apiKeys = result.Value.ApiKeys,
+                    messages = result.Value.Messages,
+                },
+            });
+        });
 
         admin.MapGet("/mappings", async (HttpRequest request, ISender sender) =>
         {
@@ -1699,6 +1767,23 @@ public static class AdminEndpoints
         revokedBy = key.Revocation?.By,
         revokedReason = key.Revocation?.Reason,
     };
+
+    private static object TenantJson(TenantWithUsage entry) => new
+    {
+        id = entry.Tenant.Id.Value,
+        displayName = entry.Tenant.DisplayName,
+        createdAt = entry.Tenant.CreatedAt,
+        status = entry.Tenant.Status == TenantStatus.Suspended ? "suspended" : "active",
+        storageLimitBytes = entry.LimitBytes,
+        storageUsedBytes = entry.UsedBytes,
+    };
+
+    private static IResult TenantFailure(Mediant.Results.Error error) =>
+        Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
+        {
+            "Tenant.NotFound" => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status422UnprocessableEntity,
+        });
 
     private static object UsageJson(KeyUsageWithName entry) => new
     {

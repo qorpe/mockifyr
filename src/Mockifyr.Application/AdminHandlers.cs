@@ -629,7 +629,8 @@ public sealed class GetResourceHandler(IResourceStore store)
 }
 
 /// <summary>Creates or replaces one document after the shared validation.</summary>
-public sealed class PutResourceHandler(IResourceStore store, ResourceOptions options, IResourcePersistence persistence)
+public sealed class PutResourceHandler(
+    IResourceStore store, ResourceOptions options, IResourcePersistence persistence, TenantStorageGuard storage)
     : ICommandHandler<PutResourceCommand, Result<ResourceDocument>>
 {
     public ValueTask<Result<ResourceDocument>> Handle(PutResourceCommand command, CancellationToken cancellationToken)
@@ -640,6 +641,16 @@ public sealed class PutResourceHandler(IResourceStore store, ResourceOptions opt
         if (error is not null)
         {
             return ValueTask.FromResult<Result<ResourceDocument>>(error);
+        }
+
+        // The per-tenant ceiling (#357). The refusal carries the limit and what is already used,
+        // because "you are over a limit" without either number is a support ticket, not an answer.
+        if (!storage.Allows(command.Tenant, command.Collection, command.Id, command.Body, out var used, out var limit))
+        {
+            return ValueTask.FromResult<Result<ResourceDocument>>(Error.Validation(
+                "Tenant.StorageExceeded",
+                $"This tenant holds {used} of {limit} bytes; the document does not fit. "
+                + "Delete documents or raise the tenant's storage limit."));
         }
 
         // Persisted after the store accepts it, so what survives a restart is exactly what the store
@@ -1122,6 +1133,156 @@ public sealed class RotateApiKeyHandler(IApiKeyStore store, IApiKeyPersistence p
     /// </summary>
     private static DateTimeOffset Earliest(DateTimeOffset? existing, DateTimeOffset candidate) =>
         existing is { } already && already < candidate ? already : candidate;
+}
+
+// ---- Tenant lifecycle (#357) -------------------------------------------------------------------
+
+/// <summary>
+/// Declares a tenant, or updates an existing declaration (#357).
+/// </summary>
+/// <remarks>
+/// Re-declaring keeps <c>CreatedAt</c> and the current status: an operator renaming a partner or
+/// raising their ceiling is not un-suspending them, and a rename that quietly resumed serving would
+/// be the worst kind of surprise.
+/// </remarks>
+public sealed class DeclareTenantHandler(ITenantStore store, ITenantPersistence persistence)
+    : ICommandHandler<DeclareTenantCommand, Result<TenantRecord>>
+{
+    public ValueTask<Result<TenantRecord>> Handle(DeclareTenantCommand command, CancellationToken cancellationToken)
+    {
+        var id = command.Id.Trim();
+        if (!ReservedEnvironmentKeys.IsWellFormed(id) || id.Length > 64)
+        {
+            return ValueTask.FromResult<Result<TenantRecord>>(Error.Validation(
+                "Tenant.InvalidId",
+                "A tenant id must start with a letter or underscore, contain only letters, digits, underscores or hyphens, and be at most 64 characters."));
+        }
+
+        var name = command.DisplayName.Trim();
+        if (name.Length > 128 || name.Any(char.IsControl))
+        {
+            return ValueTask.FromResult<Result<TenantRecord>>(Error.Validation(
+                "Tenant.InvalidName", "A display name must be at most 128 characters with no control characters."));
+        }
+
+        if (command.StorageLimitBytes is < 0)
+        {
+            return ValueTask.FromResult<Result<TenantRecord>>(Error.Validation(
+                "Tenant.InvalidStorageLimit", "A storage limit must be zero (unlimited) or a positive number of bytes."));
+        }
+
+        var tenant = new TenantId(id);
+        var existing = store.Get(tenant);
+        var record = new TenantRecord(
+            tenant,
+            name.Length == 0 ? existing?.DisplayName ?? id : name,
+            existing?.CreatedAt ?? DateTimeOffset.UtcNow,
+            existing?.Status ?? TenantStatus.Active,
+            command.StorageLimitBytes);
+
+        store.Put(record);
+        persistence.Save(record);
+        return ValueTask.FromResult<Result<TenantRecord>>(record);
+    }
+}
+
+/// <summary>Lists declared tenants with what each is holding (#357).</summary>
+public sealed class GetTenantsHandler(ITenantStore store, TenantStorageGuard storage)
+    : IQueryHandler<GetTenantsQuery, Result<IReadOnlyList<TenantWithUsage>>>
+{
+    public ValueTask<Result<IReadOnlyList<TenantWithUsage>>> Handle(GetTenantsQuery query, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(Result.Success<IReadOnlyList<TenantWithUsage>>(
+            [.. store.GetAll().Select(tenant => new TenantWithUsage(
+                tenant, storage.UsedBy(tenant.Id), storage.LimitFor(tenant.Id)))]));
+}
+
+/// <summary>Suspends or resumes a declared tenant (#357).</summary>
+public sealed class SetTenantStatusHandler(ITenantStore store, ITenantPersistence persistence)
+    : ICommandHandler<SetTenantStatusCommand, Result<TenantRecord>>
+{
+    public ValueTask<Result<TenantRecord>> Handle(SetTenantStatusCommand command, CancellationToken cancellationToken)
+    {
+        if (store.Get(new TenantId(command.Id)) is not { } existing)
+        {
+            // Only a declared tenant can be suspended: suspending one that was merely inferred from
+            // owning a stub would be a decision with nowhere to live, lost on the next restart.
+            return ValueTask.FromResult<Result<TenantRecord>>(Error.NotFound(
+                "Tenant.NotFound", $"No declared tenant '{command.Id}'."));
+        }
+
+        var updated = existing with { Status = command.Status };
+        store.Put(updated);
+        persistence.Save(updated);
+        return ValueTask.FromResult<Result<TenantRecord>>(updated);
+    }
+}
+
+/// <summary>
+/// Deletes a tenant and everything scoped to it, and reports what went (#357).
+/// </summary>
+/// <remarks>
+/// The receipt is the point. "Offboard this partner" used to mean deleting things until nothing was
+/// left, with no way to know whether anything had been missed — and an answer of "ok" to a
+/// destructive operation tells you it ran, not what it did.
+/// </remarks>
+public sealed class DeleteTenantHandler(
+    ITenantStore tenants,
+    ITenantPersistence persistence,
+    IStubStore stubs,
+    IStubPersistence stubPersistence,
+    IResourceStore resources,
+    IResourcePersistence resourcePersistence,
+    IEnvironmentStore environments,
+    IEnvironmentPersistence environmentPersistence,
+    IApiKeyStore apiKeys,
+    IApiKeyPersistence apiKeyPersistence,
+    IMessageStore messages)
+    : ICommandHandler<DeleteTenantCommand, Result<TenantRemoval>>
+{
+    public ValueTask<Result<TenantRemoval>> Handle(DeleteTenantCommand command, CancellationToken cancellationToken)
+    {
+        var tenant = new TenantId(command.Id);
+
+        var stubIds = stubs.GetStubs(tenant).Select(stub => stub.Id).ToList();
+        foreach (var id in stubIds)
+        {
+            stubs.Remove(tenant, id);
+            stubPersistence.Remove(tenant, id);
+        }
+
+        var documents = 0;
+        foreach (var collection in resources.GetCollections(tenant))
+        {
+            documents += resources.List(tenant, collection.Name).Count;
+        }
+
+        resources.ResetAll(tenant);
+        // Cleared by tenant rather than document by document: a null collection means "all of them",
+        // and every provider implements that as one operation.
+        resourcePersistence.Clear(tenant, collection: null);
+
+        var keys = environments.GetKeys(tenant).Select(key => key.Key).ToList();
+        environments.Clear(tenant);
+        environmentPersistence.Clear(tenant);
+
+        var credentials = apiKeys.GetKeys(tenant).ToList();
+        foreach (var credential in credentials)
+        {
+            apiKeys.Remove(credential.Id);
+            apiKeyPersistence.Remove(credential.Id);
+        }
+
+        var inbox = messages.GetMessages(tenant).Count;
+        messages.Reset(tenant);
+
+        // The declaration goes last: if anything above throws, the tenant is still declared and the
+        // operation can be repeated. A half-deleted tenant that no longer exists is unrecoverable.
+        tenants.Remove(tenant);
+        persistence.Remove(tenant);
+
+        return ValueTask.FromResult<Result<TenantRemoval>>(
+            new TenantRemoval(stubIds.Count, documents, keys.Count, credentials.Count, inbox));
+    }
 }
 
 /// <summary>

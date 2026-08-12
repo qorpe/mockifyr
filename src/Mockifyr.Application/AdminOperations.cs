@@ -242,6 +242,28 @@ public sealed record RotateApiKeyCommand(
     string Id, TenantId Tenant, int OverlapMinutes, string By = "unknown")
     : ICommand<Result<IssuedApiKey>>;
 
+// Tenant lifecycle (#357): a tenant becomes something you declare, not only something inferred from
+// owning a stub.
+
+/// <summary>A declared tenant with what it is currently holding.</summary>
+public sealed record TenantWithUsage(TenantRecord Tenant, long UsedBytes, long LimitBytes);
+
+/// <summary>Declares a tenant, or updates the declaration of one already declared.</summary>
+public sealed record DeclareTenantCommand(
+    string Id, string DisplayName, long? StorageLimitBytes) : ICommand<Result<TenantRecord>>;
+
+/// <summary>Lists declared tenants with their storage usage.</summary>
+public sealed record GetTenantsQuery : IQuery<Result<IReadOnlyList<TenantWithUsage>>>;
+
+/// <summary>Suspends or resumes a declared tenant.</summary>
+public sealed record SetTenantStatusCommand(string Id, TenantStatus Status) : ICommand<Result<TenantRecord>>;
+
+/// <summary>What deleting a tenant removed, so the answer is a receipt rather than an "ok".</summary>
+public sealed record TenantRemoval(int Stubs, int Documents, int EnvironmentKeys, int ApiKeys, int Messages);
+
+/// <summary>Deletes a tenant and everything scoped to it.</summary>
+public sealed record DeleteTenantCommand(string Id) : ICommand<Result<TenantRemoval>>;
+
 /// <summary>
 /// Reads per-key usage for the tenant over the last <paramref name="Hours"/> hours (#356).
 /// </summary>

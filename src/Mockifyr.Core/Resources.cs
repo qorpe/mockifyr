@@ -47,7 +47,9 @@ public sealed class GuidResourceIdGenerator : IResourceIdGenerator
 /// document's UTF-8 size (honest 413 beyond it); the per-collection document capacity lives on
 /// the store (ring-buffer eviction, oldest first).
 /// </summary>
-public sealed record ResourceOptions(int MaxBodyBytes = ResourceOptions.DefaultMaxBodyBytes)
+public sealed record ResourceOptions(
+    int MaxBodyBytes = ResourceOptions.DefaultMaxBodyBytes,
+    long TenantStorageLimitBytes = TenantStorage.Unlimited)
 {
     /// <summary>The default per-document cap: 1 MiB.</summary>
     public const int DefaultMaxBodyBytes = 1024 * 1024;
@@ -138,6 +140,18 @@ public interface IResourceStore
     IReadOnlyList<ResourceDocument> Find(TenantId tenant, string collection, string field, string value) =>
         [.. List(tenant, collection)
             .Where(d => string.Equals(ResourceRelations.ReadKey(d.Body, field), value, StringComparison.Ordinal))];
+
+    /// <summary>
+    /// How many bytes of document bodies this tenant holds (#357).
+    /// </summary>
+    /// <remarks>
+    /// A default over <see cref="List"/> so every existing implementer keeps compiling, and the
+    /// in-memory store — the hot-path source of truth (ADR 0006) — overrides it with a counter it
+    /// maintains as documents come and go. A scan on every write would make the ceiling cost more
+    /// than the storage it protects.
+    /// </remarks>
+    long UsedBytes(TenantId tenant) =>
+        GetCollections(tenant).Sum(collection => List(tenant, collection.Name).Sum(d => (long)d.Body.Length));
 
     /// <summary>
     /// Creates or replaces a document. A create stamps <c>CreatedAt</c> and version 1; a replace

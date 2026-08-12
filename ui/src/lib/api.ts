@@ -174,15 +174,31 @@ export async function importMappings(tenant: string, json: string): Promise<{ mo
   }
 }
 
-/** Tenants that exist server-side (materialized once they have stubs). Empty in sample mode. */
-export async function fetchTenants(): Promise<{ tenants: string[]; mock: boolean }> {
+/** A tenant somebody declared (#357), as opposed to one inferred from owning a stub. */
+export interface DeclaredTenant {
+  id: string
+  displayName: string
+  createdAt: string
+  status: 'active' | 'suspended'
+  storageLimitBytes: number
+  storageUsedBytes: number
+}
+
+/**
+ * Tenants that exist server-side. Two sources, merged: those inferred from owning a stub, and those
+ * declared through the tenant routes (#357) — a declared tenant with no stubs yet must still be
+ * selectable, or declaring one would make it invisible in the very screen used to fill it.
+ */
+export async function fetchTenants(): Promise<{ tenants: string[]; declared: DeclaredTenant[]; mock: boolean }> {
   try {
     const res = await adminFetch('/tenants', 'default')
     if (!res.ok) throw new Error(String(res.status))
-    const body = (await res.json()) as { tenants?: string[] }
-    return { tenants: body.tenants ?? [], mock: false }
+    const body = (await res.json()) as { tenants?: string[]; declared?: DeclaredTenant[] }
+    const declared = body.declared ?? []
+    const merged = [...new Set([...(body.tenants ?? []), ...declared.map((t) => t.id)])].sort()
+    return { tenants: merged, declared, mock: false }
   } catch {
-    return { tenants: [], mock: true }
+    return { tenants: [], declared: [], mock: true }
   }
 }
 
