@@ -646,6 +646,12 @@ window is the one with the least left — the limit the caller is about to meet.
   means a withdrawn credential still serves traffic. A host with `--sandbox-auth` and `--redis` but no
   `--change-feed` now says so at startup rather than leaving it to be discovered.
 
+**A visible change to what `usedThisHour` means.** The old limiter stopped counting at the limit; the
+shared counter counts attempts, so a key that made 62 requests against a quota of 40 now reports 62.
+The number that stops at the limit cannot tell a partner who fitted inside their quota from one
+hammering a closed door, and the second is the case an operator is looking for. Rate headers are
+unchanged — `X-RateLimit-Remaining` still floors at zero.
+
 **Not done, deliberately.** No sliding window and no token bucket: a fixed window is what the rate
 headers describe, and a shared sliding window costs a sorted set per key per request to buy precision
 nobody is measuring here. No cross-key or per-tenant aggregate ceiling — that is a different question
