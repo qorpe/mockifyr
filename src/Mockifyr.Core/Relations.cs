@@ -84,6 +84,12 @@ public static class ResourceRelations
     /// </summary>
     public const string SchemaCollection = "!relations";
 
+    /// <summary>The collection dataset definitions are kept in (#351); reserved the same way.</summary>
+    public const string DatasetCollection = "!datasets";
+
+    /// <summary>The collection dataset load records are kept in (#351); reserved the same way.</summary>
+    public const string DatasetLoadCollection = "!dataset-loads";
+
     /// <summary>How deep a cascade will walk before refusing to continue.</summary>
     /// <remarks>
     /// Cycles in the relation graph are legal — <c>employees.managerId → employees</c> is a real
