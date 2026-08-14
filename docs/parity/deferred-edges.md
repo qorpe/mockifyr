@@ -34,13 +34,20 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 | Gap | Why it is open | Issue |
 |---|---|---|
-| Resource querying — filter, sort, field selection | The primitive it needs (`IResourceStore.Find`) shipped with relations, because scoping a relation *is* a field lookup. The public surface over it has not. | [#353](https://github.com/qorpe/mockifyr/issues/353) |
-| Resource embedding (`?expand=customer`) | ADR 0015 was its precondition and is now met. Deliberately not bundled: relations were a defect fix and embedding is a feature, and shipping them together would have made the defect fix impossible to review. | [#350](https://github.com/qorpe/mockifyr/issues/350) |
-| Relations have no dashboard screen | Declared through `/__admin/relations` and derived by OpenAPI import; the Sandbox → Resources screen does not yet show what a collection belongs to. | [#350](https://github.com/qorpe/mockifyr/issues/350) |
+| Resource embedding (`?expand=customer`) | ADR 0015 was its precondition and is met. Deliberately not bundled with relations: those were a defect fix and this is a feature, and shipping them together would have made the fix impossible to review. | [#378](https://github.com/qorpe/mockifyr/issues/378) |
 
-The one entry this section previously held — change-feed reload for environments and sandbox resources
-([#279](https://github.com/qorpe/mockifyr/issues/279)) — shipped; see `g16-persistence.md` for what the
-fix turned up along the way.
+Two entries left this section by shipping: **resource querying**
+([#353](https://github.com/qorpe/mockifyr/issues/353)) and the **relations dashboard screen**, both in the
+G22 epic; before them, change-feed reload for environments and sandbox resources
+([#279](https://github.com/qorpe/mockifyr/issues/279)) — see `g16-persistence.md` for what that fix turned
+up along the way.
+
+A third left it by being re-filed rather than done: embedding was tracked against
+[#350](https://github.com/qorpe/mockifyr/issues/350), which shipped relations and was closed, so the row
+pointed at an issue that no longer accepted work. That is the one failure a register cannot have — a gap
+that reads as tracked and is not — so it now has [#378](https://github.com/qorpe/mockifyr/issues/378) of
+its own. Worth stating as a rule: when an issue closes, every register row citing it is either done or
+needs somewhere else to live.
 
 A row belongs here when a gap is real, reachable by a documented deployment, and not yet closed. An empty
 section is the honest state, not an oversight — the sections below are where the standing limitations
