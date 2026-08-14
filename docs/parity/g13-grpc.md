@@ -164,3 +164,39 @@ It surfaced on a **`StackExchange.Redis` bump**, which touches no gRPC code what
 tell worth keeping: a test that fails on a change it cannot possibly be affected by is reporting its
 own environment, not the change. The fix widens the retry rather than lengthening a sleep; a genuine
 divergence still fails, because the assertion runs either way once the deadline passes.
+
+
+## The oracle has to be serving the stub, not merely listening (#367)
+
+**What was reported red for the wrong reason.** A gRPC differential test failed once in CI with
+`Unimplemented: Bad gRPC response. HTTP status code: 404` — a plain 404 from the oracle, which means
+the request arrived before the mounted mapping was loaded, not that the two engines disagreed. The
+same commit passed on a re-run and locally.
+
+**Why that is worth fixing rather than re-running.** The differential suite is this project's
+definition of done. A suite that goes red for a reason unrelated to the diff teaches everyone to
+re-run first and read second, which is exactly how a genuine divergence gets waved through.
+
+**Two preconditions, one of them previously unestablished.** The container wait gates on the plaintext
+admin port; a poll added the HTTPS listener gRPC actually uses. Neither says the stub is *loaded* — it
+is mounted as a file and read by the gRPC extension after the admin surface starts answering. Readiness
+now asks the question the test is about to ask: does the admin surface list a mapping for each path this
+oracle was built to serve.
+
+**Every path, not the first.** A mapping file carrying two methods is loaded as a unit, but waiting for
+one of them would leave the same race for the other while looking thorough.
+
+**The paths are read from the mapping itself** rather than passed in beside it — two sources for one
+fact is how a readiness probe ends up waiting for a path nobody serves and passing instantly. A mapping
+naming no path is refused at construction for the same reason.
+
+**Failure says what failed.** Exhausting the wait throws "the gRPC oracle never became ready for
+'<path>' … <what was last seen>", so the next person reads that instead of working backwards from an
+`Unimplemented` status inside an unrelated assertion.
+
+**Not a retry and not a longer sleep.** A retry around a differential assertion could hide a genuine
+flapping divergence; a sleep hides the signal either way.
+
+**The HTTP oracle does not share the pattern.** It loads stubs through the admin API at test time, so
+by the time a request is made the stub is demonstrably registered — the race exists only where a
+mapping is mounted as a file and picked up asynchronously.
