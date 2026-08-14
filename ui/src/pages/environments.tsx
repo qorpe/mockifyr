@@ -143,7 +143,20 @@ export function EnvironmentsPage() {
             <tbody>
               {keys.map((entry) => (
                 <tr key={entry.key} className="border-b border-border align-top">
-                  <td className="px-4 py-3 font-mono text-[12.5px] font-medium whitespace-nowrap">{`{{${entry.key}}}`}</td>
+                  <td className="px-4 py-3 font-mono text-[12.5px] font-medium whitespace-nowrap">
+                    {`{{${entry.key}}}`}
+                    {/* Where a value comes from and whether it varies, on the row itself (#352). */}
+                    {entry.inherited && (
+                      <span className="ms-2 rounded bg-muted px-1.5 py-0.5 font-sans text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {t('env.inherited')}
+                      </span>
+                    )}
+                    {entry.constant && (
+                      <span className="ms-2 rounded bg-muted px-1.5 py-0.5 font-sans text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {t('env.constant')}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {/* One selector per key — each key's active value is independent of every other. */}
                     <div className="flex flex-wrap gap-1.5">

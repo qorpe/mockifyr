@@ -33,6 +33,13 @@ export interface EnvironmentKey {
   /** What the key currently resolves to, computed server-side; null when activeValue names nothing. */
   resolved: string | null
   values: EnvironmentValue[]
+  /**
+   * True when this value comes from the host rather than this tenant (#352). Shown as such, because
+   * "why is this different here" should not require reading two screens.
+   */
+  inherited?: boolean
+  /** True when the key deliberately does not vary — one value, no switch (#352). */
+  constant?: boolean
 }
 
 // Keys are bare identifiers so {{key}} stays distinguishable from Handlebars expressions

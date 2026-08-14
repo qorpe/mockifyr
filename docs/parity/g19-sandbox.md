@@ -895,3 +895,49 @@ unconfigured host ignoring the header entirely). **Stryker: 94.74 %** on `Idempo
 survivors are equivalent — removing an expired entry from the store and the eviction order is memory
 hygiene with no observable behaviour, since a re-read re-checks the window and a dead entry is the
 first to be evicted anyway.
+
+
+## Values that resolve values (#352)
+
+**Three gaps in one model.** Substitution walked the text once, so a value containing `{{otherKey}}`
+was never resolved; a value that deliberately does not vary was indistinguishable from one that
+happens to have a single option; and everything was per tenant, including the things that are not.
+
+**Composition, bounded and checked at write time.** `apiBase` can now be written once and referenced
+from `paymentsUrl` and `webhookUrl`. A cycle is refused when the key is **saved**, with a message
+naming the chain — a cycle found while serving is a hung request on somebody's demo, and "there is a
+cycle" without the path is a puzzle handed back to whoever just made one. A depth bound of ten is the
+backstop for a cycle that somehow evaded the check, such as a store restored from a file an older
+version wrote.
+
+**A shared reference is not a cycle.** `paymentsUrl` and `webhookUrl` both using `apiBase` is the
+ordinary shape this feature exists for. Mutation testing found the search had to *unmark* a key when
+it backtracked: without that, the diamond reads as a loop and the most common arrangement is refused.
+
+**Secrecy is contagious.** If `authHeader = Bearer {{apiToken}}` and `apiToken` is secret, then
+reading `authHeader` reads the secret — so the composed value is withheld too. Settling this with the
+feature rather than after it is what stops composition becoming a way around redaction (#348).
+
+**A constant says "this does not vary."** One value, no switch, refused if it is submitted with more
+than one. The model previously could not tell a fixed value from a choice with one option so far, and
+the screen therefore could not either.
+
+**Host-level values, overridable.** `--env key=value` is inherited by every tenant that has not
+defined the same key, and the tenant's own always wins: a shared value that could not be overridden
+would be a constraint rather than a convenience. They are declared as **constants**, because a value
+set on the command line has exactly one form and no way to switch it at runtime — presenting a
+selector with one option would be a lie about what it is. The listing marks each key inherited or the
+tenant's own, and the dashboard shows both badges on the row.
+
+**Refusals answer 400**, which is what every other environment validation on this surface answers.
+A new status code for a new rule would be a contract change dressed as a feature.
+
+**Validation.** `EnvironmentCompositionTests` (31 unit cases: multi-level composition, self-reference,
+cycles of length one two and three, the diamond, replacement checked against the *new* value, secret
+contagion at depth, reference scanning, host parsing and its refusals, override precedence) and
+`EnvironmentCompositionWireTests` (6 wire cases: a served response composing through a shared value, a
+cycle refused at write time naming both keys, inheritance before and after an override, a secret
+withheld through a composed value, and a constant refused with two values). **Stryker: 90.14 %** on
+`Environments.cs` — the file also carries the pre-#352 substitution code; the survivors are boundary
+variants with no observable difference (`index <= length` where the loop already exited, `close <= 0`
+where the value is either -1 or at least 2, and an off-by-one in the depth backstop).

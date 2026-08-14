@@ -461,6 +461,24 @@ public sealed class PutEnvironmentKeyHandler(IEnvironmentStore store, IEnvironme
             store.GetKeys(command.Tenant).FirstOrDefault(
                 existing => string.Equals(existing.Key, command.Key.Key, StringComparison.Ordinal)));
 
+        // A constant is one value and no switch (#352), so a submission claiming otherwise is refused
+        // rather than quietly stored as a choice with one option — which is the very thing a constant
+        // exists to be distinguishable from.
+        if (merged.Constant && merged.Values.Count != 1)
+        {
+            return ValueTask.FromResult(Result.Failure(Error.Validation(
+                "Environment.ConstantHasOneValue", "A constant holds exactly one value.")));
+        }
+
+        // Cycles are refused here rather than discovered at serve time (#352): a cycle found while
+        // serving is a hung request on somebody's demo; found here it is a message naming the keys.
+        if (EnvironmentComposition.FindCycle(merged, store.GetKeys(command.Tenant)) is { } cycle)
+        {
+            return ValueTask.FromResult(Result.Failure(Error.Validation(
+                "Environment.ReferenceCycle",
+                $"These values reference each other in a loop: {string.Join(" → ", cycle)}.")));
+        }
+
         store.Put(command.Tenant, merged);
         persistence.Save(command.Tenant, merged);
         return ValueTask.FromResult(Result.Success());

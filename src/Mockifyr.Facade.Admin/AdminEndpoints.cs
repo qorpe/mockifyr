@@ -685,7 +685,24 @@ public static class AdminEndpoints
         admin.MapGet("/environments", async (HttpRequest request, ISender sender) =>
         {
             var result = await sender.Send(new GetEnvironmentsQuery(TenantOf(request)));
-            return Results.Json(new { environments = result.Value.Select(EnvironmentJson) });
+            // Shared values are listed beside the tenant's own and marked inherited (#352), because
+            // "why is this different here" should not require reading two screens.
+            var shared = request.HttpContext.RequestServices.GetService<HostEnvironment>() ?? HostEnvironment.Empty;
+            var own = result.Value.ToDictionary(key => key.Key, StringComparer.Ordinal);
+            var effective = shared.Keys
+                .Where(key => !own.ContainsKey(key.Key))
+                .Select(key => (Key: key, Inherited: true))
+                .Concat(result.Value.Select(key => (Key: key, Inherited: false)))
+                .OrderBy(entry => entry.Key.Key, StringComparer.Ordinal)
+                .ToList();
+
+            EnvironmentKey? Lookup(string name) =>
+                own.GetValueOrDefault(name) ?? shared.Get(name);
+
+            return Results.Json(new
+            {
+                environments = effective.Select(entry => EnvironmentJson(entry.Key, entry.Inherited, Lookup)),
+            });
         });
 
         admin.MapPut("/environments/{key}", async (string key, HttpRequest request, ISender sender) =>
@@ -1460,7 +1477,11 @@ public static class AdminEndpoints
         }
 
         var active = root.TryGetProperty("activeValue", out var a) ? a.GetString() : null;
-        return new EnvironmentKey(key, active ?? values.FirstOrDefault()?.Name ?? string.Empty, values);
+        // A constant says "this does not vary" (#352) — the distinction a key with exactly one value
+        // could not previously make.
+        var constant = root.TryGetProperty("constant", out var c)
+            && c.ValueKind == System.Text.Json.JsonValueKind.True;
+        return new EnvironmentKey(key, active ?? values.FirstOrDefault()?.Name ?? string.Empty, values, constant);
     }
 
     /// <summary>
@@ -1468,16 +1489,32 @@ public static class AdminEndpoints
     /// value in the list and the <c>resolved</c> literal computed from the active one — reporting the
     /// second while hiding the first would have been redaction in name only.
     /// </summary>
-    private static object EnvironmentJson(EnvironmentKey key) => new
+    private static object EnvironmentJson(
+        EnvironmentKey key, bool inherited = false, Func<string, EnvironmentKey?>? lookup = null)
     {
-        key = key.Key,
-        activeValue = key.ActiveValue,
-        resolved = key.ResolvesToSecret() ? null : key.Resolve(),
-        secret = key.ResolvesToSecret(),
-        values = key.Values.Select(v => v.Secret
-            ? (object)new { name = v.Name, secret = true }
-            : new { name = v.Name, value = v.Value, secret = false }),
-    };
+        // Composed before it is reported (#352), and withheld when anything in the chain is secret:
+        // if authHeader is "Bearer {{apiToken}}" and apiToken is secret, reading authHeader reads the
+        // secret, so composition would otherwise be a way around redaction.
+        var secret = lookup is null
+            ? key.ResolvesToSecret()
+            : EnvironmentComposition.ResolvesToSecret(key.Key, lookup);
+        var composed = lookup is null
+            ? key.Resolve()
+            : EnvironmentComposition.Resolve(key.Key, name => lookup(name)?.Resolve());
+
+        return new
+        {
+            key = key.Key,
+            activeValue = key.ActiveValue,
+            resolved = secret ? null : composed,
+            secret,
+            inherited,
+            constant = key.Constant,
+            values = key.Values.Select(v => v.Secret
+                ? (object)new { name = v.Name, secret = true }
+                : new { name = v.Name, value = v.Value, secret = false }),
+        };
+    }
 
     private static object OutboundTrustJson(OutboundTrustStatus status) => new
     {

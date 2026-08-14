@@ -580,6 +580,22 @@ public static class MockifyrHost
             builder.Services.AddSingleton(bodyLimits);
         }
 
+        // Host-level environment values (#352): shared constants a tenant inherits unless it defines
+        // the key itself. Repeatable: --env baseUrl=https://sandbox.acme.com --env iban=DE89...
+        var sharedValues = args
+            .Select((value, index) => (value, index))
+            .Where(entry => string.Equals(entry.value, "--env", StringComparison.OrdinalIgnoreCase)
+                && entry.index + 1 < args.Length)
+            .Select(entry => args[entry.index + 1])
+            .ToList();
+        if (sharedValues.Count > 0)
+        {
+            var shared = HostEnvironment.Parse(sharedValues);
+            builder.Services.AddSingleton(shared);
+            Console.WriteLine($"mockifyr: {shared.Keys.Count} host-level environment value(s) — every tenant "
+                + "inherits them unless it defines the same key.");
+        }
+
         // Idempotent replay (#358): --idempotency turns it on for every tenant, and a declared tenant
         // can say otherwise — on a shared host, one team testing double submission must be able to
         // keep it off while the partner beside them keeps it on.

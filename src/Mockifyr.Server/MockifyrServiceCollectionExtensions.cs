@@ -36,7 +36,8 @@ public static class MockifyrServiceCollectionExtensions
 
         // Environments (G17): one instance serves both the admin store and the serve-path resolver, so
         // a change to a key's active value is visible to the very next request without a reload.
-        services.AddSingleton<InMemoryEnvironmentStore>();
+        services.AddSingleton(HostEnvironment.Empty);
+        services.AddSingleton(sp => new InMemoryEnvironmentStore(sp.GetRequiredService<HostEnvironment>()));
         services.AddSingleton<IEnvironmentStore>(sp => sp.GetRequiredService<InMemoryEnvironmentStore>());
         services.AddSingleton<IEnvironmentResolver>(sp => sp.GetRequiredService<InMemoryEnvironmentStore>());
         // Tenant clock (#290): one instance serves the admin store and the serve-path resolver, so a
