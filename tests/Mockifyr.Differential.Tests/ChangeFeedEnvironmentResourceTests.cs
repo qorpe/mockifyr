@@ -192,7 +192,11 @@ public abstract class ChangeFeedEnvironmentResourceTests
         using var acme = await PutAsTenantAsync(clientA, "acme", "/__admin/resources/orders/42", """{"total":10}""");
         using var globex = await PutAsTenantAsync(clientA, "globex", "/__admin/resources/orders/42", """{"total":99}""");
 
-        await PollAsync(clientB, async () => await TotalAsync(clientB, "acme") == 10);
+        // Both, not just the first: the two writes announce separately, so a reload can land between
+        // them and leave the second still on its way. Waiting for one and asserting the other is a
+        // race in the test, and it failed in CI exactly once before this line said so.
+        await PollAsync(clientB, async () =>
+            await TotalAsync(clientB, "acme") == 10 && await TotalAsync(clientB, "globex") == 99);
         Assert.Equal(10, await TotalAsync(clientB, "acme"));
         Assert.Equal(99, await TotalAsync(clientB, "globex"));
 
@@ -202,7 +206,8 @@ public abstract class ChangeFeedEnvironmentResourceTests
         using var deleted = await clientA.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
 
-        await PollAsync(clientB, async () => await TotalAsync(clientB, "acme") is null);
+        await PollAsync(clientB, async () =>
+            await TotalAsync(clientB, "acme") is null && await TotalAsync(clientB, "globex") == 99);
         Assert.Null(await TotalAsync(clientB, "acme"));
         Assert.Equal(99, await TotalAsync(clientB, "globex"));
     }

@@ -17,11 +17,15 @@ internal static class EnvironmentJson
     // property and reads back as false, which is what it was.
     private sealed record StoredValue(string Name, string Value, bool Secret = false);
 
-    private sealed record StoredKey(string Key, string ActiveValue, IReadOnlyList<StoredValue> Values);
+    // Constant is optional and defaults to false (#352), so a key written by an older host reads back
+    // as the selectable key it was.
+    private sealed record StoredKey(
+        string Key, string ActiveValue, IReadOnlyList<StoredValue> Values, bool Constant = false);
 
     public static string Serialize(EnvironmentKey key) =>
         System.Text.Json.JsonSerializer.Serialize(new StoredKey(
-            key.Key, key.ActiveValue, [.. key.Values.Select(v => new StoredValue(v.Name, v.Value, v.Secret))]));
+            key.Key, key.ActiveValue, [.. key.Values.Select(v => new StoredValue(v.Name, v.Value, v.Secret))],
+            key.Constant));
 
     /// <summary>Reads a key back, returning null for anything unparseable rather than failing startup.</summary>
     public static EnvironmentKey? Deserialize(string json)
@@ -34,7 +38,8 @@ internal static class EnvironmentJson
                 : new EnvironmentKey(
                     stored.Key,
                     stored.ActiveValue,
-                    [.. (stored.Values ?? []).Select(v => new EnvironmentValue(v.Name, v.Value, v.Secret))]);
+                    [.. (stored.Values ?? []).Select(v => new EnvironmentValue(v.Name, v.Value, v.Secret))],
+                    stored.Constant);
         }
         catch (JsonException)
         {

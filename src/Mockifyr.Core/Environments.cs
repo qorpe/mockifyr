@@ -24,7 +24,13 @@ public sealed record EnvironmentValue(string Name, string Value, bool Secret = f
 /// <param name="Key">The identifier referenced from a stub as <c>{{Key}}</c>.</param>
 /// <param name="ActiveValue">The name of the value currently in effect.</param>
 /// <param name="Values">Every selectable value, in display order.</param>
-public sealed record EnvironmentKey(string Key, string ActiveValue, IReadOnlyList<EnvironmentValue> Values)
+/// <param name="Constant">
+/// Whether this key deliberately does not vary (#352). A constant holds exactly one value and offers
+/// no switch, which is the difference between "this is fixed" and "this happens to have one option so
+/// far" — a distinction the model could not previously make at all.
+/// </param>
+public sealed record EnvironmentKey(
+    string Key, string ActiveValue, IReadOnlyList<EnvironmentValue> Values, bool Constant = false)
 {
     /// <summary>
     /// The literal the key currently resolves to, or <c>null</c> when <see cref="ActiveValue"/> names
@@ -180,7 +186,11 @@ public static class EnvironmentSubstitution
     /// space, or an argument — i.e. every Handlebars construct (<c>{{request.path}}</c>,
     /// <c>{{random 'X.y'}}</c>, <c>{{#if x}}</c>) is rejected before the lookup even runs.
     /// </summary>
-    private static bool IsBareIdentifier(ReadOnlySpan<char> name)
+    /// <summary>
+    /// Whether the text between the braces is a bare key name — no dots, no spaces, no helper syntax.
+    /// </summary>
+    /// <remarks>Internal rather than private since #352: composition needs the same rule to find references.</remarks>
+    internal static bool IsBareIdentifier(ReadOnlySpan<char> name)
     {
         if (name.IsEmpty || (!char.IsLetter(name[0]) && name[0] != '_'))
         {
@@ -253,5 +263,226 @@ public static class ReservedEnvironmentKeys
         }
 
         return true;
+    }
+}
+
+
+/// <summary>
+/// Values that resolve values (#352): composition, its bound, and the cycle check that keeps it safe.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The gap: substitution walked the text once, so a value containing <c>{{otherKey}}</c> was never
+/// resolved. The host name therefore had to be copied into every value that needed it, and changing it
+/// meant changing all of them together — exactly the class of edit people get wrong.
+/// </para>
+/// <para>
+/// Bounded and checked at <b>write</b> time. A cycle discovered at serve time is a hung request on
+/// somebody's demo; discovered at write time it is a message naming the two keys involved.
+/// </para>
+/// </remarks>
+public static class EnvironmentComposition
+{
+    /// <summary>
+    /// How many times a value may resolve through another before this stops.
+    /// </summary>
+    /// <remarks>
+    /// Ten is far past anything legible — <c>a → b → c</c> is already the edge of what a person can
+    /// hold — and it exists so a cycle that somehow evaded the write-time check still cannot hang a
+    /// request.
+    /// </remarks>
+    public const int MaxDepth = 10;
+
+    /// <summary>
+    /// The literal a key resolves to once composition is applied, or null when the key is unknown.
+    /// </summary>
+    /// <param name="key">The key being resolved.</param>
+    /// <param name="lookup">Resolves any other key's raw (uncomposed) literal.</param>
+    public static string? Resolve(string key, Func<string, string?> lookup)
+    {
+        var raw = lookup(key);
+        if (raw is null)
+        {
+            return null;
+        }
+
+        var text = raw;
+        for (var depth = 0; depth < MaxDepth; depth++)
+        {
+            var expanded = EnvironmentSubstitution.Apply(text, (string name, out string value) =>
+            {
+                // A self-reference resolves to nothing rather than to itself: expanding it would be the
+                // one substitution guaranteed never to terminate.
+                var resolved = string.Equals(name, key, StringComparison.Ordinal) ? null : lookup(name);
+                value = resolved ?? string.Empty;
+                return resolved is not null;
+            });
+
+            if (ReferenceEquals(expanded, text) || string.Equals(expanded, text, StringComparison.Ordinal))
+            {
+                return expanded;
+            }
+
+            text = expanded;
+        }
+
+        // The depth bound was reached, which means something references its way in a loop the write-time
+        // check did not see. Returning what we have beats hanging, and the check below is what keeps
+        // this from being reachable in practice.
+        return text;
+    }
+
+    /// <summary>
+    /// The reference cycle <paramref name="candidate"/> would create among <paramref name="existing"/>,
+    /// as the chain of key names, or null when it creates none.
+    /// </summary>
+    /// <remarks>
+    /// Returns the path rather than a boolean: "a references b references a" is actionable, and "there
+    /// is a cycle" is a puzzle handed back to the person who just made one.
+    /// </remarks>
+    public static IReadOnlyList<string>? FindCycle(EnvironmentKey candidate, IReadOnlyList<EnvironmentKey> existing)
+    {
+        var byName = existing
+            .Where(key => !string.Equals(key.Key, candidate.Key, StringComparison.Ordinal))
+            .ToDictionary(key => key.Key, StringComparer.Ordinal);
+        byName[candidate.Key] = candidate;
+
+        var path = new List<string>();
+        var visiting = new HashSet<string>(StringComparer.Ordinal);
+        return Walk(candidate.Key, byName, visiting, path) ? path : null;
+    }
+
+    private static bool Walk(
+        string name,
+        Dictionary<string, EnvironmentKey> byName,
+        HashSet<string> visiting,
+        List<string> path)
+    {
+        path.Add(name);
+        if (!visiting.Add(name))
+        {
+            return true;
+        }
+
+        if (byName.TryGetValue(name, out var key) && key.Resolve() is { } literal)
+        {
+            foreach (var reference in References(literal))
+            {
+                if (Walk(reference, byName, visiting, path))
+                {
+                    return true;
+                }
+            }
+        }
+
+        visiting.Remove(name);
+        path.RemoveAt(path.Count - 1);
+        return false;
+    }
+
+    /// <summary>Every <c>{{key}}</c> named in a literal, in order of appearance.</summary>
+    public static IReadOnlyList<string> References(string literal)
+    {
+        var names = new List<string>();
+        var index = 0;
+        while (index < literal.Length)
+        {
+            var open = literal.IndexOf("{{", index, StringComparison.Ordinal);
+            if (open < 0) break;
+            var close = literal.IndexOf("}}", open + 2, StringComparison.Ordinal);
+            if (close < 0) break;
+
+            var name = literal.AsSpan(open + 2, close - open - 2).Trim();
+            if (EnvironmentSubstitution.IsBareIdentifier(name))
+            {
+                names.Add(name.ToString());
+            }
+
+            index = close + 2;
+        }
+
+        return names;
+    }
+
+    /// <summary>
+    /// Whether the composed value of <paramref name="key"/> carries a secret — its own or one it
+    /// references (#348 + #352).
+    /// </summary>
+    /// <remarks>
+    /// Secrecy is contagious by necessity. If <c>authHeader = Bearer {{apiToken}}</c> and
+    /// <c>apiToken</c> is secret, then reading <c>authHeader</c> reads the secret — so composition
+    /// would otherwise be a way around redaction rather than a convenience.
+    /// </remarks>
+    public static bool ResolvesToSecret(string key, Func<string, EnvironmentKey?> lookup, int depth = 0)
+    {
+        if (depth >= MaxDepth || lookup(key) is not { } entry)
+        {
+            return false;
+        }
+
+        if (entry.ResolvesToSecret())
+        {
+            return true;
+        }
+
+        return entry.Resolve() is { } literal
+            && References(literal).Any(reference =>
+                !string.Equals(reference, key, StringComparison.Ordinal)
+                && ResolvesToSecret(reference, lookup, depth + 1));
+    }
+}
+
+/// <summary>
+/// Values shared by every tenant, resolved when a tenant has not defined the key itself (#352).
+/// </summary>
+/// <remarks>
+/// The sandbox's own base URL, a shared test IBAN, a common certificate thumbprint: copied into every
+/// tenant before this, so a new tenant began by re-entering them and an update left the others stale.
+/// A tenant's own key always wins — an override that were impossible would turn a convenience into a
+/// constraint.
+/// </remarks>
+public sealed class HostEnvironment(IReadOnlyList<EnvironmentKey> keys)
+{
+    private readonly Dictionary<string, EnvironmentKey> _keys =
+        keys.ToDictionary(key => key.Key, StringComparer.Ordinal);
+
+    /// <summary>Nothing shared — what every host meant before this existed.</summary>
+    public static HostEnvironment Empty { get; } = new([]);
+
+    /// <summary>The shared keys, name-ordered.</summary>
+    public IReadOnlyList<EnvironmentKey> Keys => [.. _keys.Values.OrderBy(key => key.Key, StringComparer.Ordinal)];
+
+    /// <summary>One shared key, or null.</summary>
+    public EnvironmentKey? Get(string key) => _keys.GetValueOrDefault(key);
+
+    /// <summary>
+    /// Parses <c>key=value</c> pairs from the command line into shared constants.
+    /// </summary>
+    /// <remarks>
+    /// Constants, not choices: a value declared on the command line has exactly one form and no way to
+    /// switch it at runtime, and saying so in the model is more honest than presenting a selector with
+    /// one option.
+    /// </remarks>
+    public static HostEnvironment Parse(IEnumerable<string> pairs)
+    {
+        var keys = new List<EnvironmentKey>();
+        foreach (var pair in pairs)
+        {
+            var separator = pair.IndexOf('=');
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var name = pair[..separator].Trim();
+            if (!ReservedEnvironmentKeys.IsWellFormed(name) || ReservedEnvironmentKeys.IsReserved(name))
+            {
+                continue;
+            }
+
+            keys.Add(new EnvironmentKey(name, "shared", [new EnvironmentValue("shared", pair[(separator + 1)..])], Constant: true));
+        }
+
+        return new HostEnvironment(keys);
     }
 }
