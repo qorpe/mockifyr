@@ -10,6 +10,46 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Released
 
+### [v1.18.0](https://github.com/qorpe/mockifyr/releases/tag/v1.18.0) — 2026-08-14
+
+The sandbox platform epic completes. Everything here is **off by default**; a host that configures
+none of it behaves exactly as 1.17 did.
+
+#### Added
+
+- **Quotas that survive a second replica and a restart** (#354). With `--redis` a key's hourly quota is
+  counted in Redis, so two replicas enforce the number on the key rather than that number each, and a
+  deploy mid-hour does not refund what was spent. `--rate-burst <n>/<seconds>` adds a host-wide ceiling
+  beside it that applies to keys with no quota too.
+- **A life for a sandbox key** (#355): expiry, revocation as a state with who and why, rotation with an
+  overlap so a partner can deploy the new credential before the old one stops, and a read-only scope.
+  Expired and revoked keys say which they are; an unknown token still learns nothing.
+- **Per-consumer usage** (#356): `--usage` keeps bounded per-key counts — total, matched, unmatched and
+  each refusal apart — plus the paths nothing models, at `/__admin/usage` and `/__sandbox/usage`. Counts
+  only: no headers, no bodies, so journal masking cannot be walked around by reading usage.
+- **Tenants you can declare, suspend and offboard** (#357), with a receipt saying what a delete removed,
+  and `--tenant-storage-limit` closing the one bound nobody had.
+- **Idempotent replay** (#358): `--idempotency` makes a retried write carrying the same
+  `Idempotency-Key` replay the first response instead of creating a second payment. Per tenant, so a
+  suite testing double submission can keep it off.
+- **Environment values that reference values** (#352), constants, and `--env key=value` host-level values
+  every tenant inherits and any tenant can override. Reference cycles are refused when a key is saved,
+  naming the chain.
+
+#### Changed
+
+- **`usedThisHour` counts attempts**, including ones the quota refused. The old number stopped at the
+  limit, which could not distinguish a partner who fitted inside their quota from one hammering a
+  closed door.
+
+#### Fixed
+
+- **A key issued — or revoked — on one replica never reached the others** until they restarted. API keys
+  are now the fourth kind of state the change feed reconciles.
+- **Who revoked a key was silently tied to `--audit`**, so an authenticated operator was recorded as
+  `unknown`.
+- **SSH.NET** lifted past GHSA-q939-rpr3-3284 (transitive, test harness only).
+
 ### [v1.17.0](https://github.com/qorpe/mockifyr/releases/tag/v1.17.0) — 2026-08-12
 
 The sandbox becomes something you can hand to somebody outside your team. Everything here is
