@@ -423,4 +423,26 @@ pre-1.0 image all along — `values.yaml` defaults the tag to `.Chart.AppVersion
 since the chart shipped — so `verify-chart.py` now fails the build when the two drift, the check having
 been the thing that was missing rather than the value.
 
-Builds clean (0 warnings); 1479 tests green across the four suites.
+**G22 Phase 3 completes the epic (#345).** Five issues, each off by default: quotas counted in Redis so
+two replicas enforce one budget and a restart does not refund it, with a host-wide burst ceiling beside
+the per-key number (#354); a *life* for a key — expiry, revocation as a state carrying who and why,
+rotation with an overlap so a partner deploys before the old one stops, and a read-only scope, where the
+refusals name themselves because "expired" and "unknown" send an integrator to different places (#355);
+per-consumer usage that is deliberately **not** a second journal — counts, paths and nothing else, so
+journal masking cannot be walked around by reading usage (#356); a tenant you can declare, suspend and
+offboard with a receipt, plus the storage ceiling that was the one bound nobody had (#357); and
+idempotent replay, so a retried write does not create a second payment — per tenant, because a suite
+testing double submission must not be quietly fixed by a host setting (#358). Finally environment values
+compose (#352): a value may reference another, cycles are refused when a key is *saved* with the chain
+named rather than discovered as a hung request, secrecy travels through composition so `Bearer
+{{apiToken}}` cannot read around redaction, constants say "this does not vary", and `--env key=value`
+gives every tenant a shared value it can still override.
+
+Six defects surfaced by running the work rather than reading it: two windows of the same length shared
+one counter and charged every request twice; a key issued or **revoked** on one replica never reached the
+others; "who revoked this" was tied to `--audit` being on, recording an authenticated operator as
+`unknown`; the dashboard reported a 60-minute rotation overlap as "in 1 d"; a tenant at its storage
+ceiling could not edit what it already had; and `ResourceOptions` was registered twice, where the second
+call silently dropped the first one's number.
+
+Builds clean (0 warnings); 1600+ tests green across the four suites.
