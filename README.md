@@ -166,6 +166,8 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--outbound-host-fallback false` | deliver callbacks and proxies to exactly the address written, never retrying via the host gateway |
 | `--trust-proxy-target <host>` | trust that host's certificate on outbound calls (repeatable) |
 | `--trust-all-proxy-targets` | trust every outbound certificate |
+| `--global-response-templating` | render every response through the templating engine, regardless of the per-stub `transformers` list |
+| `--git-remote <url>` · `--git-branch <name>` · `--git-work-dir <dir>` | Git sync (ADR 0007): keep the mappings directory in a repository. `--git-remote` requires `--root-dir`; the branch defaults to `main` |
 
 The hot path is always in-memory; a durable backend is opt-in and writes through.
 
