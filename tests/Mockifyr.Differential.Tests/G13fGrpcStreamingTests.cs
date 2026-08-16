@@ -66,6 +66,7 @@ public sealed class G13fGrpcStreamingTests : IAsyncLifetime
                 .First(a => a.StartsWith("https://", StringComparison.Ordinal))
                 .Replace("[::]", "127.0.0.1").Replace("0.0.0.0", "127.0.0.1"));
 
+            await _oracle.WarmUpAsync(() => ServerStreamAsync(_oracle.GrpcAddress));
             var oracleServer = await ServerStreamAsync(_oracle.GrpcAddress);
             var mockifyrServer = await ServerStreamAsync(mockifyrAddress);
             Assert.Equal(oracleServer, mockifyrServer);

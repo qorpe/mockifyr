@@ -87,6 +87,7 @@ public sealed class G13dGrpcStatusTests : IAsyncLifetime
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (true)
         {
+            await _oracle.WarmUpAsync(() => CallAsync(_oracle.GrpcAddress));
             var result = await CallAsync(_oracle.GrpcAddress);
             // Cancelled and DeadlineExceeded belong here too: on a loaded runner the oracle's gRPC
             // handshake gets torn down mid-flight, and the client reports the abort rather than the

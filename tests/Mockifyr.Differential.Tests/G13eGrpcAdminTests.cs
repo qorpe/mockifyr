@@ -71,6 +71,7 @@ public sealed class G13eGrpcAdminTests : IAsyncLifetime
                 await PostMappingAsync(mockifyrAdmin, DescribeMapping);
             }
 
+            await _oracle.WarmUpAsync(() => DescribeAsync(_oracle.GrpcAddress));
             var oracle = await DescribeAsync(_oracle.GrpcAddress);
             var mockifyrReply = await DescribeAsync(grpcAddress);
 

@@ -194,8 +194,24 @@ naming no path is refused at construction for the same reason.
 '<path>' … <what was last seen>", so the next person reads that instead of working backwards from an
 `Unimplemented` status inside an unrelated assertion.
 
-**Not a retry and not a longer sleep.** A retry around a differential assertion could hide a genuine
-flapping divergence; a sleep hides the signal either way.
+**The first fix addressed the wrong half, and the symptom came back.** Waiting until the admin surface
+lists the mapping assumes a 404 means the mapping had not loaded. WireMock also answers 404 when a stub
+*is* loaded and nothing matched — and until the gRPC extension has read the descriptor it cannot decode
+a protobuf body, so `equalToJson` cannot match and the call 404s with the mapping present and listed.
+The observable was real and insufficient: it proves the mapping is there and says nothing about the
+descriptor.
+
+**No admin surface reports descriptor readiness**, so the only honest probe is the call itself. Each
+gRPC fixture now warms the oracle by making the request it is about to make, bounded, before any
+comparison begins — and fails with "the gRPC oracle never served '<path>'" rather than as a protocol
+error inside an assertion.
+
+**A warm-up is not a retry.** It runs before the comparison starts and touches only the oracle, so a
+genuine divergence still fails on the first and only comparison. Mockifyr's own host is deliberately
+not warmed: it is in-process and serving before its start task completes, so warming it would hide a
+real startup fault behind a wait.
+
+**Not a longer sleep either.** A sleep hides the signal whether or not the precondition is met.
 
 **The HTTP oracle does not share the pattern.** It loads stubs through the admin API at test time, so
 by the time a request is made the stub is demonstrably registered — the race exists only where a

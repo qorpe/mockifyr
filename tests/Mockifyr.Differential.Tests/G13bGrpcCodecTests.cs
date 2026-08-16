@@ -63,6 +63,7 @@ public sealed class G13bGrpcCodecTests : IAsyncLifetime
                 .First(a => a.StartsWith("https://", StringComparison.Ordinal))
                 .Replace("[::]", "127.0.0.1").Replace("0.0.0.0", "127.0.0.1"));
 
+            await _oracle.WarmUpAsync(() => DescribeAsync(_oracle.GrpcAddress));
             var oracle = await DescribeAsync(_oracle.GrpcAddress);
             var mockifyrReply = await DescribeAsync(mockifyrAddress);
 

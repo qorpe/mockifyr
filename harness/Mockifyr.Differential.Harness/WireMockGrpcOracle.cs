@@ -175,6 +175,52 @@ public sealed class WireMockGrpcOracle : IAsyncDisposable
         return paths;
     }
 
+    /// <summary>
+    /// Calls <paramref name="probe"/> until it stops failing, then returns (#367).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The readiness in <see cref="StartAsync"/> proves the mapping is loaded, and that turned out to be
+    /// the wrong half. WireMock also answers <c>404</c> when a stub <em>is</em> loaded and nothing
+    /// matched, and until the gRPC extension has read the descriptor it cannot decode a protobuf body —
+    /// so <c>equalToJson</c> cannot match and the call 404s with the mapping present and listed. A gRPC
+    /// client reports that as <c>Unimplemented: Bad gRPC response</c>, which reads exactly like the two
+    /// engines disagreeing.
+    /// </para>
+    /// <para>
+    /// No admin surface reports descriptor readiness, so the only honest probe is the call itself. This
+    /// is a warm-up <b>before</b> any comparison begins — deliberately not a retry around a differential
+    /// assertion, which could hide a genuine flapping divergence and stays refused.
+    /// </para>
+    /// <para>
+    /// Only the oracle is warmed. Mockifyr's own host is in-process and serving before its start task
+    /// completes, so warming it too would hide a real startup fault behind a wait.
+    /// </para>
+    /// </remarks>
+    public async Task WarmUpAsync(Func<Task> probe)
+    {
+        Exception? last = null;
+        for (var attempt = 0; attempt < ReadinessAttempts; attempt++)
+        {
+            try
+            {
+                await probe();
+                return;
+            }
+            catch (Exception failure)
+            {
+                last = failure;
+                await Task.Delay(ReadinessInterval);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"The gRPC oracle never served '{string.Join("', '", _servedPaths)}' within "
+            + $"{ReadinessAttempts * ReadinessInterval.TotalSeconds:0.#}s — the descriptor or the mapping "
+            + "never became usable. The last attempt failed with: " + last?.Message,
+            last);
+    }
+
     /// <summary>The base address for gRPC calls (HTTPS, ALPN-negotiated h2) against the oracle.</summary>
     public Uri GrpcAddress =>
         new($"https://{_container.Hostname}:{_container.GetMappedPublicPort(WireMockHttpsPort)}");
