@@ -145,6 +145,7 @@ src/
   Mockifyr.Adapters.OpenApi/     OpenAPI 3.x -> mapping JSON generator (G19c; Microsoft.OpenApi)
   Mockifyr.Crypto/               payload decryption at the edge (G20a; JWE dir+A256GCM, BCL only)
   Mockifyr.ServeEvents.Webhook/  IServeEventListener impl (outbound I/O)
+  Mockifyr.Outbound/             where an outbound call actually goes (#170: the container-localhost trap)
   Mockifyr.Application/          CQRS handlers (Mediant) — MANAGEMENT PATH ONLY
   Mockifyr.Facade.Library/       in-process API
   Mockifyr.Facade.Http/          Kestrel mock server, tenant resolution, wire delivery
@@ -152,12 +153,15 @@ src/
   Mockifyr.Facade.Grpc/          gRPC serving (protobuf <-> JSON codec -> engine)
   Mockifyr.Facade.WebSocket/     WebSocket message serving (message-mappings -> matcher/templating)
   Mockifyr.Facade.Smtp/          opt-in ESMTP capture listener (MIME -> MessageEnvelope -> inbox)
+  Mockifyr.Facade.Broker/        opt-in Kafka/AMQP publish + capture (G21, ADR 0013; I/O behind IServeEventListener)
+  Mockifyr.Facade.Sandbox/       /__sandbox/* — the partner's own surface, reached with their mfk_ key (#347)
   Mockifyr.Providers.Sms/        opt-in SMS provider profiles (Twilio-shaped API -> capture + realistic replies)
   Mockifyr.Server/               composition root (host, config, CLI)
 harness/
   Mockifyr.Differential.Harness/   Java WireMock (Testcontainers) + canonical diff
   Mockifyr.Differential.Generator/ deterministic property-based/fuzzing generator
 tests/                            unit + differential suites
+bench/                            BenchmarkDotNet (engine) + k6 (transport) — the performance envelope
 docs/                             roadmap, decisions (ADR), parity knowledge
 ```
 
@@ -191,7 +195,7 @@ Requires the .NET 10 SDK (pinned in `global.json`). NuGet restores from nuget.or
 settings live in `Directory.Build.props` (net10.0, nullable, warnings-as-errors).
 
 ```bash
-dotnet build Mockifyr.sln -c Debug          # build all 16 projects
+dotnet build Mockifyr.sln -c Debug          # build the solution (20 src projects + harness, tests, bench)
 dotnet test  Mockifyr.sln -c Debug          # run unit tests
 dotnet run   --project src/Mockifyr.Server  # run the standalone host (placeholder)
 ```
