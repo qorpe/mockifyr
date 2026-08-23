@@ -207,4 +207,34 @@ public sealed class G18bSmtpCaptureTests
         Assert.StartsWith(".hidden dot line", body);
         Assert.Contains("second line", body);
     }
+
+    [Fact]
+    public async Task Smtp_listener_answers_on_a_non_loopback_interface()
+    {
+        // The container regression: a loopback bind made the listener unreachable from every
+        // neighbor while all self-tests (which connect to 127.0.0.1) stayed green. Connecting
+        // via a real local address proves the bind is 0.0.0.0 without leaving the machine.
+        var (app, _, smtpPort) = await StartHostAsync();
+        try
+        {
+            var local = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                .Where(i => i.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up)
+                .SelectMany(i => i.GetIPProperties().UnicastAddresses)
+                .Select(a => a.Address)
+                .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                    && !System.Net.IPAddress.IsLoopback(a));
+            if (local is null)
+            {
+                return;   // no non-loopback IPv4 on this runner — nothing to prove here
+            }
+
+            using var client = new System.Net.Sockets.TcpClient();
+            await client.ConnectAsync(local, smtpPort);
+            Assert.True(client.Connected);
+        }
+        finally
+        {
+            await app.DisposeAsync();
+        }
+    }
 }

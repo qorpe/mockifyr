@@ -10,6 +10,16 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Released
 
+### [v1.18.1](https://github.com/qorpe/mockifyr/releases/tag/v1.18.1) — 2026-08-23
+
+#### Fixed
+
+- **The SMTP listener (`--smtp-port`) bound to loopback only**, so in a container — the primary
+  deployment — it worked from inside and answered "connection refused" to every neighbor. Every
+  self-test connects to 127.0.0.1, which is why the suite never saw it; found by the first real
+  cross-container consumer. It now binds all interfaces, like the HTTP port; exposure stays the
+  operator's call at the container/firewall boundary.
+
 ### [v1.18.0](https://github.com/qorpe/mockifyr/releases/tag/v1.18.0) — 2026-08-14
 
 The sandbox platform epic completes. Everything here is **off by default**; a host that configures

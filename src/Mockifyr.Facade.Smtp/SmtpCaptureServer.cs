@@ -13,10 +13,15 @@ namespace Mockifyr.Facade.Smtp;
 /// AUTH PLAIN/LOGIN accepted-but-unchecked). <b>The AUTH username names the tenant</b> — the SMTP
 /// analog of the <c>X-Mockifyr-Tenant</c> header; without AUTH, mail lands in the default tenant.
 /// No oracle exists for any of this (WireMock has no SMTP); validated by real-client self-tests.
+///
+/// Binds to ALL interfaces: the listener exists for REAL clients, and in the primary deployment
+/// (a container) a loopback bind is a listener nobody can reach — the portal integration found
+/// SMTP working from inside the container and "connection refused" from every neighbor. Exposure
+/// is the operator's call at the container/firewall boundary, exactly as it is for the HTTP port.
 /// </summary>
 public sealed class SmtpCaptureServer(IMessageSink sink, int port, IMessageBehaviorStore? behaviors = null) : IAsyncDisposable
 {
-    private readonly TcpListener _listener = new(IPAddress.Loopback, port);
+    private readonly TcpListener _listener = new(IPAddress.Any, port);
     private readonly CancellationTokenSource _stopping = new();
     private readonly List<Task> _connections = [];
     private Task? _acceptLoop;
