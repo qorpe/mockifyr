@@ -94,7 +94,7 @@ public sealed class G15aFakerTests : IAsyncLifetime
         // every provider 300k times, not from a handful of draws — see docs/parity/g15-extras.md.
         new("country", new Regex(@"^[\p{L}\d'.,&\-() ]+$", RegexOptions.Compiled)),
         new("company", new Regex(@"^[\p{L}\d'.,\-&/ ]+$", RegexOptions.Compiled)),
-        // Datafaker's Internet.url is scheme-less ("www.foo.co"); see docs/parity/g15-message-extras.md.
+        // Datafaker's Internet.url is scheme-less ("www.foo.co"); see docs/parity/g15-extras.md.
         new("url", new Regex(@"^www\.[\p{L}\d\-]+\.\p{L}+$", RegexOptions.Compiled)),
         new("phone", new Regex(@"^[\d\p{L}()+\-. x/]+$", RegexOptions.Compiled)),
         new("name", new Regex(@"^[\p{L}'.\- ]+$", RegexOptions.Compiled)),

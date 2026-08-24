@@ -44,3 +44,4 @@ When a change closes a gap, update **both**.
 
 Files are created as their groups are implemented; none exist yet because no code has been
 written.
+- [deployment.md](deployment.md) — container/K8s deployment parity notes (ports, healthchecks, persistence mounts).

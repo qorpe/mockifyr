@@ -77,3 +77,9 @@ dotnet run --project src/Mockifyr.Server -- --port 8080 --dashboard ui/dist
 
 The differential suite needs Docker — it starts a real WireMock container as the oracle. Everything
 else runs without it.
+
+## Docs carry the tests' freshness contract
+
+Any change that alters behavior, flags, routes, projects or parity facts updates the
+affected docs IN THE SAME change. `scripts/docs-guard.sh` gates the mechanical half in CI
+(links, flag/project/route/parity/script inventories); the prose half is this rule.
