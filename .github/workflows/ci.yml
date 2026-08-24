@@ -26,6 +26,9 @@ jobs:
       # --logger trx so a failure keeps its NAME. The console logger prints a summary and lets the
       # detail scroll past, which is how an intermittent red once cost a diagnosis: all that survived
       # was "1 failed" (#320).
+      - name: docs guard (documentation carries the tests' freshness contract — #389)
+        run: ./scripts/docs-guard.sh
+
       - name: Test (unit)
         run: dotnet test --no-build -c Release --filter "FullyQualifiedName!~Differential" --logger "trx" --results-directory TestResults
 
@@ -175,8 +178,6 @@ jobs:
         # unreachable (air-gapped), red when the pin is genuinely stale.
         working-directory: .
         run: ./scripts/kit-freshness.sh
-      - name: docs guard (documentation carries the tests' freshness contract — #389)
-        run: ./scripts/docs-guard.sh
 
       - name: Lint
         # CLAUDE.md §3a demands tsc/lint/build for every UI change; CI ran only build,
