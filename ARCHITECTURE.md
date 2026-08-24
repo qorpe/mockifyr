@@ -95,6 +95,14 @@ Testcontainers) are collected at the edges.
 - **`Mockifyr.Adapters.MappingJson`** — mapping JSON ↔ domain model import adapter. Used by
   the harness and the admin API; itself under differential test.
 - **`Mockifyr.ServeEvents.Webhook`** — `IServeEventListener` impl (outbound I/O + templating).
+- **`Mockifyr.Adapters.OpenApi`** — OpenAPI 3.x document → stub set import (spec in, working
+  sandbox out; `?stateful=true` wires resource-shaped path pairs to the state directive).
+- **`Mockifyr.Outbound`** — the outbound HTTP seam every callback/proxy/webhook shares:
+  trust policy (allow-listed hosts), TLS options, redaction. Facades call out ONLY through it.
+- **`Mockifyr.Crypto`** — payload decryption, response signing/protection, signature
+  verification (JWS/JWE key material handling); off unless keys are configured.
+- **`Mockifyr.Providers.Sms`** — provider-shaped HTTP profiles (Twilio first): parses the
+  provider's wire format into message envelopes and answers what the official SDK accepts.
 
 **Facades** (depend on Core, not on each other)
 - **`Mockifyr.Facade.Library`** — in-process public API (use in tests = WireMock's
@@ -104,6 +112,17 @@ Testcontainers) are collected at the edges.
   chunked encoding, host-header). Applies the delay/fault/proxy **directives**.
 - **`Mockifyr.Facade.Admin`** — `/__admin/*` REST management. Runs in the same process/port as
   the HTTP host but is a separate facade project. **Thin**: HTTP → CQRS dispatch → result.
+- **`Mockifyr.Facade.Grpc`** — gRPC serving over uploaded descriptors; inherits tenant
+  resolution and the engine untouched (transport → canonical mapping only).
+- **`Mockifyr.Facade.WebSocket`** — WebSocket scenarios (connect/message/push scripts) on the
+  same host; the engine stays request/response-pure, the facade owns the socket lifetime.
+- **`Mockifyr.Facade.Smtp`** — the SMTP capture listener (`--smtp-port`, ADR 0009): real
+  ESMTP for real clients, AUTH username names the tenant, envelopes land in the message inbox.
+- **`Mockifyr.Facade.Broker`** — broker-shaped capture/publish (queue mocking) behind the
+  same canonical envelope; opt-in like every listener.
+- **`Mockifyr.Facade.Sandbox`** — `/__sandbox/*`, the PARTNER-scoped self-service surface
+  (#347): a sandbox key reads its OWN tenant's requests, messages, usage and resources —
+  and never `/__admin` (a sandbox key is not an operator).
 
 **Application layer (CQRS / Mediant — management path only, §10)**
 - **`Mockifyr.Application`** — Admin/runtime management use cases as `ICommand<T>`/`IQuery<T>` +

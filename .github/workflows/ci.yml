@@ -175,6 +175,8 @@ jobs:
         # unreachable (air-gapped), red when the pin is genuinely stale.
         working-directory: .
         run: ./scripts/kit-freshness.sh
+      - name: docs guard (documentation carries the tests' freshness contract — #389)
+        run: ./scripts/docs-guard.sh
 
       - name: Lint
         # CLAUDE.md §3a demands tsc/lint/build for every UI change; CI ran only build,
