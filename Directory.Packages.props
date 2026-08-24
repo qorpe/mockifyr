@@ -28,14 +28,14 @@
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <!-- OpenAPI import (G19c, ADR 0011). Microsoft.OpenApi.Readers parses 3.0/3.1 (JSON + YAML);
          MIT-licensed, used only inside Mockifyr.Adapters.OpenApi — never referenced by Core. -->
-    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.29" />
+    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.31" />
     <!-- The broker channel (ADR 0013). Apache-2.0, and referenced only by Mockifyr.Facade.Broker so a
          host that configures no broker still never loads it. -->
     <PackageVersion Include="Confluent.Kafka" Version="2.15.0" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
     <!-- gRPC facade (G13). Google.Protobuf drives generic protobuf <-> JSON via the descriptor;
          Grpc.AspNetCore hosts the gRPC endpoint. Used only inside Mockifyr.Facade.Grpc. -->
-    <PackageVersion Include="Google.Protobuf" Version="3.35.1" />
+    <PackageVersion Include="Google.Protobuf" Version="3.36.0" />
     <PackageVersion Include="Grpc.AspNetCore" Version="2.80.0" />
     <PackageVersion Include="Grpc.Tools" Version="2.83.0" />
     <!-- SMTP capture facade (G18b, ADR 0009). MimeKit parses the DATA payload into a MessageEnvelope;
@@ -54,21 +54,21 @@
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <!-- Key-value persistence provider (G16d). StackExchange.Redis is the .NET Redis client; used only
          inside Mockifyr.Server behind the IStubPersistence seam. -->
-    <PackageVersion Include="StackExchange.Redis" Version="3.1.13" />
+    <PackageVersion Include="StackExchange.Redis" Version="3.1.31" />
   </ItemGroup>
 
   <ItemGroup Label="Testing / harness">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <!-- OIDC bearer validation at the host edge (#251): discovery + JWKS, no auth in Core. -->
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.22.0" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <!-- FakeTimeProvider: lets the key-rotation tests advance time instead of sleeping (#250). -->
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.8.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.9.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- Differential harness: runs the real Java WireMock oracle in a container. -->
-    <PackageVersion Include="Testcontainers" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers" Version="4.14.0" />
     <!-- Transitive pin, not a reference: Testcontainers 4.13.0 pulls SSH.NET 2025.1.0, which carries
          GHSA-q939-rpr3-3284 (an SCP recursive download can write outside the target directory when the
          server chooses the filenames). Nothing here uses SCP and the package never ships — it reaches
@@ -77,15 +77,15 @@
          2026.0.0 or later itself. -->
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <!-- In-memory test host for the admin HTTP facade differential (G7b). -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
     <!-- Real PostgreSQL container for the persistence differential (G16c). -->
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <!-- Real Redis container for the persistence differential (G16d). -->
-    <PackageVersion Include="Testcontainers.Redis" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.14.0" />
     <!-- The broker channel's integration harness (ADR 0013): a real Kafka, driven by the official
          client, because a mock broker proving a mock works would prove nothing. -->
-    <PackageVersion Include="Testcontainers.Kafka" Version="4.13.0" />
-    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.13.0" />
+    <PackageVersion Include="Testcontainers.Kafka" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.14.0" />
     <!-- gRPC client to drive the G13 differential against both sides. -->
     <PackageVersion Include="Grpc.Net.Client" Version="2.83.0" />
 
@@ -93,10 +93,10 @@
          endpoint is opt-in behind a flag. Prometheus's ASP.NET exporter is still pre-release
          upstream — pinned deliberately and isolated in Mockifyr.Server, so nothing in the engine
          or the facades depends on it. -->
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.17.0-beta.1" />
   </ItemGroup>
 
