@@ -14,7 +14,7 @@ wrong until this page existed.
 | **Tracked** | A real gap with an issue. It will be done when it is worth doing. |
 | **Accepted** | A real limitation we do not intend to close, with a reason. |
 
-Last reviewed: **1.7.0**.
+Last reviewed: **1.18.0**.
 
 ## Out of scope — verified against the reference engine
 
@@ -32,15 +32,14 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 ## Tracked — real gaps with issues
 
-| Gap | Why it is open | Issue |
-|---|---|---|
-| Resource embedding (`?expand=customer`) | ADR 0015 was its precondition and is met. Deliberately not bundled with relations: those were a defect fix and this is a feature, and shipping them together would have made the fix impossible to review. | [#378](https://github.com/qorpe/mockifyr/issues/378) |
+*Nothing is open.*
 
-Two entries left this section by shipping: **resource querying**
-([#353](https://github.com/qorpe/mockifyr/issues/353)) and the **relations dashboard screen**, both in the
-G22 epic; before them, change-feed reload for environments and sandbox resources
-([#279](https://github.com/qorpe/mockifyr/issues/279)) — see `g16-persistence.md` for what that fix turned
-up along the way.
+Three entries left this section by shipping: **resource embedding**
+([#378](https://github.com/qorpe/mockifyr/issues/378) — `?_expand=customer`, see `g19-sandbox.md`),
+**resource querying** ([#353](https://github.com/qorpe/mockifyr/issues/353)) and the **relations
+dashboard screen**, all in the G22 epic; before them, change-feed reload for environments and sandbox
+resources ([#279](https://github.com/qorpe/mockifyr/issues/279)) — see `g16-persistence.md` for what that
+fix turned up along the way.
 
 A third left it by being re-filed rather than done: embedding was tracked against
 [#350](https://github.com/qorpe/mockifyr/issues/350), which shipped relations and was closed, so the row

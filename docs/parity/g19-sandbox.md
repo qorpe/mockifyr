@@ -941,3 +941,83 @@ withheld through a composed value, and a constant refused with two values). **St
 `Environments.cs` — the file also carries the pre-#352 substitution code; the survivors are boundary
 variants with no observable difference (`index <= length` where the loop already exited, `close <= 0`
 where the value is either -1 or at least 2, and an off-by-one in the depth backstop).
+
+---
+
+## Embedding a related document (#378)
+
+`#350` shipped relations: an order belongs to a customer, and the sandbox knows it well enough to
+scope a nested list, refuse an orphan and govern a cascade. Reading the order still returned only the
+foreign key, so a consumer wanting both made two calls and stitched them — the exact work the relation
+was declared to describe. `GET /orders/o1?_expand=customer` does it in one.
+
+Deliberately not bundled with `#350`: relations were a **defect fix** (a nested specification imported
+to a flat collection, so every modelled customer listed every other customer's orders) and this is a
+feature. Shipping them together would have made the fix impossible to review.
+
+**The parameter is `_expand`, not `expand`.** The issue sketched the bare word, and two reasons agree
+against it. Every unprefixed query parameter is already a field filter (#353), so claiming `expand`
+would take that field name away from every document in every tenant — a silent compatibility break for
+one word's tidiness. And `_expand` is what json-server spells it, the vocabulary ADR 0015 chose to
+adopt rather than reinvent, so it joins `_sort` and `_fields` instead of standing apart from them.
+
+**A relation is named by its key field without the id suffix.** `customerId` and `customer_id` are
+both `customer` — the form the embedded document reads as. The key field itself also works
+(`?_expand=customerId`), and resolves first, so a collection that declares both `customer` and
+`customerId` as keys gets the reading with no inference in it. A field literally called `_id` keeps its
+own name: stripping the suffix there leaves `_`, which is not something to call a relation.
+
+**The parent lands in an envelope, not beside the document's own fields.**
+
+```json
+{"total":100,"customerId":"c1","_expand":{"customer":{"id":"c1","name":"Ada"}}}
+```
+
+A top-level `customer` would be indistinguishable from a field the modelled contract declares — and
+would silently overwrite one if the document already had it. Under `_expand` the addition is
+unmistakably the sandbox's, which also keeps `POST /__admin/openapi/verify` honest: an expanded read is
+visibly not the contract's shape rather than subtly wrong about it.
+
+**Decisions worth keeping:**
+
+- **A missing parent embeds `null`.** Never set, or pointing at a document since deleted — either way
+  the caller asked for *this* document, and failing the read because something beside it is absent
+  would be the worse answer.
+- **An unknown name is refused by name, and told what would have worked.** Returning the document
+  unexpanded is indistinguishable from a typo, and a consumer would debug their own code for an hour
+  before suspecting the query string. The refusal is a **400**: the request is malformed, not the
+  document missing (404) or the payload wrong (422).
+- **The refusal is resolved before the document is fetched**, so a typo answers the same way whether or
+  not the id exists. Otherwise the refusal doubles as an id oracle.
+- **Only `read` and `list` refuse.** A create or a delete has no expansion to offer, and refusing there
+  would describe a capability that does not exist.
+- **Depth is not special-cased.** `?_expand=customer.address` simply names no declared relation and is
+  refused by the ordinary rule. ADR 0015 ruled out a query planner; this does not reopen it, and there
+  is no code path that would need removing if somebody asked.
+- **The key is read from the stored document, not from the response.** `?_fields=total&_expand=customer`
+  projects away the very field naming the parent, and the expansion still resolves — reading it from
+  the projection would make field selection silently un-expand.
+- **One memo per page.** A hundred orders of one customer read that customer once, absences included,
+  or the memo would only help the happy path.
+- **Both the operator's read and the partner's expand identically**, because `/__sandbox/resources/…`
+  (#347) dispatches the same handler with the same parser. Two surfaces describing one document
+  differently is the failure the shared evaluator exists to prevent.
+
+**Compatibility.** A read without `_expand` is byte-identical to what it always answered, on every
+surface — the feature is reachable only by asking for it.
+
+**Validation.** `ResourceExpansionTests` (27 unit cases: naming, resolution, refusal wording, the
+envelope, both storage shapes for the key, missing and dangling parents, tenant isolation, projection
+interaction, malformed bodies on both sides, memo behaviour) and `ResourceExpansionWireTests`
+(15 wire cases across the served `read`, the served `list`, the admin read and the partner surface).
+**Stryker 100 %** on `ResourceExpansions.cs`, no survivors.
+
+Two things the mutation run paid for, both in the refusal: the message was only asserted by substring,
+so the sentence could have been reduced to fragments without a test noticing, and the list of
+alternatives was only ever exercised with one relation in it — the separator between several was
+untested and could have run them together into one word.
+
+**Left alone, and worth writing down.** `/__sandbox/resources/{collection}/{id}` reports `body` as the
+document's raw JSON *text* where `/__admin/resources/{collection}/{id}` reports it as an object. That
+predates this change (#347) and is a difference in how the two surfaces describe the same document;
+changing it is a breaking change to a partner-facing surface and belongs to its own decision.

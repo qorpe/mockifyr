@@ -165,7 +165,12 @@ public static class SandboxEndpoints
         sandbox.MapGet("/resources/{collection}/{id}", async (string collection, string id, HttpContext context, ISender sender) =>
         {
             if (Tenant(context) is not { } tenant) return Refused(context);
-            var result = await sender.Send(new GetResourceQuery(collection, id, tenant));
+
+            // The partner's own read expands exactly as the operator's does (#378): the same handler,
+            // the same parser, so the two surfaces cannot describe one document differently.
+            var result = await sender.Send(new GetResourceQuery(collection, id, tenant,
+                ResourceQuery.Parse(context.Request.Query.Select(
+                    p => new KeyValuePair<string, string?>(p.Key, p.Value.FirstOrDefault()))).Expand));
             return result.IsSuccess ? Results.Json(ResourceJson(result.Value)) : Failure(result.Error);
         });
 
@@ -314,6 +319,7 @@ public static class SandboxEndpoints
         Results.Json(new { error = error.Code, message = error.Description }, statusCode: error.Code switch
         {
             "Resource.NotFound" => StatusCodes.Status404NotFound,
+            "Resource.UnknownRelation" => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status422UnprocessableEntity,
         });
 

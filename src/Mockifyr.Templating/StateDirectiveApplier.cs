@@ -49,6 +49,12 @@ public static class StateDirectiveApplier
         var id = string.IsNullOrWhiteSpace(renderedId) ? null : renderedId.Trim();
         var schema = schemas?.Get(tenant, directive.Collection);
 
+        // What ?_expand= asked to embed (#378). Resolved once, refused only by the two operations that
+        // offer it: a name matching no declared relation is the request being wrong — a 400 rather than
+        // a document returned quietly unexpanded, which a caller cannot tell apart from a typo — while a
+        // create or a delete has no expansion to refuse and should not start inventing one.
+        var expansion = ResourceExpansions.Plan(query?.Expand ?? [], schema);
+
         switch (directive.Operation.ToLowerInvariant())
         {
             case "create":
@@ -85,10 +91,17 @@ public static class StateDirectiveApplier
 
             case "read":
             {
+                if (expansion.IsRefused)
+                {
+                    return StateOutcome.ShortCircuit(400);
+                }
+
                 var found = id is null ? null : store.Get(tenant, directive.Collection, id);
                 return found is null || !InScope(found, schema, parent)
                     ? StateOutcome.ShortCircuit(directive.MissStatus)
-                    : StateOutcome.Success(DocumentModel(found));
+                    : StateOutcome.Success(DocumentModel(
+                        found,
+                        ResourceExpansions.Embed(found.Body, found, expansion, tenant, store)));
             }
 
             case "update":
@@ -143,6 +156,11 @@ public static class StateDirectiveApplier
 
             case "list":
             {
+                if (expansion.IsRefused)
+                {
+                    return StateOutcome.ShortCircuit(400);
+                }
+
                 var documents = parent is { } owner
                     ? ResourceRelations.ChildrenOf(tenant, directive.Collection, schema, owner.Collection, owner.Id, store)
                     : store.List(tenant, directive.Collection);
@@ -153,10 +171,15 @@ public static class StateDirectiveApplier
                 var selection = query ?? ResourceQuery.All;
                 documents = selection.Apply(documents);
 
+                // One memo across the whole page (#378), so a hundred orders of one customer read that
+                // customer once rather than a hundred times.
+                var parents = expansion.IsEmpty ? null : new Dictionary<(string, string), string?>();
+
                 return StateOutcome.Success(new Dictionary<string, object?>
                 {
                     ["count"] = documents.Count,
-                    ["list"] = "[" + string.Join(",", documents.Select(d => selection.Project(d.Body))) + "]",
+                    ["list"] = "[" + string.Join(",", documents.Select(d => ResourceExpansions.Embed(
+                        selection.Project(d.Body), d, expansion, tenant, store, parents))) + "]",
                 });
             }
 
@@ -215,10 +238,15 @@ public static class StateDirectiveApplier
         return null;
     }
 
-    private static Dictionary<string, object?> DocumentModel(ResourceDocument document) => new()
+    /// <summary>
+    /// The <c>{{state.*}}</c> model for one document. <paramref name="body"/> overrides what
+    /// <c>{{state.body}}</c> renders — the expanded form on a read (#378) — while the stored document
+    /// stays the source of id and version.
+    /// </summary>
+    private static Dictionary<string, object?> DocumentModel(ResourceDocument document, string? body = null) => new()
     {
         ["id"] = document.Id,
-        ["body"] = document.Body,
+        ["body"] = body ?? document.Body,
         ["version"] = document.Version,
     };
 }

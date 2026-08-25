@@ -8,6 +8,21 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- **Embedding a related document in a sandbox read** (#378). `GET /orders/o1?_expand=customer` returns
+  the order with its customer under an `_expand` envelope, instead of the consumer reading a foreign
+  key and making a second call. Available on the served `read` and `list` directives, on
+  `GET /__admin/resources/{collection}/{id}` and on the partner surface
+  `GET /__sandbox/resources/{collection}/{id}`. A relation is named by its key field without the id
+  suffix (`customerId` → `customer`); the key field itself works too. Bounded as ADR 0015 requires:
+  one level, a declared relation only, parents only. A missing parent embeds `null` rather than
+  failing the read; an unknown relation name answers **400** and says what would have worked. A read
+  without `_expand` is byte-identical to what it answered before.
+- `_expand` joins `limit`, `offset`, `_sort` and `_fields` as a resource-query **control parameter**,
+  so a document field named `_expand` can no longer be filtered on. The unprefixed `expand` is
+  deliberately *not* claimed, precisely so no existing filter changes meaning.
+
 ## Released
 
 ### [v1.18.1](https://github.com/qorpe/mockifyr/releases/tag/v1.18.1) — 2026-08-23

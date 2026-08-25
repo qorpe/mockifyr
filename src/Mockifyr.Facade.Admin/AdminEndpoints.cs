@@ -950,7 +950,11 @@ public static class AdminEndpoints
 
         admin.MapGet("/resources/{collection}/{id}", async (string collection, string id, HttpRequest request, ISender sender) =>
         {
-            var result = await sender.Send(new GetResourceQuery(collection, id, TenantOf(request)));
+            // Read through the same parser the listing uses, so `_expand` is spelled in exactly one
+            // place (#378); a read has no filters, so only the expansion is taken from it.
+            var result = await sender.Send(new GetResourceQuery(collection, id, TenantOf(request),
+                ResourceQuery.Parse(request.Query.Select(
+                    p => new KeyValuePair<string, string?>(p.Key, p.Value.FirstOrDefault()))).Expand));
             return result.IsSuccess ? Results.Json(ResourceJson(result.Value)) : ResourceFailure(result.Error);
         });
 
@@ -2003,6 +2007,9 @@ public static class AdminEndpoints
         {
             "Resource.NotFound" => StatusCodes.Status404NotFound,
             "Resource.BodyTooLarge" => StatusCodes.Status413PayloadTooLarge,
+            // The query string named a relation that does not exist — the request is malformed, not the
+            // document (#378).
+            "Resource.UnknownRelation" => StatusCodes.Status400BadRequest,
             _ => StatusCodes.Status422UnprocessableEntity,
         });
 

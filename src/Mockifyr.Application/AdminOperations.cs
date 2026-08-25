@@ -145,8 +145,15 @@ public sealed record ListResourcesQuery(
     TenantId Tenant,
     ResourceQuery? Query = null) : IQuery<Result<ResourcePage>>;
 
-/// <summary>Reads one document, or a not-found error.</summary>
-public sealed record GetResourceQuery(string Collection, string Id, TenantId Tenant) : IQuery<Result<ResourceDocument>>;
+/// <summary>
+/// Reads one document, or a not-found error. <paramref name="Expand"/> names the declared relations to
+/// embed (#378); empty — the default — returns the document exactly as it is stored.
+/// </summary>
+public sealed record GetResourceQuery(
+    string Collection,
+    string Id,
+    TenantId Tenant,
+    IReadOnlyList<string>? Expand = null) : IQuery<Result<ResourceDocument>>;
 
 /// <summary>Creates or replaces one document (last-write-wins; ADR 0011 addendum).</summary>
 public sealed record PutResourceCommand(string Collection, string Id, string Body, TenantId Tenant) : ICommand<Result<ResourceDocument>>;
