@@ -41,12 +41,11 @@ dashboard screen**, all in the G22 epic; before them, change-feed reload for env
 resources ([#279](https://github.com/qorpe/mockifyr/issues/279)) — see `g16-persistence.md` for what that
 fix turned up along the way.
 
-A third left it by being re-filed rather than done: embedding was tracked against
-[#350](https://github.com/qorpe/mockifyr/issues/350), which shipped relations and was closed, so the row
-pointed at an issue that no longer accepted work. That is the one failure a register cannot have — a gap
-that reads as tracked and is not — so it now has [#378](https://github.com/qorpe/mockifyr/issues/378) of
-its own. Worth stating as a rule: when an issue closes, every register row citing it is either done or
-needs somewhere else to live.
+Embedding took the long way round, and the detour is the reason for a rule. It was first tracked against
+[#350](https://github.com/qorpe/mockifyr/issues/350), which shipped relations and was then closed — so the
+row pointed at an issue that no longer accepted work. That is the one failure a register cannot have: a
+gap that reads as tracked and is not. It was re-filed as #378, and shipped under that number. The rule:
+**when an issue closes, every register row citing it is either done or needs somewhere else to live.**
 
 A row belongs here when a gap is real, reachable by a documented deployment, and not yet closed. An empty
 section is the honest state, not an oversight — the sections below are where the standing limitations
