@@ -302,10 +302,11 @@ and integer division rounded the wrong way for negatives.
 The **deferred-edge register**, `docs/parity/deferred-edges.md`, is the single answer to "is anything
 open?", with a verdict per item (out of scope / tracked / accepted). The per-group parity files still
 hold the narrative, but they record deferrals as of the group that wrote them, so they are not a count.
-Its Tracked section is currently **empty**: the one entry it held — change-feed reload for environments
-and sandbox resources (#279) — shipped in 1.5.0, and testing it turned up a second defect the analysis
-had not predicted: a host reloaded on its own announcement and could hand an operator their own write
-back at the previous version, so every announcement now carries the writer's identity.
+Its Tracked section is currently **empty**: the last entry it held — resource embedding (#378) — shipped,
+and before it change-feed reload for environments and sandbox resources (#279) did in 1.5.0, where testing
+turned up a second defect the analysis had not predicted: a host reloaded on its own announcement and
+could hand an operator their own write back at the previous version, so every announcement now carries
+the writer's identity.
 
 Auditing the **documentation website** against the shipped surface (every CLI flag, every admin route)
 found the reference complete — 53 of 54 flags, all 32 routes — and the teaching layer missing in two
@@ -449,4 +450,18 @@ others; "who revoked this" was tied to `--audit` being on, recording an authenti
 ceiling could not edit what it already had; and `ResourceOptions` was registered twice, where the second
 call silently dropped the first one's number.
 
-Builds clean (0 warnings); 1600+ tests green across the four suites.
+**Embedding (#378)** closes the register's last tracked row and finishes what relations started. A
+relation knew an order belongs to a customer; reading the order still returned only the foreign key, so
+the consumer made a second call and stitched them — the work the relation was declared to describe.
+`?_expand=customer` does it in one, on the served `read` and `list`, the admin read and the partner
+surface, through one parser and one handler so the four cannot describe a document differently. The
+bounds are ADR 0015's and are structural rather than policed: depth is refused by the ordinary
+unknown-name rule, so no query-planner path exists to be switched on. Two spellings were decided against
+the issue's own sketch and written down — `_expand` rather than `expand`, because every unprefixed
+parameter is already a field filter and the bare word would take that field name from every document;
+and an `_expand` envelope rather than a top-level `customer`, which would be indistinguishable from a
+field the contract declares and would overwrite one that was. Mutation testing paid for itself in the
+refusal alone: the message was asserted only by substring, and the separator between several
+alternatives had never been exercised.
+
+Builds clean (0 warnings); 1700+ tests green across the four suites.

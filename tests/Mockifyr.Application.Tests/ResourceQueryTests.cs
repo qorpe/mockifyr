@@ -188,7 +188,16 @@ public sealed class ResourceQueryTests
     {
         // This list is what the documentation promises cannot be filtered on. Drift between the two is
         // a field somebody cannot query and no error explaining why.
-        Assert.Equal(["limit", "offset", "_sort", "_fields"], ResourceQuery.ControlParameters);
+        Assert.Equal(["limit", "offset", "_sort", "_fields", "_expand"], ResourceQuery.ControlParameters);
+    }
+
+    [Fact]
+    public void Expand_is_read_as_a_control_parameter_rather_than_a_filter()
+    {
+        // Without this the request that asks for an embed would instead filter on a field called
+        // `_expand` and match nothing (#378).
+        Assert.Equal(["customer", "warehouse"], Query(("_expand", "customer, warehouse")).Expand);
+        Assert.Empty(Query(("_expand", "customer")).Filters);
     }
 
     [Fact]

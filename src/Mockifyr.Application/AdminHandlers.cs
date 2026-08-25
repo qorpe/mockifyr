@@ -627,8 +627,8 @@ public sealed class ListResourcesHandler(IResourceStore store)
     }
 }
 
-/// <summary>Reads one document.</summary>
-public sealed class GetResourceHandler(IResourceStore store)
+/// <summary>Reads one document, optionally with its declared parents embedded (#378).</summary>
+public sealed class GetResourceHandler(IResourceStore store, IResourceSchemaStore schemas)
     : IQueryHandler<GetResourceQuery, Result<ResourceDocument>>
 {
     public ValueTask<Result<ResourceDocument>> Handle(GetResourceQuery query, CancellationToken cancellationToken)
@@ -638,11 +638,26 @@ public sealed class GetResourceHandler(IResourceStore store)
             return ValueTask.FromResult<Result<ResourceDocument>>(error);
         }
 
+        // Resolved before the document is fetched, so a typo in ?_expand= answers the same way whether
+        // or not the id happens to exist — a refusal that depended on that would leak which ids are
+        // there (#378).
+        var plan = ResourceExpansions.Plan(query.Expand ?? [], schemas.Get(query.Tenant, query.Collection));
+        if (plan.IsRefused)
+        {
+            return ValueTask.FromResult<Result<ResourceDocument>>(
+                Error.Validation("Resource.UnknownRelation", plan.RefusalMessage));
+        }
+
         var document = store.Get(query.Tenant, query.Collection, query.Id);
-        return document is null
-            ? ValueTask.FromResult<Result<ResourceDocument>>(Error.NotFound(
-                "Resource.NotFound", $"No document '{query.Id}' in collection '{query.Collection}'."))
-            : ValueTask.FromResult<Result<ResourceDocument>>(document);
+        if (document is null)
+        {
+            return ValueTask.FromResult<Result<ResourceDocument>>(Error.NotFound(
+                "Resource.NotFound", $"No document '{query.Id}' in collection '{query.Collection}'."));
+        }
+
+        return ValueTask.FromResult<Result<ResourceDocument>>(plan.IsEmpty
+            ? document
+            : document with { Body = ResourceExpansions.Embed(document.Body, document, plan, query.Tenant, store) });
     }
 }
 

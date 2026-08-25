@@ -157,6 +157,7 @@ Binding under `VERSIONING.md` since 1.0, and satisfied by construction rather th
 - Resource querying (#353) and the correlation gap close with this work rather than after it.
 - `expand` (embedding a related document in a response) becomes possible and is **not** included
   here — recorded in `docs/parity/deferred-edges.md` as tracked, with this ADR as its precondition.
+  **Delivered in [#378](https://github.com/qorpe/mockifyr/issues/378)**; see the addendum below.
 - No new dependency; no Core dependency; no change to the mapping-JSON dialect the oracle validates,
   so the differential suites stay green untouched — the same regression proof ADR 0011 relied on.
 
@@ -173,3 +174,35 @@ Part of the definition of done, in addition to `docs/testing.md`.
 | Integrity | A key is checked **when present**, so mutually referencing collections stay creatable; cycles in the relation graph are legal (`employees.managerId → employees` is a real model) and cascade terminates through a visited set rather than through a rejected declaration |
 | Mutation | Stryker at 100 % on the resolution, integrity and cascade logic; any survivor documented as an equivalent mutant |
 | Edge sweep | Missing parent, deleted parent mid-request, unicode and hostile ids, a 10k-child cascade, concurrent delete-parent/create-child |
+
+
+## Addendum — embedding (#378, 2026-08-25)
+
+The consequence this ADR named and deferred is now shipped, inside the bounds set above: one level, a
+declared relation named explicitly, parents only. No joins, no dotted paths, no "embed every child".
+Three decisions were made in the doing and belong here rather than only in the parity narrative.
+
+**The parameter is `_expand`.** The issue sketched a bare `expand`, but resource querying (#353) reads
+every unprefixed query parameter as a field filter, so the bare word would take the field name `expand`
+away from every document in every tenant — a compatibility break bought for one word's tidiness. The
+prefixed form is also what json-server spells it, and this ADR's stated position is to adopt the
+vocabulary integrators already read rather than invent one.
+
+**A relation is named by its key field without the id suffix**, so `customerId` and `customer_id` are
+both `customer`. The key field itself resolves too, and resolves first, so a collection declaring both
+`customer` and `customerId` as keys gets the reading with no inference in it. Nothing was added to the
+relation declaration to carry a name: a name stored beside `(collection, via)` would be a third thing
+that can disagree with the other two, and an OpenAPI import has nothing to derive it from that it does
+not already derive `via` from.
+
+**The parent lands under an `_expand` envelope, not beside the document's own fields.** This follows
+directly from the "contract decides" rule above. A top-level `customer` would be indistinguishable
+from a field the modelled schema declares — and would silently overwrite one if the document had it —
+which is the same failure mode that made stamping `customerId` into an undeclared body unacceptable.
+Under an envelope the addition is unmistakably the sandbox's, and `POST /__admin/openapi/verify`
+cannot be handed a response that is subtly wrong about the contract's shape rather than visibly beside
+it.
+
+Everything else is the ADR's existing machinery: the key is read through the one accessor that answers
+for both storage shapes, the lookup is tenant-scoped by construction, and a read without `_expand` is
+byte-identical to what it always answered.

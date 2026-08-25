@@ -55,8 +55,15 @@ public sealed record ResourceQuery(
     /// <summary>A query that selects everything, unsorted and unprojected.</summary>
     public static ResourceQuery All { get; } = new([], null, false, []);
 
+    /// <summary>
+    /// The relations <c>?_expand=</c> asked to embed, in the order they were written (#378). Not a
+    /// positional parameter, so every existing construction of this record keeps compiling and keeps
+    /// meaning what it meant.
+    /// </summary>
+    public IReadOnlyList<string> Expand { get; init; } = [];
+
     /// <summary>Whether this query does anything at all.</summary>
-    public bool IsEmpty => Filters.Count == 0 && SortField is null && Fields.Count == 0;
+    public bool IsEmpty => Filters.Count == 0 && SortField is null && Fields.Count == 0 && Expand.Count == 0;
 
     /// <summary>
     /// The control parameters this query owns. Everything else in a query string is a field filter, so
@@ -68,7 +75,7 @@ public sealed record ResourceQuery(
     /// would break every existing caller; the ones added here carry the <c>_</c> that marks a control
     /// parameter in the shapes people already know from tools of this class.
     /// </remarks>
-    public static IReadOnlyList<string> ControlParameters { get; } = ["limit", "offset", "_sort", "_fields"];
+    public static IReadOnlyList<string> ControlParameters { get; } = ["limit", "offset", "_sort", "_fields", "_expand"];
 
     /// <summary>
     /// Parses a query string. Unknown operator suffixes are read as part of the field name rather than
@@ -81,6 +88,7 @@ public sealed record ResourceQuery(
         string? sortField = null;
         var descending = false;
         var fields = new List<string>();
+        var expand = new List<string>();
 
         foreach (var (rawKey, rawValue) in parameters)
         {
@@ -113,6 +121,13 @@ public sealed record ResourceQuery(
                 continue;
             }
 
+            if (string.Equals(key, "_expand", StringComparison.Ordinal))
+            {
+                expand.AddRange((rawValue ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                continue;
+            }
+
             if (string.Equals(key, "limit", StringComparison.Ordinal)
                 || string.Equals(key, "offset", StringComparison.Ordinal))
             {
@@ -123,7 +138,7 @@ public sealed record ResourceQuery(
             filters.Add(new ResourceFilter(field, op, rawValue ?? string.Empty));
         }
 
-        return new ResourceQuery(filters, sortField, descending, fields);
+        return new ResourceQuery(filters, sortField, descending, fields) { Expand = expand };
     }
 
     private static (string Field, ResourceFilterOperator Operator) SplitOperator(string key)
