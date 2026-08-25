@@ -143,7 +143,13 @@ public sealed class PayloadDecryptionWireTests : IAsyncLifetime
         using var doc = System.Text.Json.JsonDocument.Parse(await journal.Content.ReadAsStringAsync());
         var id = doc.RootElement.GetProperty("requests").EnumerateArray().First().GetProperty("id").GetString();
         using var detail = await _client.GetAsync($"/__admin/requests/{id}");
-        var recorded = await detail.Content.ReadAsStringAsync();
+        using var entry = System.Text.Json.JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+
+        // The recorded BODY, not the whole entry. Scanning the entry meant scanning the headers too,
+        // and the Host header carries the ephemeral port this host bound to — so a run that happened
+        // to get port 41117 read as the plaintext PAN having leaked. The claim was always about the
+        // body; asserting it there is both what we mean and what cannot be tripped by a port number.
+        var recorded = entry.RootElement.GetProperty("request").GetProperty("body").GetString()!;
         Assert.Contains(header, recorded);
         Assert.DoesNotContain("4111", recorded);
     }
