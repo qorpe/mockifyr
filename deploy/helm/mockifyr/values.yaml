@@ -118,6 +118,31 @@ containerSecurityContext:
   capabilities:
     drop: ["ALL"]
 
+# Voluntary-disruption budget. Off by default, and refused below two replicas: a budget over a
+# single pod means a node drain can never evict it, which turns a safeguard into a hung drain.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1        # set this OR maxUnavailable, not both
+  maxUnavailable: ""
+
+# Network policy. Off by default — cluster policy differs enough between organisations that a
+# shipped default would be wrong more often than right, so this ships the shape and the wiring and
+# leaves the peers to the operator.
+networkPolicy:
+  enabled: false
+  # Who may reach the mock and admin ports. Empty means any pod in the cluster, which is still
+  # narrower than no policy at all (nothing outside the cluster network reaches it).
+  ingressFrom: []
+  # Extra container ports to admit — the SMTP capture listener, for instance.
+  extraIngressPorts: []
+  # Egress is UNRESTRICTED by default, deliberately. This host calls out by design: webhooks and
+  # proxy targets, the persistence backend, Kafka/AMQP, SMTP, an OIDC issuer. Pinning ingress is the
+  # common requirement; pinning egress needs a list of everything the stubs are allowed to reach,
+  # and getting it wrong produces requests that hang rather than an error anybody can read.
+  restrictEgress: false
+  # Peers allowed when restrictEgress is true. DNS is always permitted regardless.
+  egressTo: []
+
 nodeSelector: {}
 tolerations: []
 affinity: {}

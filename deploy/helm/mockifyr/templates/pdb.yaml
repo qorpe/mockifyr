@@ -1,0 +1,31 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- /*
+  A PDB on a single replica is a trap, not a safeguard: minAvailable 1 over one pod means a node
+  drain can never evict it, so the drain hangs until somebody deletes the budget. Refusing is the
+  same posture the chart already takes for an Ingress without admin auth — a configuration that
+  cannot do what it says is better rejected than rendered.
+*/ -}}
+{{- if lt (int .Values.replicaCount) 2 }}
+{{- fail "podDisruptionBudget.enabled requires replicaCount >= 2 — a budget over a single replica blocks every node drain" }}
+{{- end }}
+{{- if and .Values.podDisruptionBudget.minAvailable .Values.podDisruptionBudget.maxUnavailable }}
+{{- fail "podDisruptionBudget: set minAvailable or maxUnavailable, not both" }}
+{{- end }}
+{{- if and (not .Values.podDisruptionBudget.minAvailable) (not .Values.podDisruptionBudget.maxUnavailable) }}
+{{- fail "podDisruptionBudget.enabled requires either minAvailable or maxUnavailable" }}
+{{- end }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mockifyr.fullname" . }}
+  labels: {{- include "mockifyr.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ . }}
+  {{- end }}
+  {{- with .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "mockifyr.selectorLabels" . | nindent 6 }}
+{{- end }}

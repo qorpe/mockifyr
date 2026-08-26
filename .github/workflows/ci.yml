@@ -163,7 +163,13 @@ jobs:
         run: |
           curl -sSLo kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
           tar -xzf kubeconform.tar.gz kubeconform
-          helm template verify deploy/helm/mockifyr --set persistence.enabled=true --set ingress.enabled=true > rendered.yaml
+          # Render with the optional objects on as well, so every kind the chart can produce is
+          # schema-checked — a PodDisruptionBudget or NetworkPolicy that only appears behind a flag
+          # is exactly the one nobody validates (#397).
+          helm template verify deploy/helm/mockifyr \
+            --set persistence.enabled=true --set ingress.enabled=true \
+            --set replicaCount=2 --set podDisruptionBudget.enabled=true \
+            --set networkPolicy.enabled=true --set networkPolicy.restrictEgress=true > rendered.yaml
           ./kubeconform -strict -summary -skip Route rendered.yaml
 
   ui:
