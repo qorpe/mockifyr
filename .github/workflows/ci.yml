@@ -35,10 +35,12 @@ jobs:
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: test-results-unit
           path: TestResults/
           if-no-files-found: ignore
+          retention-days: 14
 
   benchmarks:
     name: Engine benchmarks
@@ -60,10 +62,12 @@ jobs:
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: benchmark-results
           path: BenchmarkDotNet.Artifacts/results/
           if-no-files-found: ignore
+          retention-days: 14
 
   security:
     name: Security scans
@@ -236,7 +240,9 @@ jobs:
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: test-results-differential
           path: TestResults/
           if-no-files-found: ignore
+          retention-days: 14
