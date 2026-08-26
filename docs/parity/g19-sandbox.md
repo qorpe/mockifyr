@@ -1021,3 +1021,38 @@ untested and could have run them together into one word.
 document's raw JSON *text* where `/__admin/resources/{collection}/{id}` reports it as an object. That
 predates this change (#347) and is a difference in how the two surfaces describe the same document;
 changing it is a breaking change to a partner-facing surface and belongs to its own decision.
+
+---
+
+## A renameable token marker (#396d)
+
+`--api-key-prefix` changes the `mfk_` every issued sandbox token starts with. A partner reads that
+marker in their own configuration file, and it is our product's initials.
+
+**Only newly issued tokens are affected, and that is a property rather than a limitation.**
+Verification hashes the whole presented token and compares it to what was stored — it never inspects
+the marker — so a partner holding an `mfk_` key keeps working after the host is reconfigured. Without
+that, renaming would mean a re-issue campaign across every partner, which nobody would do, which would
+make the flag useless.
+
+**The display fragment counts from the random part, not from the start of the token.** It was twelve
+characters total: four of marker plus eight of randomness. Left that way, a ten-character marker would
+have left **two** random characters — and the fragment is exactly how an operator tells two keys apart
+in a list, so two keys could have shown the same one. It is now `marker + 8`, which is unchanged for
+the default and stays legible for any marker.
+
+**Bounded at twelve characters** of letters, digits, `-` or `_`. Longer than that and the marker stops
+being a marker; anything else and it is not safe in the `X-Api-Key` header and `Authorization: Bearer`
+value the token is carried in.
+
+**Validation.** `G19dApiKeyTests` grows by 8 cases and `ApiKeyPrefixWireTests` proves the whole path:
+an issued key carries the configured marker, the stored fragment follows, and the key **actually
+opens the partner surface** — a renamed marker that did not authenticate would be a cosmetic change
+that broke the feature it decorates. **Stryker 100 %** on `ApiKeys.cs`.
+
+Mutation testing found the same shape of gap as the tenant header and one new one: no prefix in the
+data contained the boundary characters `a z A Z 0 9`, so all six range comparisons could have been off
+by one; and no case used a prefix of exactly twelve, so `> 12` and `>= 12` were indistinguishable.
+A third survivor was equivalent — `token.Length <= length ? token : token[..length]` returns the same
+string either way when the two are equal — and was removed rather than documented by replacing the
+ternary with `Math.Min`.

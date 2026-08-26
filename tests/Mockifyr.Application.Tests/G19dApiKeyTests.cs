@@ -212,5 +212,82 @@ public sealed class G19dApiKeyTests
             File.Delete(file);
         }
     }
+    // ---- a renameable token marker (#396d) -------------------------------------------------------
+
+    [Fact]
+    public void The_default_prefix_and_fragment_are_exactly_what_shipped()
+    {
+        var (token, _, _) = ApiKeyMaterial.Generate();
+
+        Assert.StartsWith("mfk_", token, StringComparison.Ordinal);
+        // Four characters of marker plus eight of randomness — the twelve every stored fragment has.
+        Assert.Equal(12, ApiKeyMaterial.DisplayPrefix(token).Length);
+    }
+
+    [Fact]
+    public void A_configured_prefix_marks_new_tokens()
+    {
+        var (token, _, _) = ApiKeyMaterial.Generate("dfx_");
+
+        Assert.StartsWith("dfx_", token, StringComparison.Ordinal);
+        Assert.DoesNotContain("mfk_", token, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_key_issued_under_the_old_prefix_still_verifies_after_a_rename()
+    {
+        // The property that makes this safe to change at all: verification hashes the whole presented
+        // token and never inspects the marker, so a partner holding an mfk_ key keeps working when the
+        // host is reconfigured. Without it, renaming would mean a re-issue campaign.
+        var (old, salt, hash) = ApiKeyMaterial.Generate("mfk_");
+
+        Assert.True(ApiKeyMaterial.Verify(old, salt, hash));
+    }
+
+    [Fact]
+    public void A_longer_prefix_does_not_eat_into_the_fragment()
+    {
+        // The fragment is how an operator tells two keys apart in a list. Counted from the start of
+        // the token, a ten-character marker would leave two random characters and two keys could show
+        // the same fragment — so it is counted from the random part instead.
+        var (token, _, _) = ApiKeyMaterial.Generate("dfxsandbox_");
+        var fragment = ApiKeyMaterial.DisplayPrefix(token, "dfxsandbox_");
+
+        Assert.StartsWith("dfxsandbox_", fragment, StringComparison.Ordinal);
+        Assert.Equal("dfxsandbox_".Length + 8, fragment.Length);
+    }
+
+    [Theory]
+    [InlineData("mfk_")]
+    [InlineData("dfx_")]
+    [InlineData("k")]
+    // Every boundary of every range in one prefix: a and z, A and Z, 0 and 9. Without it the six
+    // comparisons could each be off by one and every test would still pass.
+    [InlineData("azAZ09")]
+    [InlineData("Partner-Key_")]    // exactly 12 — the longest that is still a marker
+    public void Prefix_validation_admits_token_characters(string prefix)
+    {
+        Assert.True(ApiKeyMaterial.IsWellFormedPrefix(prefix));
+    }
+
+    [Fact]
+    public void A_token_no_longer_than_its_fragment_is_returned_whole()
+    {
+        // The degenerate case the Min guards: nothing to trim.
+        Assert.Equal("mfk_", ApiKeyMaterial.DisplayPrefix("mfk_"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("dfx key_")]        // a quoted flag with a space in it
+    [InlineData("dfx.")]            // '.' is not a token character here
+    [InlineData("dfx/")]
+    [InlineData("anahtar_öneki")]   // non-ASCII
+    [InlineData("aaaaaaaaaaaaa")]   // 13 characters: a marker, not a token
+    public void Prefix_validation_refuses_the_rest(string prefix)
+    {
+        Assert.False(ApiKeyMaterial.IsWellFormedPrefix(prefix));
+    }
+
 }
 #pragma warning restore CS0618

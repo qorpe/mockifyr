@@ -53,7 +53,7 @@ public sealed class ApiKeyLifecycleTests
     public async Task Issuing_refuses_an_expiry_that_has_already_passed()
     {
         var (store, persistence) = Fresh();
-        var handler = new IssueApiKeyHandler(store, persistence);
+        var handler = new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default);
 
         var result = await handler.Handle(
             new IssueApiKeyCommand("partner", null, Acme, DateTimeOffset.UtcNow.AddMinutes(-1)), default);
@@ -66,7 +66,7 @@ public sealed class ApiKeyLifecycleTests
     public async Task Revoking_keeps_the_key_and_records_who_and_why()
     {
         var (store, persistence) = Fresh();
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", null, Acme), default);
 
         var revoked = await new RevokeApiKeyHandler(store, persistence)
@@ -85,7 +85,7 @@ public sealed class ApiKeyLifecycleTests
     {
         var (store, persistence) = Fresh();
         var handler = new RevokeApiKeyHandler(store, persistence);
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", null, Acme), default);
 
         await handler.Handle(new RevokeApiKeyCommand(issued.Value.Key.Id, Acme, "tenant:acme", "first"), default);
@@ -100,7 +100,7 @@ public sealed class ApiKeyLifecycleTests
     public async Task One_tenant_cannot_revoke_another_tenants_key()
     {
         var (store, persistence) = Fresh();
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", null, Acme), default);
 
         var result = await new RevokeApiKeyHandler(store, persistence)
@@ -116,10 +116,10 @@ public sealed class ApiKeyLifecycleTests
     {
         // The point of the whole feature: a partner deploys the new credential before the old stops.
         var (store, persistence) = Fresh();
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", 500, Acme, null, ApiKeyScope.ReadOnly), default);
 
-        var rotated = await new RotateApiKeyHandler(store, persistence)
+        var rotated = await new RotateApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new RotateApiKeyCommand(issued.Value.Key.Id, Acme, OverlapMinutes: 60), default);
 
         Assert.True(rotated.IsSuccess);
@@ -139,10 +139,10 @@ public sealed class ApiKeyLifecycleTests
     public async Task Rotation_with_no_overlap_revokes_the_predecessor_at_once()
     {
         var (store, persistence) = Fresh();
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", null, Acme), default);
 
-        await new RotateApiKeyHandler(store, persistence)
+        await new RotateApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new RotateApiKeyCommand(issued.Value.Key.Id, Acme, OverlapMinutes: 0, By: "system"), default);
 
         var previous = store.Get(issued.Value.Key.Id)!;
@@ -156,10 +156,10 @@ public sealed class ApiKeyLifecycleTests
         // Rotating must not resurrect a credential already on its way out.
         var (store, persistence) = Fresh();
         var soon = DateTimeOffset.UtcNow.AddMinutes(5);
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", null, Acme, soon), default);
 
-        await new RotateApiKeyHandler(store, persistence)
+        await new RotateApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new RotateApiKeyCommand(issued.Value.Key.Id, Acme, OverlapMinutes: 600), default);
 
         Assert.Equal(soon, store.Get(issued.Value.Key.Id)!.ExpiresAt);
@@ -169,12 +169,12 @@ public sealed class ApiKeyLifecycleTests
     public async Task A_revoked_key_cannot_be_rotated()
     {
         var (store, persistence) = Fresh();
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", null, Acme), default);
         await new RevokeApiKeyHandler(store, persistence)
             .Handle(new RevokeApiKeyCommand(issued.Value.Key.Id, Acme), default);
 
-        var result = await new RotateApiKeyHandler(store, persistence)
+        var result = await new RotateApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new RotateApiKeyCommand(issued.Value.Key.Id, Acme, 60), default);
 
         Assert.False(result.IsSuccess);
@@ -188,10 +188,10 @@ public sealed class ApiKeyLifecycleTests
     {
         // An unbounded overlap is not an overlap; it is two live credentials nobody is tracking.
         var (store, persistence) = Fresh();
-        var issued = await new IssueApiKeyHandler(store, persistence)
+        var issued = await new IssueApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new IssueApiKeyCommand("partner", null, Acme), default);
 
-        var result = await new RotateApiKeyHandler(store, persistence)
+        var result = await new RotateApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new RotateApiKeyCommand(issued.Value.Key.Id, Acme, overlap), default);
 
         Assert.False(result.IsSuccess);
@@ -203,7 +203,7 @@ public sealed class ApiKeyLifecycleTests
     {
         var (store, persistence) = Fresh();
 
-        var result = await new RotateApiKeyHandler(store, persistence)
+        var result = await new RotateApiKeyHandler(store, persistence, ApiKeyOptions.Default)
             .Handle(new RotateApiKeyCommand("nope", Acme, 60), default);
 
         Assert.Equal("ApiKey.NotFound", result.Error.Code);

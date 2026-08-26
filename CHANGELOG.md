@@ -19,6 +19,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **`--api-key-prefix <marker>`** (#396). The marker every issued sandbox token starts with is
+  configurable. Only newly issued tokens are affected: verification hashes the whole presented token
+  and never inspects the marker, so keys already in a partner's hands keep working and a rename needs
+  no re-issue campaign. The display fragment now counts its random characters from the marker rather
+  than from the start of the token, so a longer marker cannot make two keys look alike in a list.
 - **`--dashboard-path <prefix>`** (#396). The dashboard can be mounted anywhere, not only under
   `/__mockifyr`. The served shell's asset URLs are rewritten to the configured prefix, so the same
   build serves from any of them without a rebuild, and the SPA takes its router basename, its

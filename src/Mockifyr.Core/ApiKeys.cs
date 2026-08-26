@@ -145,24 +145,59 @@ public sealed record SandboxAuthOptions(bool Enabled = false);
 /// </summary>
 public static class ApiKeyMaterial
 {
-    /// <summary>Every token starts with this marker.</summary>
-    public const string TokenPrefix = "mfk_";
+    /// <summary>The historical token marker, and the default.</summary>
+    public const string DefaultTokenPrefix = "mfk_";
 
-    /// <summary>How many characters of the token survive as the display prefix.</summary>
-    public const int DisplayPrefixLength = 12;
+    /// <summary>
+    /// How many characters of the random part survive in the display fragment.
+    /// </summary>
+    /// <remarks>
+    /// Counted from the random part rather than from the start of the token (#396). The fragment is
+    /// how an operator tells two keys apart in a list, so a longer prefix must not eat into it — with
+    /// a fixed total length, a ten-character prefix would leave two random characters and two keys
+    /// could show the same fragment. The default prefix is four characters, so the total stays twelve
+    /// and every stored fragment reads exactly as it did.
+    /// </remarks>
+    public const int DisplayRandomLength = 8;
+
+    /// <summary>
+    /// Whether a prefix can be used. Token characters only, and short enough to stay a marker rather
+    /// than become the token.
+    /// </summary>
+    public static bool IsWellFormedPrefix(string prefix)
+    {
+        if (prefix.Length is 0 or > 12)
+        {
+            return false;
+        }
+
+        foreach (var c in prefix)
+        {
+            var legal = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                || c is '_' or '-';
+            if (!legal)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>Mints a token plus the salt/hash pair to store. The token is never persisted.</summary>
-    public static (string Token, string Salt, string Hash) Generate()
+    public static (string Token, string Salt, string Hash) Generate(string? prefix = null)
     {
-        var token = TokenPrefix + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        var token = (prefix ?? DefaultTokenPrefix) + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
         var salt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
         return (token, salt, ComputeHash(salt, token));
     }
 
     /// <summary>The display fragment (<c>mfk_ab12cd34</c>) — the only part shown after issuance.</summary>
-    public static string DisplayPrefix(string token) =>
-        token.Length <= DisplayPrefixLength ? token : token[..DisplayPrefixLength];
+    public static string DisplayPrefix(string token, string? prefix = null) =>
+        // Min rather than a length test: a token exactly as long as the fragment makes both branches
+        // of the test return the same string, so the branch is an equivalent mutant waiting to happen.
+        token[..Math.Min((prefix ?? DefaultTokenPrefix).Length + DisplayRandomLength, token.Length)];
 
     /// <summary>Constant-time verification of a presented token against a stored salt/hash pair.</summary>
     public static bool Verify(string presentedToken, string salt, string hash)
@@ -175,6 +210,24 @@ public static class ApiKeyMaterial
     private static string ComputeHash(string salt, string token) =>
         Convert.ToBase64String(SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(salt + "\n" + token)));
+}
+
+/// <summary>
+/// The marker every issued sandbox token starts with (#396). Configurable for the same reason the
+/// tenant header is: a partner sees it in their own configuration, and it is our product's initials.
+/// </summary>
+/// <remarks>
+/// Only <em>newly issued</em> tokens are affected. Verification hashes the whole presented token and
+/// compares it to what was stored, so it never inspects the prefix — which means keys issued before a
+/// rename keep working, and an operator can change this without a re-issue campaign.
+/// </remarks>
+public sealed record ApiKeyOptions
+{
+    /// <summary>The marker new tokens start with.</summary>
+    public string TokenPrefix { get; init; } = ApiKeyMaterial.DefaultTokenPrefix;
+
+    /// <summary>An unconfigured host.</summary>
+    public static ApiKeyOptions Default { get; } = new();
 }
 
 /// <summary>What the rate limiter decided for one request.</summary>
