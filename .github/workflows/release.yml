@@ -49,6 +49,11 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          # The Dockerfile's VERSION default is a dev placeholder; the tag being released is the
+          # real answer (#395). metadata-action overrides the label too, but the ARG is what a
+          # `docker build` from this same context would otherwise get wrong.
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Provenance and an in-image SBOM attestation: what was built, from which commit, by which

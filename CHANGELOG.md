@@ -8,6 +8,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Fixed
+
+- **The image shipped without `LICENSE` or `NOTICE`** (#395). Apache-2.0 §4 requires both to travel
+  with a redistributed artefact, and a container image is one, so the published image did not satisfy
+  the terms of its own licence. They now ship at `/licenses/`, the conventional location for OCI and
+  OpenShift tooling, and CI asserts their presence on every build. While fixing it: the aspnet base
+  image's own `org.opencontainers.image.version` label (the Ubuntu release, `24.04`) was being
+  inherited and read as the product's version — the image now declares its own.
+
 ### Added
 
 - **Embedding a related document in a sandbox read** (#378). `GET /orders/o1?_expand=customer` returns
