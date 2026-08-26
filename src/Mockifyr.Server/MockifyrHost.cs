@@ -764,6 +764,22 @@ public static class MockifyrHost
             : new DashboardOptions { Path = configuredDashboardPath };
         builder.Services.AddSingleton(dashboardOptions);
 
+        // The marker every issued sandbox token starts with (#396). Only NEW tokens are affected —
+        // verification hashes the whole presented token and never inspects the prefix — so this can
+        // be changed without a re-issue campaign, and keys already in a partner's hands keep working.
+        var configuredKeyPrefix = builder.Configuration["api-key-prefix"];
+        if (!string.IsNullOrWhiteSpace(configuredKeyPrefix)
+            && !ApiKeyMaterial.IsWellFormedPrefix(configuredKeyPrefix))
+        {
+            throw new InvalidOperationException(
+                $"--api-key-prefix '{configuredKeyPrefix}' must be 1..12 characters of letters, "
+                + "digits, '-' or '_'.");
+        }
+
+        builder.Services.AddSingleton(string.IsNullOrWhiteSpace(configuredKeyPrefix)
+            ? ApiKeyOptions.Default
+            : new ApiKeyOptions { TokenPrefix = configuredKeyPrefix });
+
         static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
         builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(

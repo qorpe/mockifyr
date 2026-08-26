@@ -88,6 +88,7 @@ public static class MockifyrServiceCollectionExtensions
         // overrides this from --tenant-header; an in-process host gets the historical default.
         services.AddSingleton(TenantHeaderOptions.Default);
         services.AddSingleton(ProductIdentity.Default);
+        services.AddSingleton(ApiKeyOptions.Default);
         // Readiness state (#242): startup flips it on, shutdown flips it off.
         services.AddSingleton<HostReadiness>();
         services.AddSingleton<IApiKeyStore, InMemoryApiKeyStore>();

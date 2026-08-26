@@ -175,3 +175,79 @@ public sealed class TenantHeaderDefaultWireTests : IAsyncLifetime
         Assert.Equal("acme", await served.Content.ReadAsStringAsync());
     }
 }
+
+/// <summary>
+/// A renameable sandbox token marker (#396d), at the wire: an issued key carries the configured
+/// prefix and still opens the partner surface.
+/// </summary>
+public sealed class ApiKeyPrefixWireTests : IAsyncLifetime
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "mockifyr-keypfx-" + Guid.NewGuid().ToString("N"));
+    private WebApplication? _host;
+    private HttpClient _client = null!;
+
+    private static readonly string AdminBasic =
+        "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("op:secret"));
+
+    public async Task InitializeAsync()
+    {
+        Directory.CreateDirectory(_root);
+        _host = MockifyrHost.Build([
+            "--port", "0", "--sandbox-auth", "true", "--admin-user", "op", "--admin-pass", "secret",
+            "--root-dir", _root, "--api-key-prefix", "dfx_",
+        ]);
+        await _host.StartAsync();
+        var address = _host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses
+            .First(a => a.StartsWith("http://", StringComparison.Ordinal))
+            .Replace("[::]", "127.0.0.1").Replace("0.0.0.0", "127.0.0.1");
+        _client = new HttpClient { BaseAddress = new Uri(address) };
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        if (_host is not null) await _host.DisposeAsync();
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
+    private async Task<HttpResponseMessage> AdminAsync(HttpMethod method, string path, string? body = null)
+    {
+        using var request = new HttpRequestMessage(method, path);
+        request.Headers.TryAddWithoutValidation("Authorization", AdminBasic);
+        request.Headers.Add("X-Mockifyr-Tenant", "acme");
+        if (body is not null) request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        return await _client.SendAsync(request);
+    }
+
+    [Fact]
+    public async Task An_issued_key_carries_the_configured_marker_and_opens_the_partner_surface()
+    {
+        using var issued = await AdminAsync(HttpMethod.Post, "/__admin/apikeys", """{"name":"partner"}""");
+        Assert.Equal(HttpStatusCode.Created, issued.StatusCode);
+
+        var body = JsonDocument.Parse(await issued.Content.ReadAsStringAsync()).RootElement;
+        var token = body.GetProperty("key").GetString()!;
+
+        Assert.StartsWith("dfx_", token, StringComparison.Ordinal);
+        Assert.DoesNotContain("mfk_", token, StringComparison.Ordinal);
+        // The stored fragment follows too — it is what the operator sees in the list from now on.
+        Assert.StartsWith("dfx_", body.GetProperty("prefix").GetString()!, StringComparison.Ordinal);
+
+        // And it actually works: a renamed marker that did not authenticate would be a cosmetic change
+        // that broke the feature it decorates.
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/__sandbox/resources");
+        request.Headers.Add("X-Api-Key", token);
+        using var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public void A_malformed_marker_is_refused_at_startup()
+    {
+        var thrown = Assert.Throws<InvalidOperationException>(() => MockifyrHost.Build(
+            ["--port", "0", "--https-port", "0", "--api-key-prefix", "dfx key_"]));
+
+        Assert.Contains("letters, digits", thrown.Message, StringComparison.Ordinal);
+    }
+}

@@ -1024,7 +1024,7 @@ public sealed class DeleteRelationHandler(IResourceSchemaStore store)
 /// Issues a key: 256-bit CSPRNG token, salted hash stored, token returned EXACTLY once. The name
 /// is a display label (bounded); the quota, when present, must be positive.
 /// </summary>
-public sealed class IssueApiKeyHandler(IApiKeyStore store, IApiKeyPersistence persistence)
+public sealed class IssueApiKeyHandler(IApiKeyStore store, IApiKeyPersistence persistence, ApiKeyOptions options)
     : ICommandHandler<IssueApiKeyCommand, Result<IssuedApiKey>>
 {
     public ValueTask<Result<IssuedApiKey>> Handle(IssueApiKeyCommand command, CancellationToken cancellationToken)
@@ -1051,10 +1051,10 @@ public sealed class IssueApiKeyHandler(IApiKeyStore store, IApiKeyPersistence pe
                 "ApiKey.InvalidExpiry", "An expiry must be in the future."));
         }
 
-        var (token, salt, hash) = ApiKeyMaterial.Generate();
+        var (token, salt, hash) = ApiKeyMaterial.Generate(options.TokenPrefix);
         var key = new ApiKey(
             Guid.NewGuid().ToString("D"), command.Tenant, name, salt, hash,
-            ApiKeyMaterial.DisplayPrefix(token), now, command.QuotaPerHour,
+            ApiKeyMaterial.DisplayPrefix(token, options.TokenPrefix), now, command.QuotaPerHour,
             command.ExpiresAt, Revocation: null, command.Scope);
 
         store.Put(key);
@@ -1110,7 +1110,7 @@ public sealed class RevokeApiKeyHandler(IApiKeyStore store, IApiKeyPersistence p
 /// Issues a successor and lapses the predecessor after an overlap (#355). Tenant-checked like every
 /// other operation on a key.
 /// </summary>
-public sealed class RotateApiKeyHandler(IApiKeyStore store, IApiKeyPersistence persistence)
+public sealed class RotateApiKeyHandler(IApiKeyStore store, IApiKeyPersistence persistence, ApiKeyOptions options)
     : ICommandHandler<RotateApiKeyCommand, Result<IssuedApiKey>>
 {
     /// <summary>
@@ -1141,10 +1141,10 @@ public sealed class RotateApiKeyHandler(IApiKeyStore store, IApiKeyPersistence p
         }
 
         var now = DateTimeOffset.UtcNow;
-        var (token, salt, hash) = ApiKeyMaterial.Generate();
+        var (token, salt, hash) = ApiKeyMaterial.Generate(options.TokenPrefix);
         var successor = new ApiKey(
             Guid.NewGuid().ToString("D"), previous.Tenant, previous.Name, salt, hash,
-            ApiKeyMaterial.DisplayPrefix(token), now, previous.QuotaPerHour,
+            ApiKeyMaterial.DisplayPrefix(token, options.TokenPrefix), now, previous.QuotaPerHour,
             previous.ExpiresAt, Revocation: null, previous.Scope);
 
         // The successor inherits everything the partner was told about their access — quota, scope and
