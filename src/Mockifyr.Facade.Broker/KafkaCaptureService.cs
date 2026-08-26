@@ -32,7 +32,10 @@ public sealed class KafkaCaptureService(
     IMessageSink sink,
     TimeProvider? clock = null,
     BrokerMappingPlanner? planner = null,
-    IBrokerPublisher? publisher = null) : BackgroundService
+    IBrokerPublisher? publisher = null,
+    // Last, and optional: callers construct this positionally, so a parameter inserted mid-list
+    // silently rebinds their arguments rather than failing to compile (#396).
+    TenantHeaderOptions? tenantHeader = null) : BackgroundService
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
@@ -97,7 +100,7 @@ public sealed class KafkaCaptureService(
                     [.. (result.Message.Headers ?? []).Select(h => new KeyValuePair<string, string>(
                         h.Key, System.Text.Encoding.UTF8.GetString(h.GetValueBytes() ?? [])))]);
 
-                var tenant = BrokerMessageFactory.TenantOf(record);
+                var tenant = BrokerMessageFactory.TenantOf(record, (tenantHeader ?? TenantHeaderOptions.Default).Name);
                 sink.Accept(tenant, BrokerMessageFactory.Build(record, _clock.GetUtcNow()));
 
                 // Serve on consume (slice 3): what the tenant's broker mappings say this message

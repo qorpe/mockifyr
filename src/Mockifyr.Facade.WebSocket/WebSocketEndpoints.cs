@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Mockifyr.Core;
 using Mockifyr.Templating;
 
@@ -17,8 +18,6 @@ namespace Mockifyr.Facade.WebSocket;
 /// </summary>
 public static class WebSocketEndpoints
 {
-    private const string TenantHeader = "X-Mockifyr-Tenant";
-
     /// <summary>
     /// Adds WebSocket message serving to the app: the <c>/__admin/message-mappings</c> registration
     /// endpoint plus a front-of-pipeline middleware that accepts WebSocket upgrades on any path and
@@ -27,6 +26,9 @@ public static class WebSocketEndpoints
     /// </summary>
     public static WebApplication UseMockifyrWebSockets(this WebApplication app, string? filesDirectory = null)
     {
+        // Resolved once and closed over by every route below (#396).
+        var tenantHeaderName = app.Services.GetRequiredService<TenantHeaderOptions>().Name;
+        TenantId TenantOf(HttpRequest request) => TenantFrom(request, tenantHeaderName);
         var store = new MessageMappingStore();
         var registry = new WebSocketChannelRegistry();
         var renderer = new MessageTemplateRenderer();
@@ -206,8 +208,8 @@ public static class WebSocketEndpoints
         }
     }
 
-    private static TenantId TenantOf(HttpRequest request) =>
-        request.Headers.TryGetValue(TenantHeader, out var value) && !string.IsNullOrEmpty(value)
+    private static TenantId TenantFrom(HttpRequest request, string tenantHeader) =>
+        request.Headers.TryGetValue(tenantHeader, out var value) && !string.IsNullOrEmpty(value)
             ? new TenantId(value!)
             : TenantId.Default;
 }

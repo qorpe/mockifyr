@@ -108,15 +108,15 @@ public sealed class BrokerCaptureTests
     {
         // A topic carries no tenancy of its own, and a single-tenant host must find its messages where
         // it already looks for everything else.
-        Assert.Equal(TenantId.Default, BrokerMessageFactory.TenantOf(Record()));
+        Assert.Equal(TenantId.Default, BrokerMessageFactory.TenantOf(Record(), BrokerMessageFactory.DefaultTenantHeader));
     }
 
     [Fact]
     public void A_tenant_header_addresses_a_tenant()
     {
-        var record = Record(headers: [new(BrokerMessageFactory.TenantHeader, "acme")]);
+        var record = Record(headers: [new(BrokerMessageFactory.DefaultTenantHeader, "acme")]);
 
-        Assert.Equal(new TenantId("acme"), BrokerMessageFactory.TenantOf(record));
+        Assert.Equal(new TenantId("acme"), BrokerMessageFactory.TenantOf(record, BrokerMessageFactory.DefaultTenantHeader));
     }
 
     [Fact]
@@ -126,13 +126,13 @@ public sealed class BrokerCaptureTests
         // lowercase must not silently land in the wrong tenant.
         var record = Record(headers: [new("x-mockifyr-tenant", "acme")]);
 
-        Assert.Equal(new TenantId("acme"), BrokerMessageFactory.TenantOf(record));
+        Assert.Equal(new TenantId("acme"), BrokerMessageFactory.TenantOf(record, BrokerMessageFactory.DefaultTenantHeader));
     }
 
     [Fact]
     public void A_blank_tenant_header_falls_back_rather_than_creating_an_empty_tenant()
     {
-        Assert.Equal(TenantId.Default, BrokerMessageFactory.TenantOf(Record(headers: [new(BrokerMessageFactory.TenantHeader, "  ")])));
+        Assert.Equal(TenantId.Default, BrokerMessageFactory.TenantOf(Record(headers: [new(BrokerMessageFactory.DefaultTenantHeader, "  ")]), BrokerMessageFactory.DefaultTenantHeader));
     }
 
     [Fact]
@@ -142,10 +142,10 @@ public sealed class BrokerCaptureTests
         // client happened to enumerate last.
         var record = Record(headers:
         [
-            new(BrokerMessageFactory.TenantHeader, "first"),
-            new(BrokerMessageFactory.TenantHeader, "second"),
+            new(BrokerMessageFactory.DefaultTenantHeader, "first"),
+            new(BrokerMessageFactory.DefaultTenantHeader, "second"),
         ]);
 
-        Assert.Equal(new TenantId("first"), BrokerMessageFactory.TenantOf(record));
+        Assert.Equal(new TenantId("first"), BrokerMessageFactory.TenantOf(record, BrokerMessageFactory.DefaultTenantHeader));
     }
 }

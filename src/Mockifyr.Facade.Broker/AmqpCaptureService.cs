@@ -32,7 +32,10 @@ public sealed class AmqpCaptureService(
     IMessageSink sink,
     TimeProvider? clock = null,
     BrokerMappingPlanner? planner = null,
-    IBrokerPublisher? publisher = null) : BackgroundService
+    IBrokerPublisher? publisher = null,
+    // Last, and optional: callers construct this positionally, so a parameter inserted mid-list
+    // silently rebinds their arguments rather than failing to compile (#396).
+    TenantHeaderOptions? tenantHeader = null) : BackgroundService
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private IConnection? _connection;
@@ -100,7 +103,7 @@ public sealed class AmqpCaptureService(
     private async Task HandleAsync(string queue, BasicDeliverEventArgs delivered, CancellationToken cancellationToken)
     {
         var record = Read(queue, delivered);
-        var tenant = BrokerMessageFactory.TenantOf(record);
+        var tenant = BrokerMessageFactory.TenantOf(record, (tenantHeader ?? TenantHeaderOptions.Default).Name);
 
         try
         {

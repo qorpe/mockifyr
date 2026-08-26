@@ -14,9 +14,9 @@ namespace Mockifyr.Facade.Grpc;
 /// response JSON back to protobuf and frames it as a gRPC reply with a <c>grpc-status</c> trailer.
 /// Non-gRPC requests fall through to the next middleware (the HTTP mock-serving fallback).
 /// </summary>
-public sealed class GrpcServingMiddleware(RequestDelegate next, StubEngine engine, ProtoDescriptors descriptors)
+public sealed class GrpcServingMiddleware(
+    RequestDelegate next, StubEngine engine, ProtoDescriptors descriptors, TenantHeaderOptions tenantHeader)
 {
-    private const string TenantHeader = "X-Mockifyr-Tenant";
     private const string GrpcContentType = "application/grpc";
 
     // gRPC status codes used here (google.rpc.Code).
@@ -71,7 +71,7 @@ public sealed class GrpcServingMiddleware(RequestDelegate next, StubEngine engin
         var requestMessage = await ReadFrameAsync(context.Request.Body, context.RequestAborted);
         var requestJson = ProtobufJsonCodec.Decode(method.InputType, requestMessage);
 
-        var tenant = context.Request.Headers.TryGetValue(TenantHeader, out var t) && !string.IsNullOrEmpty(t)
+        var tenant = context.Request.Headers.TryGetValue(tenantHeader.Name, out var t) && !string.IsNullOrEmpty(t)
             ? new TenantId(t!)
             : TenantId.Default;
 

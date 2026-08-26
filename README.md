@@ -125,6 +125,7 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--kafka-group <id>` | consumer group for capture (default `mockifyr`) — two replicas share a subscription |
 | `--amqp-uri <uri>` | the same, over AMQP / RabbitMQ |
 | `--amqp-subscribe <queues>` | comma-separated queues to consume |
+| `--tenant-header <name>` | the header a request names its tenant in (default `X-Mockifyr-Tenant`). Read by every transport — HTTP, admin, gRPC, WebSocket, broker mappings, the SMS profile — and by the dashboard, which learns it from the host rather than assuming it. A malformed name is refused at startup |
 | `--tenant-credential <tenant>:<user>:<pass>` | repeatable — an admin credential scoped to ONE tenant; it cannot address another by renaming `X-Mockifyr-Tenant` (403). `--admin-user` stays the system scope |
 | `--partner-credential <tenant>:<user>:<pass>` | repeatable — as above, plus refused on every route and every stub field through which the host would act on the network (recordings, outbound trust, Git; `proxyBaseUrl`, post-serve actions) |
 | `--allow-outbound-host <host\|host:port\|*.domain>` | repeatable — restrict the hosts this instance may call (webhooks, proxy stubs). Unrestricted by default; a refusal is journaled |

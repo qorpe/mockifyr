@@ -440,3 +440,50 @@ equivalent:
   never `Object`. So `A` false implies `B` false, and at that node `||` and `&&` cannot be told apart.
   Confirmed by applying it, which is also how the textual-versus-tree distinction surfaced: editing the
   source by hand produces a genuinely different expression that six tests kill.
+
+---
+
+## A renameable tenant header (#396)
+
+The header naming the tenant was a `private const` in eight places — the HTTP facade, the admin API,
+gRPC, WebSocket, the broker mapping surface, the broker message factory, the SMS provider profile and
+the host's own credential middleware. It is now declared once in Core and read from there.
+
+**Why it is configurable at all.** It is not an internal detail. An organisation running this platform
+under its own name has that header in every example, every client and every runbook it writes; leaving
+it as our product name in their artefacts is a papercut they cannot fix without patching source. The
+default is the historical value, so a host that sets nothing is unchanged.
+
+**Resolved at map time, not per request.** Three shapes were available and only one has no drawback:
+
+| | |
+|---|---|
+| A static set at startup | Fastest, and it breaks the wire tests — they run several hosts in one process, and the second would inherit the first's name |
+| `GetRequiredService` per request | Correct, and it puts a lookup on the serving path, which #265/#266 spent real work keeping thin |
+| **Resolved once where the routes are mapped, closed over** | Neither problem |
+
+The admin surface calls `TenantOf` from seventy-odd routes; making it a local function inside
+`MapAdminEndpoints` that closes over the resolved name left all of them untouched.
+
+**A malformed name is refused at startup.** `--tenant-header "X Team"` is not rejected by the
+framework — it simply never matches. The host would start, every request would fall back to the
+default tenant, and the symptom is one tenant's stubs answering another's calls: no error, no log
+line, just the wrong data. The check is RFC 9110 §5.1's token rule.
+
+**The dashboard learns it rather than assuming it.** This is the half that makes the flag safe. The UI
+hardcoded the header, so renaming it would have put every dashboard call in the default tenant while
+the operator watched what they believed was their tenant's data. The host now injects its runtime
+configuration into the served shell (`window.__MOCKIFYR__`), which the UI reads with the historical
+name as a fallback for `pnpm dev`. Injection rather than an endpoint: a config fetch would itself need
+the header, and would need to work before authentication.
+
+**Validation.** `TenantHeaderOptionsTests` (15 unit cases) and `TenantHeaderWireTests` (8 wire cases).
+The wire cases are deliberately **paired** — every "the new name works" is followed by "the old name
+does not", because a facade that kept its own constant would still answer to `X-Mockifyr-Tenant` and
+the failure would be silent cross-tenant serving. A second class asserts an unconfigured host is
+byte-identical to what it always did. **Stryker 100 %** on `TenantHeader.cs`.
+
+Mutation testing earned its place again: five survivors, all the same shape — the character-range
+comparisons (`c <= 'z'`, `c >= 'A'`, `c <= 'Z'`, `c >= '0'`, `c <= '9'`) could each be off by one and
+every test still passed, because no name in the data contained those boundary characters. One added
+case, `azAZ09`, kills all five.
