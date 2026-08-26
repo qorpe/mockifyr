@@ -216,4 +216,133 @@ public sealed class BrandingWireTests : IAsyncLifetime
         Assert.Equal("Mockifyr", health.GetProperty("name").GetString());
     }
 
+    // ---- the dashboard prefix (#396c) ----------------------------------------------------------
+
+    [Fact]
+    public async Task The_dashboard_mounts_at_the_configured_prefix()
+    {
+        var (host, client) = await StartAsync("--dashboard-path", "/__mockapi");
+        using var _ = host;
+        using var __ = client;
+
+        using var served = await client.GetAsync("/__mockapi/");
+        Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+        Assert.Equal("text/html", served.Content.Headers.ContentType?.MediaType);
+
+        var config = ConfigIn(await served.Content.ReadAsStringAsync());
+        Assert.Equal("/__mockapi", config.GetProperty("dashboardPath").GetString());
+    }
+
+    [Fact]
+    public async Task The_built_asset_urls_are_rewritten_to_the_configured_prefix()
+    {
+        // The shell's asset URLs are absolute and carry the BUILD-time prefix, because Vite needs a
+        // fixed base for the router basename to resolve. Without this rewrite the page loads and then
+        // fetches every script from a path that no longer exists — a blank dashboard and a 404 log.
+        var shellPath = Path.Combine(_dashboard, "index.html");
+        File.WriteAllText(shellPath,
+            "<!doctype html><html><head><title>d</title>"
+            + "<script src=\"/__mockifyr/assets/app.js\"></script></head><body></body></html>");
+
+        var (host, client) = await StartAsync("--dashboard-path", "/__mockapi");
+        using var _ = host;
+        using var __ = client;
+
+        var shell = await client.GetStringAsync("/__mockapi/");
+
+        Assert.Contains("/__mockapi/assets/app.js", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("/__mockifyr/assets/app.js", shell, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_deep_link_at_the_configured_prefix_returns_the_shell()
+    {
+        // The SPA's own routes are served by the fallback, so this is what a reload on /stubs does.
+        var (host, client) = await StartAsync("--dashboard-path", "/__mockapi");
+        using var _ = host;
+        using var __ = client;
+
+        using var deep = await client.GetAsync("/__mockapi/stubs");
+        Assert.Equal("text/html", deep.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task The_default_prefix_stops_serving_the_dashboard_when_moved()
+    {
+        // It becomes an ordinary path the mock surface answers for, which is the honest result: the
+        // dashboard is not there any more.
+        var (host, client) = await StartAsync("--dashboard-path", "/__mockapi");
+        using var _ = host;
+        using var __ = client;
+
+        using var old = await client.GetAsync("/__mockifyr/");
+        Assert.Equal(HttpStatusCode.NotFound, old.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_logo_follows_the_prefix()
+    {
+        var (host, client) = await StartAsync("--dashboard-path", "/__mockapi", "--brand-logo", _logo);
+        using var _ = host;
+        using var __ = client;
+
+        var config = ConfigIn(await client.GetStringAsync("/__mockapi/"));
+        Assert.Equal("/__mockapi/brand-logo", config.GetProperty("brandLogo").GetString());
+
+        using var logo = await client.GetAsync("/__mockapi/brand-logo");
+        Assert.Equal(HttpStatusCode.OK, logo.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_journal_still_ignores_the_dashboard_after_it_moves()
+    {
+        // The exclusion was written against the literal prefix. Moved and left unfixed, every asset
+        // fetch would land in the request journal — the operator's own dashboard drowning the log
+        // they opened it to read.
+        var (host, client) = await StartAsync("--dashboard-path", "/__mockapi");
+        using var _ = host;
+        using var __ = client;
+
+        await client.GetAsync("/__mockapi/");
+        await client.GetAsync("/__mockapi/stubs");
+
+        var journal = JsonDocument.Parse(await client.GetStringAsync("/__admin/requests"))
+            .RootElement.GetProperty("requests");
+        foreach (var entry in journal.EnumerateArray())
+        {
+            Assert.DoesNotContain("/__mockapi", entry.GetProperty("url").GetString()!, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task An_unconfigured_host_still_serves_the_historical_prefix()
+    {
+        var (host, client) = await StartAsync();
+        using var _ = host;
+        using var __ = client;
+
+        using var served = await client.GetAsync("/__mockifyr/");
+        Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+
+        var config = ConfigIn(await served.Content.ReadAsStringAsync());
+        Assert.Equal("/__mockifyr", config.GetProperty("dashboardPath").GetString());
+    }
+
+    [Theory]
+    [InlineData("/__admin")]        // would shadow the API the dashboard talks to
+    [InlineData("/__sandbox")]      // would shadow the partner surface
+    [InlineData("__mockapi")]       // no leading slash
+    [InlineData("/__mockapi/")]     // trailing slash
+    [InlineData("/a/b")]            // nested: the asset rewrite is by prefix
+    [InlineData("/")]
+    public void An_unmountable_prefix_is_refused_at_startup(string path)
+    {
+        // Each of these presents as "the dashboard half-works", which is a worse afternoon than a
+        // refusal naming the flag.
+        var thrown = Assert.Throws<InvalidOperationException>(() => MockifyrHost.Build(
+            ["--port", "0", "--https-port", "0", "--dashboard-path", path]));
+
+        Assert.Contains("single leading-slash segment", thrown.Message, StringComparison.Ordinal);
+    }
+
 }

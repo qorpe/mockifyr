@@ -19,6 +19,12 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **`--dashboard-path <prefix>`** (#396). The dashboard can be mounted anywhere, not only under
+  `/__mockifyr`. The served shell's asset URLs are rewritten to the configured prefix, so the same
+  build serves from any of them without a rebuild, and the SPA takes its router basename, its
+  navigation links and its OIDC redirect URI from the host rather than from its build-time base. The
+  request journal's dashboard exclusion follows the prefix too. `/__admin` and `/__sandbox` are
+  refused, as is a nested or trailing-slash prefix.
 - **White-labelling the dashboard and telemetry** (#396). `--brand-name`, `--brand-subtitle`,
   `--brand-logo` and `--support-url` put an operator's own identity on the sidebar, the browser tab,
   the status line and `/__admin/health`; `--telemetry-name` renames the OpenTelemetry service and the

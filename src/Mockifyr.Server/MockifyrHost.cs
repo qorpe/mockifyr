@@ -747,6 +747,23 @@ public static class MockifyrHost
             ? ProductIdentity.Default
             : new ProductIdentity(brand.Name));
 
+        // Where the dashboard is mounted (#396). The prefix lives in bookmarks, ingress rules and
+        // runbooks, and it is our product name; a refusal at startup beats a dashboard that
+        // half-works because it shadowed the API it talks to.
+        var configuredDashboardPath = builder.Configuration["dashboard-path"];
+        if (!string.IsNullOrWhiteSpace(configuredDashboardPath)
+            && !DashboardOptions.IsMountable(configuredDashboardPath))
+        {
+            throw new InvalidOperationException(
+                $"--dashboard-path '{configuredDashboardPath}' must be a single leading-slash segment "
+                + "that is not /__admin or /__sandbox.");
+        }
+
+        var dashboardOptions = string.IsNullOrWhiteSpace(configuredDashboardPath)
+            ? DashboardOptions.Default
+            : new DashboardOptions { Path = configuredDashboardPath };
+        builder.Services.AddSingleton(dashboardOptions);
+
         static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
         builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(
@@ -1332,7 +1349,8 @@ public static class MockifyrHost
                 // reaches the admin API from the dashboard it is served by; a partner's browser needs
                 // the sandbox AND the surface that answers "did my OTP arrive" (#347) — leaving that
                 // out would reopen exactly the gap that issue closed.
-                var eligible = !path.StartsWithSegments("/__admin") && !path.StartsWithSegments("/__mockifyr");
+                var eligible = !path.StartsWithSegments("/__admin")
+                    && !path.StartsWithSegments(app.Services.GetRequiredService<DashboardOptions>().Path);
                 var origin = context.Request.Headers.Origin.FirstOrDefault();
 
                 if (!eligible || origin is null || !corsOrigins.Allows(TenantForLimits(context), origin))
@@ -1438,11 +1456,23 @@ public static class MockifyrHost
                 supportUrl = brandOptions.SupportUrl,
                 // A URL, not the path: the browser cannot read the operator's filesystem, and the
                 // dashboard should not learn where on disk the host keeps things.
-                brandLogo = brandOptions.LogoPath is null ? null : "/__mockifyr/brand-logo",
+                dashboardPath = dashboardOptions.Path,
+                brandLogo = brandOptions.LogoPath is null ? null : $"{dashboardOptions.Path}/brand-logo",
             });
             var shell = new Lazy<string>(() =>
             {
                 var html = File.ReadAllText(provider.GetFileInfo("index.html").PhysicalPath!);
+
+                // The built shell's asset URLs are absolute and carry the build-time prefix
+                // (`/__mockifyr/assets/…`), because Vite needs a fixed base for the router basename
+                // to resolve. Rewriting them here is what lets the prefix be chosen at run time
+                // without rebuilding the dashboard — and it happens BEFORE the configuration script is
+                // injected, so the JSON's own paths are not rewritten twice.
+                if (dashboardOptions.Path != DashboardOptions.DefaultPath)
+                {
+                    html = html.Replace(
+                        $"{DashboardOptions.DefaultPath}/", $"{dashboardOptions.Path}/", StringComparison.Ordinal);
+                }
 
                 // The browser tab is branding too, and it is baked into the built shell rather than
                 // rendered by the app — so a host branded everywhere else still announced the product
@@ -1473,7 +1503,7 @@ public static class MockifyrHost
                 var logoContentType = contentTypes.TryGetContentType(logoPath, out var logoType)
                     ? logoType
                     : "application/octet-stream";
-                app.MapGet("/__mockifyr/brand-logo", async (HttpContext context) =>
+                app.MapGet($"{dashboardOptions.Path}/brand-logo", async (HttpContext context) =>
                 {
                     context.Response.ContentType = logoContentType;
                     // Revalidated rather than cached hard: an operator who replaces the file and
@@ -1483,7 +1513,7 @@ public static class MockifyrHost
                 });
             }
 
-            app.MapGet("/__mockifyr/{**path}", async (HttpContext context, string? path) =>
+            app.MapGet(dashboardOptions.Path + "/{**path}", async (HttpContext context, string? path) =>
             {
                 var file = string.IsNullOrEmpty(path) ? null : provider.GetFileInfo(path);
                 if (file is { Exists: true, IsDirectory: false })

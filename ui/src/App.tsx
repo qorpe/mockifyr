@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { DASHBOARD_PATH } from '@/lib/host-config'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { Toaster } from 'sonner'
 import { AppShell } from '@/components/layout/app-shell'
@@ -22,8 +23,8 @@ function Page({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div className="h-40 animate-pulse rounded-2xl bg-muted" />}>{children}</Suspense>
 }
 
-// The base path the app is served under — '/' in dev, or the embedded prefix (e.g. '/__mockifyr/')
-// when the .NET host serves the built dashboard. Vite injects it from its `base` config.
+// The base path the app is served under — '/' in dev, or whatever prefix the host mounted the
+// dashboard at (#396), which it tells us in the served shell. Vite's build-time base is the fallback.
 const router = createBrowserRouter([
   {
     path: '/',
@@ -43,7 +44,7 @@ const router = createBrowserRouter([
       { path: 'settings', element: <Page><SettingsPage /></Page> },
     ],
   },
-], { basename: import.meta.env.BASE_URL.replace(/\/$/, '') || '/' })
+], { basename: DASHBOARD_PATH || '/' })
 
 export default function App() {
   const { theme } = useUi()

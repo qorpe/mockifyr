@@ -125,6 +125,7 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--kafka-group <id>` | consumer group for capture (default `mockifyr`) — two replicas share a subscription |
 | `--amqp-uri <uri>` | the same, over AMQP / RabbitMQ |
 | `--amqp-subscribe <queues>` | comma-separated queues to consume |
+| `--dashboard-path <prefix>` | where the dashboard is mounted (default `/__mockifyr`). One leading-slash segment; `/__admin` and `/__sandbox` are refused. The served shell's asset URLs are rewritten to match, so the same build serves from any prefix |
 | `--brand-name <name>` · `--brand-subtitle <text>` | what the dashboard calls itself — the sidebar, the browser tab, the status line and `/__admin/health`. Unset keeps the product's own |
 | `--brand-logo <path>` | an image file served in place of the built-in mark; a missing file is refused at startup |
 | `--support-url <url>` | where the dashboard's "report an issue" item points (absolute http/https only) |

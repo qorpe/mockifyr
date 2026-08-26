@@ -10,6 +10,7 @@
 
 export interface HostConfig {
   tenantHeader?: string
+  dashboardPath?: string
   brandName?: string
   brandSubtitle?: string
   supportUrl?: string
@@ -35,6 +36,17 @@ export const BRAND_SUBTITLE = config.brandSubtitle || null
 
 /** A logo URL served by the host, or null to draw the built-in mark. */
 export const BRAND_LOGO = config.brandLogo || null
+
+/**
+ * The prefix this dashboard is served under, without a trailing slash (#396).
+ *
+ * The build-time base is the fallback rather than the source of truth: Vite bakes it into the asset
+ * URLs and into `import.meta.env.BASE_URL`, but the host may serve the same bundle from somewhere
+ * else — it rewrites the shell's asset URLs and tells us here. In `pnpm dev` there is no host, and
+ * BASE_URL is '/'.
+ */
+export const DASHBOARD_PATH =
+  (config.dashboardPath || import.meta.env.BASE_URL).replace(/\/$/, '') || ''
 
 /** Where "report an issue" points. */
 export const SUPPORT_URL = config.supportUrl || 'https://github.com/qorpe/mockifyr/issues'

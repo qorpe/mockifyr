@@ -65,4 +65,43 @@ public sealed class BrandOptionsTests
         // compromised. A relative one would point at the mock surface rather than at help.
         Assert.False(BrandOptions.IsUsableSupportUrl(url));
     }
+    // ---- where the dashboard is mounted (#396c) --------------------------------------------------
+
+    [Fact]
+    public void The_default_prefix_is_the_historical_one()
+    {
+        Assert.Equal("/__mockifyr", DashboardOptions.Default.Path);
+        Assert.Equal("/__mockifyr", DashboardOptions.DefaultPath);
+    }
+
+    [Theory]
+    [InlineData("/__mockifyr")]
+    [InlineData("/__mockapi")]
+    [InlineData("/ui")]
+    [InlineData("/a")]
+    [InlineData("/dfx-console")]
+    public void A_single_leading_slash_segment_is_mountable(string path)
+    {
+        Assert.True(DashboardOptions.IsMountable(path));
+    }
+
+    [Theory]
+    [InlineData("/__admin")]          // shadows the API the dashboard talks to
+    [InlineData("/__ADMIN")]          // …and case is not a way around that
+    [InlineData("/__sandbox")]        // shadows the partner surface
+    [InlineData("__mockapi")]         // no leading slash
+    [InlineData("/__mockapi/")]       // trailing slash
+    [InlineData("/a/b")]              // nested: the asset rewrite is by prefix
+    [InlineData("/a?b")]
+    [InlineData("/a#b")]
+    [InlineData("/")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Anything_that_would_half_work_is_refused(string path)
+    {
+        // Each of these presents as "the dashboard half-works" rather than as an error, which is the
+        // worse afternoon: a refusal at startup names the flag.
+        Assert.False(DashboardOptions.IsMountable(path));
+    }
+
 }
