@@ -97,4 +97,26 @@ public sealed class ObservabilityTests
             client.Dispose();
         }
     }
+    [Fact]
+    public async Task The_instrumentation_name_follows_the_configured_one()
+    {
+        // An operator running this under their own name gets metrics under it too (#396). The old
+        // prefix has to STOP appearing: a scrape that carried both would double-count, and one that
+        // silently kept the old name would make the flag look applied when it was not.
+        var (host, client) = await StartAsync("--metrics", "true", "--telemetry-name", "dfx-mockapi");
+        await using (host)
+        {
+            using var stub = await client.PostAsync("/__admin/mappings", new StringContent(
+                """{"request":{"method":"GET","urlPath":"/measured"},"response":{"status":200,"body":"ok"}}""",
+                Encoding.UTF8, "application/json"));
+            Assert.Equal(HttpStatusCode.Created, stub.StatusCode);
+            await client.GetAsync("/measured");
+
+            var scrape = await client.GetStringAsync("/__admin/metrics");
+
+            Assert.Contains("dfx_mockapi_requests_served", scrape);
+            Assert.DoesNotContain("mockifyr_requests_served", scrape);
+        }
+    }
+
 }

@@ -438,17 +438,32 @@ public static class MockifyrHost
         // scraper cannot authenticate — the same reasoning as the probes (#242).
         var otelEndpoint = builder.Configuration["otel-endpoint"];
         var metricsEnabled = builder.Configuration.GetValue<bool>("metrics");
+
+        // The instrumentation name (#396). Its default lowercases to the historical instrument prefix,
+        // so an existing scrape config, dashboard and alert rule all keep working untouched.
+        var configuredTelemetryName = builder.Configuration["telemetry-name"];
+        var telemetryOptions = string.IsNullOrWhiteSpace(configuredTelemetryName)
+            ? TelemetryOptions.Default
+            : new TelemetryOptions { Name = configuredTelemetryName };
+        builder.Services.AddSingleton(telemetryOptions);
+        builder.Services.AddSingleton<MockifyrTelemetry>();
+
         if (!string.IsNullOrWhiteSpace(otelEndpoint) || metricsEnabled)
         {
             builder.Services.AddSingleton<IServeEventListener, MetricsServeEventListener>();
+            if (!string.IsNullOrWhiteSpace(configuredTelemetryName))
+            {
+                Console.WriteLine($"mockifyr: telemetry is published as '{telemetryOptions.Name}' "
+                    + $"with instruments prefixed '{telemetryOptions.InstrumentPrefix}.'.");
+            }
 
             var telemetry = builder.Services.AddOpenTelemetry()
                 .ConfigureResource(resource => resource.AddService(
-                    serviceName: MockifyrTelemetry.Name,
+                    serviceName: telemetryOptions.Name,
                     serviceVersion: typeof(MockifyrHost).Assembly.GetName().Version?.ToString() ?? "0.0.0"))
                 .WithMetrics(metrics =>
                 {
-                    metrics.AddMeter(MockifyrTelemetry.Name)
+                    metrics.AddMeter(telemetryOptions.Name)
                         .AddAspNetCoreInstrumentation()
                         .AddHttpClientInstrumentation();
                     if (metricsEnabled)
@@ -457,7 +472,7 @@ public static class MockifyrHost
                     }
                 })
                 .WithTracing(tracing => tracing
-                    .AddSource(MockifyrTelemetry.Name)
+                    .AddSource(telemetryOptions.Name)
                     .AddAspNetCoreInstrumentation(options =>
                         // Probes and the scrape endpoint would otherwise dominate the trace volume
                         // with spans nobody reads.
@@ -701,6 +716,38 @@ public static class MockifyrHost
         builder.Services.AddSingleton(string.IsNullOrWhiteSpace(configuredTenantHeader)
             ? TenantHeaderOptions.Default
             : new TenantHeaderOptions { Name = configuredTenantHeader });
+
+        // What the dashboard calls itself (#396). Each field is independent and an unset one keeps the
+        // dashboard's own default, so partial branding — a name but no logo — is a supported state
+        // rather than a half-configured screen.
+        var brandLogo = builder.Configuration["brand-logo"];
+        if (!string.IsNullOrWhiteSpace(brandLogo) && !File.Exists(brandLogo))
+        {
+            // Refused rather than ignored: a logo that silently does not appear is indistinguishable
+            // from a flag that was never read, and the operator would go looking in the wrong place.
+            throw new InvalidOperationException($"--brand-logo '{brandLogo}' does not exist.");
+        }
+
+        var supportUrl = builder.Configuration["support-url"];
+        if (!string.IsNullOrWhiteSpace(supportUrl) && !BrandOptions.IsUsableSupportUrl(supportUrl))
+        {
+            throw new InvalidOperationException(
+                $"--support-url '{supportUrl}' must be an absolute http or https URL.");
+        }
+
+        var brand = new BrandOptions
+        {
+            Name = Blank(builder.Configuration["brand-name"]),
+            Subtitle = Blank(builder.Configuration["brand-subtitle"]),
+            SupportUrl = Blank(supportUrl),
+            LogoPath = Blank(brandLogo),
+        };
+        builder.Services.AddSingleton(brand);
+        builder.Services.AddSingleton(brand.Name is null
+            ? ProductIdentity.Default
+            : new ProductIdentity(brand.Name));
+
+        static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
         builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(
             new StoreMessageSink(sp.GetRequiredService<IMessageStore>()),
@@ -1382,13 +1429,34 @@ public static class MockifyrHost
 
             // Read and rewrite once, lazily: the shell is served on every dashboard load, and the
             // configuration it carries cannot change without a restart.
+            var brandOptions = app.Services.GetRequiredService<BrandOptions>();
             var runtimeConfig = System.Text.Json.JsonSerializer.Serialize(new
             {
                 tenantHeader = app.Services.GetRequiredService<TenantHeaderOptions>().Name,
+                brandName = brandOptions.Name,
+                brandSubtitle = brandOptions.Subtitle,
+                supportUrl = brandOptions.SupportUrl,
+                // A URL, not the path: the browser cannot read the operator's filesystem, and the
+                // dashboard should not learn where on disk the host keeps things.
+                brandLogo = brandOptions.LogoPath is null ? null : "/__mockifyr/brand-logo",
             });
             var shell = new Lazy<string>(() =>
             {
                 var html = File.ReadAllText(provider.GetFileInfo("index.html").PhysicalPath!);
+
+                // The browser tab is branding too, and it is baked into the built shell rather than
+                // rendered by the app — so a host branded everywhere else still announced the product
+                // name in every tab. Found by running it, not by a test.
+                if (brandOptions.Name is { } branded)
+                {
+                    var subtitle = brandOptions.Subtitle is { } sub ? $" — {sub}" : string.Empty;
+                    html = System.Text.RegularExpressions.Regex.Replace(
+                        html, "<title>.*?</title>",
+                        $"<title>{System.Net.WebUtility.HtmlEncode(branded + subtitle)}</title>",
+                        System.Text.RegularExpressions.RegexOptions.Singleline
+                            | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                }
+
                 var injected = $"<script>window.__MOCKIFYR__={runtimeConfig};</script>";
                 // Before </head>, so the app reads it before any module runs. A shell without a head
                 // is not something this dashboard produces, but prepending is a safer miss than
@@ -1400,6 +1468,21 @@ public static class MockifyrHost
             // fall back to index.html for the SPA's client routes. Doing both in one endpoint avoids the
             // static-file-middleware-vs-catch-all ordering trap that made asset requests (…/assets/*.js)
             // return index.html as text/html — which breaks the module scripts and blanks the page.
+            if (brandOptions.LogoPath is { } logoPath)
+            {
+                var logoContentType = contentTypes.TryGetContentType(logoPath, out var logoType)
+                    ? logoType
+                    : "application/octet-stream";
+                app.MapGet("/__mockifyr/brand-logo", async (HttpContext context) =>
+                {
+                    context.Response.ContentType = logoContentType;
+                    // Revalidated rather than cached hard: an operator who replaces the file and
+                    // restarts expects to see the new one, and this is one small request per load.
+                    context.Response.Headers.CacheControl = "no-cache";
+                    await context.Response.SendFileAsync(logoPath);
+                });
+            }
+
             app.MapGet("/__mockifyr/{**path}", async (HttpContext context, string? path) =>
             {
                 var file = string.IsNullOrEmpty(path) ? null : provider.GetFileInfo(path);

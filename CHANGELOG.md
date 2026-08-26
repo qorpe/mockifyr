@@ -19,6 +19,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **White-labelling the dashboard and telemetry** (#396). `--brand-name`, `--brand-subtitle`,
+  `--brand-logo` and `--support-url` put an operator's own identity on the sidebar, the browser tab,
+  the status line and `/__admin/health`; `--telemetry-name` renames the OpenTelemetry service and the
+  instrument prefix. Every field is independent and unset means "keep the product's own", so a host
+  that configures none of it is unchanged — including its metric names, which stay `mockifyr.*`.
 - **`--tenant-header <name>`** (#396). The header a request names its tenant in is no longer a
   compile-time constant per facade: it is declared once and read by all of them — HTTP, admin, gRPC,
   WebSocket, broker mappings, the SMS profile and the broker capture services — plus the dashboard,

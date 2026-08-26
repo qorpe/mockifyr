@@ -11,6 +11,7 @@ import { HelpersDialog } from '@/components/templating/helpers-dialog'
 import { LoginGate } from '@/components/login-gate'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { BrandMark } from '@/components/ui/brand-mark'
+import { BRAND_LOGO, BRAND_NAME, BRAND_SUBTITLE } from '@/lib/host-config'
 import { useUi } from '@/components/providers'
 import { fetchJournal, fetchMessages, fetchScenarios, fetchStubs } from '@/lib/api'
 import { TenantSwitcher } from './tenant-switcher'
@@ -95,9 +96,14 @@ export function AppShell() {
   return (
     <>
       <KitAppShell
-        brand={<BrandMark className="w-10" />}
-        title={t('brand.name')}
-        subtitle={t('brand.sub')}
+        // The host's identity when it configured one, the dashboard's own otherwise (#396). A logo
+        // replaces the mark rather than sitting beside it: two marks is not co-branding, it is a
+        // screen that cannot decide whose product it is.
+        brand={BRAND_LOGO
+          ? <img src={BRAND_LOGO} alt="" className="w-10" />
+          : <BrandMark className="w-10" />}
+        title={BRAND_NAME ?? t('brand.name')}
+        subtitle={BRAND_SUBTITLE ?? t('brand.sub')}
         nav={nav}
         activeId={activeId}
         collapsed={collapsed}
