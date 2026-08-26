@@ -103,12 +103,47 @@ def main() -> int:
     check("the key mount is read-only", "readOnly: true" in mounted)
     check("env-var mode is still the default", "MOCKIFYR_DECRYPT_KEY" in with_keys)
 
+    # Voluntary disruption and network policy are opt-in (#397). The default render is the criterion
+    # that matters most: an existing install must see no new object appear because the chart learned
+    # to make one.
+    check("no PodDisruptionBudget by default", "kind: PodDisruptionBudget" not in manifest)
+    check("no NetworkPolicy by default", "kind: NetworkPolicy" not in manifest)
+
+    # A PDB over one replica means a node drain can never evict the pod — a safeguard that hangs the
+    # very operation it exists to make safe. Refused rather than rendered.
+    single_replica_pdb = render("podDisruptionBudget.enabled=true")
+    check(
+        "PDB below two replicas is refused",
+        single_replica_pdb.returncode != 0 and "replicaCount >= 2" in single_replica_pdb.stderr,
+    )
+    both_bounds = render(
+        "podDisruptionBudget.enabled=true", "replicaCount=2", "podDisruptionBudget.maxUnavailable=1")
+    check(
+        "PDB with both bounds is refused",
+        both_bounds.returncode != 0 and "not both" in both_bounds.stderr,
+    )
+    pdb = render("podDisruptionBudget.enabled=true", "replicaCount=2").stdout
+    check("PDB renders above one replica", "kind: PodDisruptionBudget" in pdb)
+    check("PDB selects this release's pods", "app.kubernetes.io/instance: verify" in pdb)
+
+    # Egress is unrestricted unless asked for: this host calls webhooks, proxy targets, the
+    # persistence backend, brokers, SMTP and an OIDC issuer, and a policy that pins egress without
+    # listing them produces requests that hang rather than an error anybody can read.
+    netpol = render("networkPolicy.enabled=true").stdout
+    check("NetworkPolicy renders when enabled", "kind: NetworkPolicy" in netpol)
+    check("egress is unrestricted by default", "- Egress" not in netpol)
+    restricted = render("networkPolicy.enabled=true", "networkPolicy.restrictEgress=true").stdout
+    check("egress is restricted when asked for", "- Egress" in restricted)
+    check("DNS survives an egress restriction", "port: 53" in restricted)
+
     # Every optional resource renders when asked for.
     everything = render(
         "persistence.enabled=true", "ingress.enabled=true", "route.enabled=true",
         "sandboxAuth.enabled=true", "cryptography.decryptKey=k1",
+        "replicaCount=2", "podDisruptionBudget.enabled=true", "networkPolicy.enabled=true",
     ).stdout
-    for kind in ("Deployment", "Service", "Ingress", "Route", "PersistentVolumeClaim", "Secret"):
+    for kind in ("Deployment", "Service", "Ingress", "Route", "PersistentVolumeClaim", "Secret",
+                 "PodDisruptionBudget", "NetworkPolicy"):
         check(f"{kind} renders when enabled", f"kind: {kind}" in everything)
 
     print()

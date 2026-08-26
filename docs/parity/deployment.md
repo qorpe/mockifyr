@@ -80,9 +80,45 @@ Decisions worth remembering:
   Configuration cannot be unit-tested like the engine, but a template edit that weakens a default now
   fails the build. `helm lint` and `kubeconform` schema validation run alongside it.
 
-**Deferred:** a NetworkPolicy example, PodDisruptionBudget and HPA guidance, and a
-ServiceMonitor — the last one waits for the metrics endpoint (#246), since there is nothing to scrape
-until then.
+**Deferred:** HPA guidance. The ServiceMonitor shipped with the metrics endpoint (#246), and the
+NetworkPolicy and PodDisruptionBudget shipped in #397 — see below.
+
+## Disruption budget and network policy (#397)
+
+Both were recorded as **accepted** limitations, on the reasoning that "cluster policy differs enough
+between organisations that a shipped example would be wrong more often than right". That reasoning
+holds for a *mandatory default* and does not hold for a template that is off unless asked for: a
+disabled template prescribes nothing, it just means an operator who needs one does not leave the
+chart to write it. The driver was a production OpenShift install where both are admission
+requirements, which otherwise means hand-written manifests living beside the release — the drift the
+chart exists to prevent.
+
+**A PDB below two replicas is refused, not rendered.** `minAvailable: 1` over a single pod means a
+node drain can never evict it: the drain hangs until somebody notices and deletes the budget. That is
+a safeguard that breaks the operation it exists to make safe, so the chart fails the render and says
+why — the same posture it already takes for an Ingress without admin auth and a ServiceMonitor with
+nothing to scrape. Setting both `minAvailable` and `maxUnavailable`, or neither, is refused the same
+way.
+
+**Egress is unrestricted unless asked for.** Pinning who may *reach* the mock is the common
+requirement; pinning what it may *call* needs a list of everything the stubs are allowed to touch —
+webhooks and proxy targets, the persistence backend, Kafka/AMQP, an SMTP server, an OIDC issuer. Get
+that list wrong and the install does not fail, it hangs: requests time out and the symptom points
+nowhere near the policy. So `networkPolicy.enabled` restricts ingress, and `restrictEgress` is a
+separate, deliberate step.
+
+**DNS is emitted unconditionally** whenever egress is restricted. A rule set without it fails before
+anything else does, and the operator who forgets it spends the afternoon debugging name resolution
+rather than the policy that broke it.
+
+**Asserted, not assumed.** `verify-chart.py` checks that neither object appears in a default render —
+the criterion that matters most, since an existing install must not acquire an object because the
+chart learned to make one — that the two refusals actually refuse, and that DNS survives an egress
+restriction. The kubeconform step now renders with both enabled, so every kind the chart can produce
+is schema-checked; an object that only appears behind a flag is exactly the one nobody validates.
+
+**Still deferred: HPA.** Scaling this host is a decision about the workload in front of it, and a
+shipped default there really would be wrong more often than right.
 
 
 ## Supply-chain evidence (#244, #245)

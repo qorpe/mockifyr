@@ -85,9 +85,11 @@ truncation options; `systemValue` being deny-by-default with no allowlist; Faker
 arguments and locale selection; JWT limited to HS256/RS256 with no configurable secret, `nbf`, or
 array/object claims; no `soapXPath`.
 
-**Deployment.** No NetworkPolicy example, PodDisruptionBudget or HPA guidance in the chart — cluster
-policy differs enough between organisations that a shipped example would be wrong more often than
-right.
+**Deployment.** No HPA guidance in the chart — scaling this host is a decision about the workload in
+front of it, and a shipped default would be wrong more often than right. NetworkPolicy and
+PodDisruptionBudget *left* this section in [#397](https://github.com/qorpe/mockifyr/issues/397): the
+same reasoning still holds for a mandatory default, but not for a template that is off unless asked
+for, which prescribes nothing.
 
 **Equal priorities.** Tie-breaking among stubs with the same priority is load-path dependent. Give
 stubs distinct priorities when order matters.

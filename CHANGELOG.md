@@ -19,6 +19,13 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **Optional PodDisruptionBudget and NetworkPolicy in the Helm chart** (#397). Both off by default,
+  so an existing install renders exactly as before. A PDB below two replicas is refused rather than
+  rendered — a budget over a single pod blocks every node drain. Network policy restricts ingress;
+  restricting egress is a separate opt-in, because this host legitimately calls webhooks, proxy
+  targets, the persistence backend, brokers, SMTP and an OIDC issuer, and DNS is always permitted
+  when it is on. Both leave the **Accepted** section of the deferred-edge register; HPA guidance
+  stays there with its reasoning intact.
 - **Embedding a related document in a sandbox read** (#378). `GET /orders/o1?_expand=customer` returns
   the order with its customer under an `_expand` envelope, instead of the consumer reading a foreign
   key and making a second call. Available on the served `read` and `list` directives, on
