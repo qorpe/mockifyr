@@ -36,6 +36,12 @@ WORKDIR /app
 COPY --from=build /app ./
 COPY --from=ui /ui/dist ./dashboard
 
+# Apache-2.0 §4(a) and §4(d): a redistributor must pass on the License and the NOTICE attributions,
+# and shipping this image IS redistribution — so the artefact has to carry them rather than leaving
+# every consumer to find them in the repository. /licenses is the conventional location: it is where
+# the OCI/Red Hat container guidelines put them and where OpenShift tooling looks (#395).
+COPY LICENSE NOTICE /licenses/
+
 # Unprivileged by default (#241). The engine never needs to write outside its work directory, so it
 # runs as a dedicated non-root user. /work is owned by that user AND group-writable with the group
 # set to root (GID 0): OpenShift's restricted SCC assigns an arbitrary UID with GID 0, so this is
@@ -48,6 +54,21 @@ RUN groupadd --system --gid 1001 mockifyr \
 USER 1001:0
 
 EXPOSE 8080
+
+# Static OCI metadata, so `docker inspect` answers "what is this and where did it come from" even for
+# a local build. The release workflow's metadata-action overrides these with the tag's real values.
+#
+# `version` is set explicitly rather than left alone: the aspnet base image carries its own
+# org.opencontainers.image.version (the Ubuntu release, "24.04"), and an inherited label is still an
+# inherited label — `docker inspect` on a local build reported the distro version as if it were the
+# product's. A dev default is honest; the release run replaces it.
+ARG VERSION=0.0.0-dev
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.title="Mockifyr" \
+      org.opencontainers.image.description="API mock engine, admin API and dashboard in one image." \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/qorpe/mockifyr" \
+      org.opencontainers.image.documentation="https://mockifyr.qorpe.com"
 
 # Container-level health (#241): the probe path stays reachable without credentials even when admin
 # auth is on (#218), so this works on a secured host too.

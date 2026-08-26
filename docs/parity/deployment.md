@@ -19,6 +19,27 @@ The runtime image runs as **UID 1001 with GID 0** and declares a `HEALTHCHECK`.
   the same image started with `--user 1000670000:0` (an OpenShift-style random UID) serves and
   writes successfully.
 
+## Licence and provenance in the artefact (#395)
+
+The image carries `/licenses/LICENSE` and `/licenses/NOTICE`, plus OCI metadata labels.
+
+This started as a compliance gap rather than a nicety. Apache-2.0 §4(a) and §4(d) put conditions on
+**redistribution** — pass on the License, pass on the NOTICE attributions — and publishing a container
+image is redistribution. The Dockerfile copied only the publish output and the dashboard, so for the
+whole 1.x line the image satisfied neither. It is a common oversight and a two-line fix; the
+interesting part is that nothing would ever have told us.
+
+- **`/licenses` is the conventional path**, not an invention: it is where the OCI/Red Hat container
+  guidelines put licence files and where OpenShift tooling looks for them.
+- **Asserted in CI**, on the image the security job already builds for scanning, so it costs no extra
+  build. `deploy/helm/verify-chart.py` set the precedent — a posture claim nobody checks is a posture
+  claim that quietly stops being true.
+- **`org.opencontainers.image.version` is set explicitly.** Building it found a second, smaller
+  problem: the aspnet base image carries its own `version` label (the Ubuntu release), so
+  `docker inspect` on a local build reported **`24.04`** as if it were the product's version. The
+  Dockerfile now declares a `VERSION` build argument defaulting to `0.0.0-dev`, and the release
+  workflow passes the tag being released. An inherited label is still a label the artefact makes.
+
 ## Liveness / readiness split (#242)
 
 `/__admin/live` and `/__admin/ready` join `/__admin/health`, and all three stay outside admin auth —

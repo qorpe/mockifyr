@@ -113,6 +113,19 @@ jobs:
       - name: Build the image for scanning
         run: docker build -t mockifyr:scan .
 
+      # Apache-2.0 §4 requires the License and the NOTICE attributions to travel with a redistributed
+      # artefact, and the image is one. Asserted rather than trusted: they were absent for the whole
+      # 1.x line without anybody noticing, which is exactly what a check is for (#395).
+      - name: Assert the image carries LICENSE and NOTICE
+        run: |
+          for file in LICENSE NOTICE; do
+            if ! docker run --rm --entrypoint sh mockifyr:scan -c "test -s /licenses/$file"; then
+              echo "::error::/licenses/$file is missing or empty in the image" >&2
+              exit 1
+            fi
+          done
+          echo "both present and non-empty"
+
       # Trivy from its own pinned image rather than an install script: no PATH or permission
       # surprises on the runner, and the scanner version is explicit. The docker socket lets it read
       # the image we just built locally; the cache mount keeps the vulnerability DB between runs.
