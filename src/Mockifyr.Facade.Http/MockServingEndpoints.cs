@@ -17,8 +17,6 @@ namespace Mockifyr.Facade.Http;
 /// </summary>
 public static class MockServingEndpoints
 {
-    private const string TenantHeader = "X-Mockifyr-Tenant";
-
     // Recomputed by Kestrel; setting them explicitly would conflict with the framed response.
     private static readonly HashSet<string> SkipHeaders =
         new(StringComparer.OrdinalIgnoreCase) { "Content-Length", "Transfer-Encoding", "Connection" };
@@ -30,7 +28,9 @@ public static class MockServingEndpoints
         // so a stub on /report.json (or the Twilio profile's /Messages.json) 404'd without ever
         // reaching the engine. WireMock serves dotted paths; discovered by G18d, covered by test.
         // Static dashboard assets are unaffected: the static-files middleware runs before routing.
-        endpoints.MapFallback("{*path}", ServeAsync);
+        // Resolved once at startup and closed over, so the hot path never pays for a lookup (#396).
+        var tenantHeader = endpoints.ServiceProvider.GetRequiredService<TenantHeaderOptions>().Name;
+        endpoints.MapFallback("{*path}", (HttpContext context) => ServeAsync(context, tenantHeader));
         return endpoints;
     }
 
@@ -63,12 +63,12 @@ public static class MockServingEndpoints
     /// faults, proxies, degradation — and one of them would eventually be added without its counter.
     /// A <c>finally</c> cannot be forgotten by the next person to add an exit.
     /// </remarks>
-    private static async Task ServeAsync(HttpContext context)
+    private static async Task ServeAsync(HttpContext context, string tenantHeader)
     {
         var tenantForUsage = TenantId.Default;
         try
         {
-            tenantForUsage = await ServeCoreAsync(context);
+            tenantForUsage = await ServeCoreAsync(context, tenantHeader);
         }
         finally
         {
@@ -97,7 +97,7 @@ public static class MockServingEndpoints
             : UsageOutcome.Unmatched,
     };
 
-    private static async Task<TenantId> ServeCoreAsync(HttpContext context)
+    private static async Task<TenantId> ServeCoreAsync(HttpContext context, string tenantHeader)
     {
         var request = await BuildRequestAsync(context);
 
@@ -185,7 +185,7 @@ public static class MockServingEndpoints
         }
 
         var tenant = keyTenant
-            ?? (context.Request.Headers.TryGetValue(TenantHeader, out var t) && !string.IsNullOrEmpty(t)
+            ?? (context.Request.Headers.TryGetValue(tenantHeader, out var t) && !string.IsNullOrEmpty(t)
                 ? new TenantId(t!)
                 : TenantId.Default);
 

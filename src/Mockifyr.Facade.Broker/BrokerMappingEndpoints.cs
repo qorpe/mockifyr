@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Mockifyr.Core;
 
 namespace Mockifyr.Facade.Broker;
@@ -16,11 +17,12 @@ namespace Mockifyr.Facade.Broker;
 /// </remarks>
 public static class BrokerMappingEndpoints
 {
-    private const string TenantHeader = "X-Mockifyr-Tenant";
-
     /// <summary>Adds the broker-mapping routes to the app.</summary>
     public static WebApplication UseMockifyrBrokerMappings(this WebApplication app, BrokerMappingStore store)
     {
+        // Resolved once and closed over by every route below (#396).
+        var tenantHeaderName = app.Services.GetRequiredService<TenantHeaderOptions>().Name;
+        TenantId TenantOf(HttpRequest request) => TenantFrom(request, tenantHeaderName);
         app.MapPost("/__admin/broker-mappings", async (HttpRequest request) =>
         {
             using var reader = new StreamReader(request.Body);
@@ -68,8 +70,8 @@ public static class BrokerMappingEndpoints
         return app;
     }
 
-    private static TenantId TenantOf(HttpRequest request) =>
-        request.Headers.TryGetValue(TenantHeader, out var value) && !string.IsNullOrWhiteSpace(value)
+    private static TenantId TenantFrom(HttpRequest request, string tenantHeader) =>
+        request.Headers.TryGetValue(tenantHeader, out var value) && !string.IsNullOrWhiteSpace(value)
             ? new TenantId(value!)
             : TenantId.Default;
 }

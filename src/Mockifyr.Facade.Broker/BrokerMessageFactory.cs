@@ -36,8 +36,10 @@ public static class BrokerMessageFactory
 {
     /// <summary>
     /// The header a producer sets to address a tenant, mirroring the HTTP facade's (ADR 0003/0009).
+    /// Configurable since #396, so it is passed in rather than fixed here — a broker producer and an
+    /// HTTP caller must name the tenant the same way or one of them silently lands in the default.
     /// </summary>
-    public const string TenantHeader = "X-Mockifyr-Tenant";
+    public static string DefaultTenantHeader => TenantHeaderOptions.DefaultName;
 
     /// <summary>Which tenant this message belongs to: the header when set, the default otherwise.</summary>
     /// <remarks>
@@ -45,11 +47,11 @@ public static class BrokerMessageFactory
     /// default tenant" or "a header says". The header keeps the same shape as every other channel, and
     /// its absence lands where a single-tenant host already expects to find things.
     /// </remarks>
-    public static TenantId TenantOf(ConsumedRecord record)
+    public static TenantId TenantOf(ConsumedRecord record, string tenantHeader)
     {
         foreach (var (name, value) in record.Headers)
         {
-            if (string.Equals(name, TenantHeader, StringComparison.OrdinalIgnoreCase)
+            if (string.Equals(name, tenantHeader, StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(value))
             {
                 return new TenantId(value);

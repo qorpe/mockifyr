@@ -177,14 +177,15 @@ public static class MockifyrHost
             }
         }
 
-        return context.Request.Headers.TryGetValue(TenantCredentialHeader, out var tenant)
+        var tenantHeader = context.RequestServices.GetRequiredService<TenantHeaderOptions>().Name;
+        return context.Request.Headers.TryGetValue(tenantHeader, out var tenant)
             && !string.IsNullOrEmpty(tenant)
                 ? new TenantId(tenant.ToString())
                 : TenantId.Default;
     }
 
     /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
-    private const string TenantCredentialHeader = "X-Mockifyr-Tenant";
+
 
     /// <summary>
     /// The admin routes that make this host act on the network rather than on one tenant's data:
@@ -681,6 +682,26 @@ public static class MockifyrHost
 
         builder.Services.AddSingleton(new ResourceOptions(maxBodyBytes, storageLimit));
 
+        // The tenant header (#396). Refused rather than accepted when malformed: a name containing a
+        // space or a colon is not rejected by the framework, it simply never matches — the host would
+        // start, every request would fall back to the default tenant, and the symptom (one tenant's
+        // stubs answering another's calls) points nowhere near a mistyped flag.
+        var configuredTenantHeader = builder.Configuration["tenant-header"];
+        if (!string.IsNullOrWhiteSpace(configuredTenantHeader))
+        {
+            if (!TenantHeaderOptions.IsWellFormed(configuredTenantHeader))
+            {
+                throw new InvalidOperationException(
+                    $"--tenant-header '{configuredTenantHeader}' is not a legal HTTP header name.");
+            }
+
+            Console.WriteLine($"mockifyr: the tenant is named by the '{configuredTenantHeader}' header.");
+        }
+
+        builder.Services.AddSingleton(string.IsNullOrWhiteSpace(configuredTenantHeader)
+            ? TenantHeaderOptions.Default
+            : new TenantHeaderOptions { Name = configuredTenantHeader });
+
         builder.Services.AddSingleton<IMessageSink>(sp => new NotifyingMessageSink(
             new StoreMessageSink(sp.GetRequiredService<IMessageStore>()),
             sp.GetRequiredService<IMessageBehaviorStore>(),
@@ -1109,13 +1130,15 @@ public static class MockifyrHost
             Console.WriteLine("mockifyr: --audit is on — admin changes are recorded at /__admin/audit "
                 + "and emitted as admin.audit log lines.");
             var auditLog = app.Services.GetRequiredService<IAuditLog>();
+            var tenantHeaderName = app.Services.GetRequiredService<TenantHeaderOptions>().Name;
             var auditLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Mockifyr.Audit");
             app.Use((context, next) => AdminAuditMiddleware.InvokeAsync(
-                context, _ => next(), auditLog, adminPrincipals, auditLogger, TenantCredentialHeader));
+                context, _ => next(), auditLog, adminPrincipals, auditLogger, tenantHeaderName));
         }
 
         if (!tenantCredentials.IsEmpty)
         {
+            var tenantHeaderName = app.Services.GetRequiredService<TenantHeaderOptions>().Name;
             Console.WriteLine($"mockifyr: {tenantCredentials.Count} per-tenant admin credential(s) configured — "
                 + "each may only address its own tenant; --admin-user remains the system scope."
                 + (tenantCredentials.PartnerCount > 0
@@ -1133,7 +1156,7 @@ public static class MockifyrHost
                     // existing behavior — this middleware only ever narrows a known tenant principal.
                     if (tenantCredentials.PrincipalFor(presented) is { } principal)
                     {
-                        var requested = context.Request.Headers.TryGetValue(TenantCredentialHeader, out var header)
+                        var requested = context.Request.Headers.TryGetValue(tenantHeaderName, out var header)
                             && !string.IsNullOrEmpty(header)
                                 ? header.ToString()
                                 : TenantId.Default.Value;
@@ -1190,7 +1213,8 @@ public static class MockifyrHost
 
                         if (principal.Tenant is { } owned)
                         {
-                            var requested = context.Request.Headers.TryGetValue(TenantCredentialHeader, out var header)
+                            var requested = context.Request.Headers.TryGetValue(
+                                    context.RequestServices.GetRequiredService<TenantHeaderOptions>().Name, out var header)
                                 && !string.IsNullOrEmpty(header)
                                     ? header.ToString()
                                     : TenantId.Default.Value;
@@ -1355,6 +1379,23 @@ public static class MockifyrHost
         {
             var provider = new PhysicalFileProvider(Path.GetFullPath(dashboardDir));
             var contentTypes = new FileExtensionContentTypeProvider();
+
+            // Read and rewrite once, lazily: the shell is served on every dashboard load, and the
+            // configuration it carries cannot change without a restart.
+            var runtimeConfig = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                tenantHeader = app.Services.GetRequiredService<TenantHeaderOptions>().Name,
+            });
+            var shell = new Lazy<string>(() =>
+            {
+                var html = File.ReadAllText(provider.GetFileInfo("index.html").PhysicalPath!);
+                var injected = $"<script>window.__MOCKIFYR__={runtimeConfig};</script>";
+                // Before </head>, so the app reads it before any module runs. A shell without a head
+                // is not something this dashboard produces, but prepending is a safer miss than
+                // dropping the configuration silently.
+                var head = html.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+                return head < 0 ? injected + html : html.Insert(head, injected);
+            });
             // Serve a real asset when the path maps to a file (with its proper content type), otherwise
             // fall back to index.html for the SPA's client routes. Doing both in one endpoint avoids the
             // static-file-middleware-vs-catch-all ordering trap that made asset requests (…/assets/*.js)
@@ -1377,9 +1418,16 @@ public static class MockifyrHost
                 // The SPA shell must never be served from a stale browser cache: an old bundle can
                 // predate the host's capabilities (e.g. the OIDC login gate) and fail in silently
                 // confusing ways. no-cache forces revalidation on every load.
+                //
+                // The shell also carries the host's runtime configuration (#396). The dashboard used
+                // to hardcode the tenant header, so the moment an operator renamed it the screen and
+                // the API would disagree — every dashboard call landing in the default tenant while
+                // the operator watched the wrong data. Injecting at serve time rather than fetching
+                // it avoids a round-trip that would itself need the header, and needs no endpoint
+                // that has to work before authentication.
                 context.Response.ContentType = "text/html";
                 context.Response.Headers.CacheControl = "no-cache";
-                await context.Response.SendFileAsync(provider.GetFileInfo("index.html"));
+                await context.Response.WriteAsync(shell.Value);
             });
         }
 

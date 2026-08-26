@@ -19,6 +19,12 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **`--tenant-header <name>`** (#396). The header a request names its tenant in is no longer a
+  compile-time constant per facade: it is declared once and read by all of them — HTTP, admin, gRPC,
+  WebSocket, broker mappings, the SMS profile and the broker capture services — plus the dashboard,
+  which now learns the host's runtime configuration from the served shell instead of assuming the
+  default. The default is the historical `X-Mockifyr-Tenant`, so an unconfigured host is unchanged.
+  A malformed name is refused at startup rather than accepted and silently never matched.
 - **Optional PodDisruptionBudget and NetworkPolicy in the Helm chart** (#397). Both off by default,
   so an existing install renders exactly as before. A PDB below two replicas is refused rather than
   rendered — a budget over a single pod blocks every node drain. Network policy restricts ingress;

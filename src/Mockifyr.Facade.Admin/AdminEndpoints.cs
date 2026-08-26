@@ -22,11 +22,14 @@ namespace Mockifyr.Facade.Admin;
 /// </summary>
 public static class AdminEndpoints
 {
-    private const string TenantHeader = "X-Mockifyr-Tenant";
-
-    /// <summary>Resolves the request's tenant from <c>X-Mockifyr-Tenant</c>, defaulting when absent.</summary>
-    private static TenantId TenantOf(HttpRequest request) =>
-        request.Headers.TryGetValue(TenantHeader, out var value) && !string.IsNullOrEmpty(value)
+    /// <summary>
+    /// Resolves the request's tenant from the configured header, defaulting when absent (#396). The
+    /// name is passed in rather than read from a constant: <c>MapAdminEndpoints</c> resolves it once
+    /// at startup and every route closes over that, so seventy-odd call sites stay untouched and the
+    /// serving path never pays for a per-request lookup.
+    /// </summary>
+    private static TenantId TenantFrom(HttpRequest request, string headerName) =>
+        request.Headers.TryGetValue(headerName, out var value) && !string.IsNullOrEmpty(value)
             ? new TenantId(value!)
             : TenantId.Default;
 
@@ -180,6 +183,13 @@ public static class AdminEndpoints
     public static IEndpointRouteBuilder MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var admin = endpoints.MapGroup("/__admin");
+
+        // Resolved once, here, and closed over by every route below (#396). A per-request
+        // GetRequiredService would work and would cost something on a surface that is called for
+        // every admin operation; a static would be faster and would break the wire tests, which run
+        // several hosts in one process. Capturing at map time is the shape with neither problem.
+        var tenantHeader = endpoints.ServiceProvider.GetRequiredService<TenantHeaderOptions>().Name;
+        TenantId TenantOf(HttpRequest request) => TenantFrom(request, tenantHeader);
 
         // Host status for the dashboard's Settings/Status screen: the active persistence provider and
         // live tenant/stub counts, gathered from DI. Host-config knobs (TLS, ports) are set by CLI flags

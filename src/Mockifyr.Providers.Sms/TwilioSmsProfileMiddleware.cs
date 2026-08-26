@@ -14,9 +14,9 @@ namespace Mockifyr.Providers.Sms;
 /// an existing stub serves (the as-is rule). Tenant = <c>X-Mockifyr-Tenant</c>, as everywhere.
 /// </summary>
 public sealed partial class TwilioSmsProfileMiddleware(
-    RequestDelegate next, StubEngine engine, IMessageSink sink, IMessageBehaviorStore? behaviors = null)
+    RequestDelegate next, StubEngine engine, IMessageSink sink, TenantHeaderOptions tenantHeader,
+    IMessageBehaviorStore? behaviors = null)
 {
-    private const string TenantHeader = "X-Mockifyr-Tenant";
 
     [GeneratedRegex(@"^/2010-04-01/Accounts/(?<sid>[^/]+)/Messages\.json$")]
     private static partial Regex MessagesPath();
@@ -135,8 +135,8 @@ public sealed partial class TwilioSmsProfileMiddleware(
     private static string NumSegments(string body) =>
         (body.Length <= 160 ? 1 : (body.Length + 152) / 153).ToString();
 
-    private static TenantId TenantOf(HttpContext context) =>
-        context.Request.Headers.TryGetValue(TenantHeader, out var value) && !string.IsNullOrEmpty(value)
+    private TenantId TenantOf(HttpContext context) =>
+        context.Request.Headers.TryGetValue(tenantHeader.Name, out var value) && !string.IsNullOrEmpty(value)
             ? new TenantId(value!)
             : TenantId.Default;
 
