@@ -537,3 +537,48 @@ them with the rest of their packaging.
 that a renamed host publishes `dfx_mockapi_requests_served` and **no longer** publishes
 `mockifyr_requests_served` — a scrape carrying both would double-count, and one silently keeping the
 old name would make the flag look applied when it was not.
+
+## Mounting the dashboard anywhere (#396c)
+
+`--dashboard-path` moves the dashboard off `/__mockifyr`. The prefix is in an operator's bookmarks,
+their ingress rules and their runbooks, and it is our product name — the same argument as the header
+and the brand.
+
+**The hard part is that the prefix was a build-time constant, in four places at once**: Vite's `base`
+(which bakes absolute asset URLs into the shell), `import.meta.env.BASE_URL` (which the router's
+basename derives from), the navigation links, and the OIDC redirect URI. A flag that moved only the
+server route would serve a shell that then fetched every script from a path that no longer exists —
+a blank page and a wall of 404s.
+
+So the shell's asset URLs are **rewritten at serve time**, in the same pass that injects the runtime
+configuration, and the SPA takes its basename, its links and its redirect URI from that configuration
+instead of from `BASE_URL`. The build-time base stays as the fallback, which is also what `pnpm dev`
+sees. One build now serves from any prefix.
+
+**The rewrite happens before the configuration script is injected**, so the JSON's own paths — the
+logo URL, the dashboard path itself — are not rewritten a second time.
+
+**Refused prefixes, and why each would half-work rather than fail:**
+
+| Refused | What it would do |
+|---|---|
+| `/__admin` | Shadow the API the dashboard talks to |
+| `/__sandbox` | Shadow the partner surface |
+| `/a/b` | The asset rewrite is by prefix, and nesting makes it ambiguous for no gain |
+| `/foo/`, `foo`, `/` | Produce a mount point that matches nothing, silently |
+
+**A quieter fix that came with it.** The request journal excludes dashboard traffic so an operator's
+own screen does not drown the log they opened it to read. That exclusion was written against the
+literal prefix; moved and left alone, every asset fetch would have landed in the journal. It follows
+the configured path now, and a test asserts it — the kind of coupling that is invisible until the
+constant moves.
+
+**Validation.** `BrandOptionsTests` grows to 33 unit cases (**Stryker 100 %** on `Branding.cs`) and
+`BrandingWireTests` to 26 wire cases, including the asset rewrite, a deep link at the new prefix, the
+old prefix ceasing to serve, the logo following the prefix, and the journal exclusion. Verified in a
+browser as well: the dashboard loads at `/__mockapi`, client-side navigation works, and a full reload
+of a deep link returns the shell.
+
+One equivalent mutant surfaced and was removed rather than documented: the mount check opened with an
+`IsNullOrWhiteSpace` guard that every other clause already covered, so mutating it changed nothing.
+Deleting the redundancy was the better answer to "this mutant is equivalent".

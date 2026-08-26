@@ -45,3 +45,50 @@ public sealed record BrandOptions
         Uri.TryCreate(url, UriKind.Absolute, out var parsed)
         && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps);
 }
+
+/// <summary>
+/// Where the dashboard is served from (#396). Renameable for the same reason the brand is: the prefix
+/// is in the operator's bookmarks, their ingress rules and their runbooks, and it is our product name.
+/// </summary>
+public sealed record DashboardOptions
+{
+    /// <summary>The historical prefix, and the default.</summary>
+    public const string DefaultPath = "/__mockifyr";
+
+    /// <summary>The prefix the dashboard is mounted under, with a leading slash and no trailing one.</summary>
+    public string Path { get; init; } = DefaultPath;
+
+    /// <summary>An unconfigured host.</summary>
+    public static DashboardOptions Default { get; } = new();
+
+    /// <summary>
+    /// Whether a prefix can be mounted. One leading slash, no trailing slash, no nesting, and not one
+    /// of the surfaces that already exist.
+    /// </summary>
+    /// <remarks>
+    /// The collisions are the point. Mounting the dashboard on <c>/__admin</c> would shadow the API it
+    /// talks to, and on <c>/__sandbox</c> the partner surface — both would present as the dashboard
+    /// half-working, which is a worse afternoon than a refusal at startup. Nesting is refused because
+    /// the served shell's asset URLs are rewritten by prefix, and a multi-segment prefix makes that
+    /// rewrite ambiguous for no gain.
+    /// </remarks>
+    public static bool IsMountable(string path)
+    {
+        // No IsNullOrWhiteSpace guard: it is redundant here and every mutation of it is equivalent,
+        // because the clauses below already reject everything it would. "" fails the length check and
+        // "   " fails the leading-slash one. The caller never passes null.
+        if (path.Length < 2 || path[0] != '/' || path[^1] == '/')
+        {
+            return false;
+        }
+
+        var segment = path[1..];
+        if (segment.Contains('/') || segment.Contains('?') || segment.Contains('#'))
+        {
+            return false;
+        }
+
+        return !string.Equals(path, "/__admin", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(path, "/__sandbox", StringComparison.OrdinalIgnoreCase);
+    }
+}

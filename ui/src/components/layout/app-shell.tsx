@@ -11,7 +11,7 @@ import { HelpersDialog } from '@/components/templating/helpers-dialog'
 import { LoginGate } from '@/components/login-gate'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { BrandMark } from '@/components/ui/brand-mark'
-import { BRAND_LOGO, BRAND_NAME, BRAND_SUBTITLE } from '@/lib/host-config'
+import { BRAND_LOGO, BRAND_NAME, BRAND_SUBTITLE, DASHBOARD_PATH } from '@/lib/host-config'
 import { useUi } from '@/components/providers'
 import { fetchJournal, fetchMessages, fetchScenarios, fetchStubs } from '@/lib/api'
 import { TenantSwitcher } from './tenant-switcher'
@@ -82,7 +82,7 @@ export function AppShell() {
       badge: badges[n.to],
       // Real links: ⌘-click opens the journal in a second tab while stubs stay open here —
       // an ordinary thing to want in a console. onSelect keeps it a client-side route.
-      href: `/__mockifyr${n.to === '/' ? '' : n.to}`,
+      href: `${DASHBOARD_PATH}${n.to === '/' ? '' : n.to}`,
       onSelect: ((event?: React.MouseEvent) => {
         // Let the browser do its job for the gestures that MEAN "somewhere else": a modified
         // click is a request for a new tab, not for this router.

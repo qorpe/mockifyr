@@ -7,6 +7,8 @@
  * should not keep somebody signed in to a mock platform indefinitely.
  */
 
+import { DASHBOARD_PATH } from '@/lib/host-config'
+
 const TOKEN_KEY = 'ui.oidcToken'
 const VERIFIER_KEY = 'ui.oidcVerifier'
 const RETURN_KEY = 'ui.oidcReturn'
@@ -44,7 +46,7 @@ async function discover(authority: string): Promise<{ authorization_endpoint: st
 
 /** The redirect URI registered with the provider: this app's own base path. */
 function redirectUri(): string {
-  return `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/$/, '') + '/'
+  return `${window.location.origin}${DASHBOARD_PATH}` + '/'
 }
 
 /** Sends the browser to the identity provider. */
@@ -102,7 +104,7 @@ export async function completeLoginIfRedirected(config: OidcConfig): Promise<boo
     sessionStorage.setItem(TOKEN_KEY, payload.access_token)
     return true
   } finally {
-    const back = sessionStorage.getItem(RETURN_KEY) ?? import.meta.env.BASE_URL
+    const back = sessionStorage.getItem(RETURN_KEY) ?? (DASHBOARD_PATH || '/')
     sessionStorage.removeItem(RETURN_KEY)
     window.history.replaceState({}, '', back)
   }
