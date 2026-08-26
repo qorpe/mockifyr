@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { SUPPORT_URL } from '@/lib/host-config'
 import { Bug, Globe, LogOut, Moon, SlidersHorizontal } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuCheckItem, DropdownMenuContent, DropdownMenuItem,
@@ -50,7 +51,7 @@ export function PreferencesMenu({ collapsed }: { collapsed: boolean }) {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <a href="https://github.com/qorpe/mockifyr/issues" target="_blank" rel="noreferrer">
+          <a href={SUPPORT_URL} target="_blank" rel="noreferrer">
             <Bug className="size-4 text-muted-foreground" />{t('common.reportIssue')}
           </a>
         </DropdownMenuItem>

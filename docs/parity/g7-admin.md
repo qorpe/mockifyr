@@ -487,3 +487,53 @@ Mutation testing earned its place again: five survivors, all the same shape — 
 comparisons (`c <= 'z'`, `c >= 'A'`, `c <= 'Z'`, `c >= '0'`, `c <= '9'`) could each be off by one and
 every test still passed, because no name in the data contained those boundary characters. One added
 case, `azAZ09`, kills all five.
+
+## Branding the dashboard and the telemetry (#396)
+
+The header rename (above) built the channel; this fills it. `--brand-name`, `--brand-subtitle`,
+`--brand-logo` and `--support-url` are carried to the browser in the same injected shell, and
+`--telemetry-name` renames the OpenTelemetry service and the instrument prefix.
+
+**Each field is independent, and unset means "keep the product's own"** rather than "show nothing".
+Partial branding — a name with no logo — is a normal thing to want, and an empty string would render
+as a blank name rather than a default one.
+
+**A logo replaces the mark rather than sitting beside it.** Two marks is not co-branding, it is a
+screen that cannot decide whose product it is. The path is refused at startup when the file is
+missing, because a logo that silently does not appear is indistinguishable from a flag that was never
+read.
+
+**The support URL is validated to http(s).** The dashboard renders it in an anchor; a `javascript:` or
+`data:` URL there is a scripting vector handed to the operator by their own configuration file, which
+is a strange way to be compromised. A relative one would point at the mock surface rather than at help.
+
+**The instrument prefix is derived from the telemetry name, not configured separately** — a scrape
+config and an alert rule cannot then be pointed at a meter publishing under a different prefix. The
+default lowercases to `mockifyr`, exactly what shipped, so no existing dashboard moves. `Meter` and
+`ActivitySource` became per-host instances for the same reason the tenant header did: the wire tests
+run several hosts in one process, and a static meter would publish the first host's name for all of
+them.
+
+**Two leaks found by running it rather than by testing it.** With everything above wired, a branded
+host still said `Mockifyr` in two places: the **browser tab**, because the title is baked into the
+built shell rather than rendered by the app, and the **status line at the bottom of every page**,
+because `/__admin/health` returned a literal name. Both are now branded, and both have tests — but the
+tests were written after the screenshot, not before it.
+
+**Deliberately not configurable: the change-feed channel names** (`mockifyr_changes` on Postgres,
+`mockifyr:changes` on Redis) and the Kafka consumer group's default. They are visible only to a DBA or
+a broker administrator, and a flag there has a failure mode worth avoiding: set on one replica and not
+another, the change feed silently stops reconciling — stale data, no error. A distribution that needs
+those renamed does it once at build time, where every replica comes from one image and a mismatch
+cannot happen. `--kafka-group` already exists for the one case an operator genuinely needs to vary.
+
+**Also not configurable: the localised prose.** Several dashboard strings name the product inside a
+sentence ("… stands in for the real SMTP server"). Those are copy, not identity — substituting a name
+into six locales' grammar produces worse sentences, not a branded product. A redistributor rewrites
+them with the rest of their packaging.
+
+**Validation.** `BrandOptionsTests` (16 unit cases, **Stryker 100 %**) and `BrandingWireTests`
+(13 wire cases against a real host with a real shell on disk), plus an observability case asserting
+that a renamed host publishes `dfx_mockapi_requests_served` and **no longer** publishes
+`mockifyr_requests_served` — a scrape carrying both would double-count, and one silently keeping the
+old name would make the flag look applied when it was not.

@@ -203,12 +203,16 @@ public static class AdminEndpoints
             IEnumerable<IResponseSigner> signers,
             IAuditLog auditLog,
             ActiveKeyReport keys,
-            AdminAuthDescriptor auth) =>
+            AdminAuthDescriptor auth,
+            ProductIdentity product) =>
         {
             var tenants = store.GetTenants();
             return Results.Json(new
             {
-                name = "Mockifyr",
+                // The configured product name (#396), not a literal: the dashboard's status line and
+                // Settings screen render this, so a host branded everywhere else would still have
+                // announced itself by our name at the bottom of every page.
+                name = product.Name,
                 // The assembly's informational version, so an operator reading health knows which
                 // build answered. It used to be hard-coded "1.0" — harmless while the product was
                 // 0.x and actively misleading the moment it is not.

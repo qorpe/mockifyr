@@ -87,6 +87,7 @@ public static class MockifyrServiceCollectionExtensions
         // The tenant header, one definition for all eight facades (#396). The standalone host
         // overrides this from --tenant-header; an in-process host gets the historical default.
         services.AddSingleton(TenantHeaderOptions.Default);
+        services.AddSingleton(ProductIdentity.Default);
         // Readiness state (#242): startup flips it on, shutdown flips it off.
         services.AddSingleton<HostReadiness>();
         services.AddSingleton<IApiKeyStore, InMemoryApiKeyStore>();
