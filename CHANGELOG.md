@@ -8,6 +8,14 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+## Released
+
+### [v1.19.0](https://github.com/qorpe/mockifyr/releases/tag/v1.19.0) — 2026-08-27
+
+Everything an operator or a partner sees can now carry their name instead of ours, and the image
+finally ships the licence it is distributed under. Nothing here changes an unconfigured host: every
+default is what shipped in 1.18.
+
 ### Fixed
 
 - **The image shipped without `LICENSE` or `NOTICE`** (#395). Apache-2.0 §4 requires both to travel
