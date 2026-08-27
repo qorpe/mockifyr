@@ -10,6 +10,29 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Released
 
+### [v1.19.1](https://github.com/qorpe/mockifyr/releases/tag/v1.19.1) — 2026-08-27
+
+A new mark, and the rail head it exposed. Nothing an API or a mapping depends on moves.
+
+### Changed
+
+- **The mark is a pair of braces holding a point**, not two chevrons joined by a wing. Braces are
+  what a payload is written between, and what sits inside them is a stand-in — which is what a mock
+  is. Every surface is regenerated from one geometry so the nine files cannot drift apart, with two
+  deliberate exceptions recorded in `brand/README.md`: the app icon carries 60% of its tile rather
+  than the 52% a mark half as tall was fitted to, and the favicon is redrawn at its own optical size
+  so its line lands near 2.3 device pixels at 16px instead of 1.4.
+
+### Fixed
+
+- **The dashboard's collapsed rail head sat off the icon column.** The mark and the expand toggle
+  shared a row 50px wide while together wanting about 70, so the overflow pushed the mark some 15px
+  left of the line every nav row centres on. The old wide mark hid it; a mark with height made it
+  plain. The head is now a single rail item — the mark at rest, the expand chevron under the pointer
+  or under keyboard focus — which costs neither the centring nor a row. Expanded, the brand block
+  now takes the rail's hover wash instead of fading, the only hover in the rail that was not a
+  background change. Fixed upstream in `@qorpe/ui` 0.5.1.
+
 ### [v1.19.0](https://github.com/qorpe/mockifyr/releases/tag/v1.19.0) — 2026-08-27
 
 Everything an operator or a partner sees can now carry their name instead of ours, and the image

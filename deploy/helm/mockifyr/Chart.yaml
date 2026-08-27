@@ -3,7 +3,7 @@ name: mockifyr
 description: Enterprise API mocking and integration sandbox platform
 type: application
 version: 0.4.0
-appVersion: "1.19.0"
+appVersion: "1.19.1"
 home: https://mockifyr.qorpe.com
 sources:
   - https://github.com/qorpe/mockifyr
