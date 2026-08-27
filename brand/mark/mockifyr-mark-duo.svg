@@ -1,9 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 125 63" width="250" height="126" role="img" aria-label="Mockifyr">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 188 120" width="376" height="240" role="img" aria-label="Mockifyr">
   <title>Mockifyr</title>
-  <g fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M5 5 L42 31.5 L5 58" stroke="#111111"/>
-    <path d="M42 31.5 L62.5 46 L83 31.5" stroke="#111111"/>
-    <path d="M120 5 L83 31.5 L120 58" stroke="#0a4ecf"/>
+  <g fill="none" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M57 9 C29 9 33 49 9 60 C33 71 29 111 57 111" stroke="#111111"/>
+    <path d="M131 9 C159 9 155 49 179 60 C155 71 159 111 131 111" stroke="#0a4ecf"/>
   </g>
-  <circle cx="62.5" cy="15" r="7" fill="#0a4ecf"/>
+  <circle cx="94" cy="60" r="14" fill="#0a4ecf"/>
 </svg>
