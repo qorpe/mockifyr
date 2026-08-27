@@ -5,31 +5,32 @@ stays sharp at any size.
 
 ## The mark
 
-Two chevrons facing each other — a request going in, a response coming back — joined by a wing, with
-the eye as the single accent. Read as a whole it is a bird in flight; read as a diagram it is the
-engine: something goes out, a stand-in comes back.
+A pair of braces holding a single point — the API's own punctuation, and the engine's job in one
+glyph. Braces are what a payload is written between; what sits between them here is a stand-in,
+which is what a mock is.
 
 ## Colours
 
 | Role | Hex | Notes |
 | --- | --- | --- |
 | Ink | `#111111` | The mark on light backgrounds. |
-| Brand blue | `#0a4ecf` | Eye + accent on light backgrounds. 7.0:1 against white. |
-| Light blue | `#5a8dff` | Eye on dark backgrounds. 6.3:1 against `#0a0a0c`. |
-| Icon blue | `#bcd0ff` | Eye on the brand-blue app-icon tile, where `#5a8dff` has too little separation. |
+| Brand blue | `#0a4ecf` | Point + accent on light backgrounds. 7.0:1 against white. |
+| Light blue | `#5a8dff` | Point on dark backgrounds. 6.3:1 against `#0a0a0c`. |
+| Icon blue | `#bcd0ff` | Point on the brand-blue app-icon tile, where `#5a8dff` has too little separation. |
 
-The eye always switches with the surface behind it — that is deliberate, not an inconsistency.
+The point always switches with the surface behind it — that is deliberate, not an inconsistency.
 
 ## Geometry
 
-The mark is drawn on a tight `0 0 125 63` viewBox: the artwork's ink, including the round stroke
+The mark is drawn on a tight `0 0 188 120` viewBox: the artwork's ink, including the round stroke
 caps, touches all four edges exactly. Consumers add their own padding, and the mark centres
 correctly in any container without eyeballing.
 
-Stroke width is `10` with round caps and joins throughout. That ratio is load-bearing, and it is
-set by the shortest segment, not the longest: the body notch is a ~25-unit stroke, so anything much
-heavier stops reading as a line and turns into a lump that welds the three shapes into one mass at
-small sizes. Keep the counters open and the silhouette survives down to 16px.
+Stroke width is `18` with round caps and joins throughout. The braces open away from the point, so
+the weight is bounded by the brace's own counter rather than by its distance to anything else:
+push the stroke much past this and each brace closes into a crescent-shaped blob, which is the
+first thing to check after any change. The round caps are not decoration — square terminals on a
+curve this short read as cut off rather than finished.
 
 ## Files
 
@@ -58,11 +59,12 @@ author time, so a font missing on the rendering machine would substitute silentl
 lockups carry a warning about below.
 
 The favicon is the one file that deliberately breaks the geometry above, and it has to. Scaling a
-line drawing down past roughly 24px does not preserve it: at tab size the master stroke lands under
+line drawing down past roughly 24px does not preserve it: at tab size the master stroke lands near
 one pixel and renders as grey haze next to neighbours that are bold shapes filling their whole box.
-So the favicon is redrawn at its own optical size — same skeleton, stroke `14` instead of `10`, and
-94% fill instead of 64%. Stroke still stays under 60% of the body notch's length, which is what keeps
-the three shapes from welding together.
+So the favicon is redrawn at its own optical size — same skeleton, stroke `30` instead of `18`, and
+94% fill instead of 64%, which puts the line on about 2.3 device pixels at 16px. The extra weight
+costs no clearance: each brace's nearest approach to the point is an arm tip some 63 units from its
+centre, so the glyph gains body without the three shapes welding together.
 
 It carries no tile. A tab strip already has a background, and a white square reads as a white square
 on every tab that is not the active one. With nothing behind it the ink has to carry itself, so the

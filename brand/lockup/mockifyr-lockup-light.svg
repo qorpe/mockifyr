@@ -1,12 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 150" width="640" height="150" role="img" aria-label="Mockifyr — mock &amp; prototype, faster.">
   <title>Mockifyr — mock &amp; prototype, faster.</title>
-  <g transform="translate(7.35 45.6) scale(0.98)">
-    <g fill="none" stroke="#111111" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M5 5 L42 31.5 L5 58"/>
-      <path d="M120 5 L83 31.5 L120 58"/>
-      <path d="M42 31.5 L62.5 46 L83 31.5"/>
+  <g transform="translate(7.35 37.4) scale(0.6516)">
+    <g fill="none" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M57 9 C29 9 33 49 9 60 C33 71 29 111 57 111" stroke="#111111"/>
+      <path d="M131 9 C159 9 155 49 179 60 C155 71 159 111 131 111" stroke="#111111"/>
     </g>
-    <circle cx="62.5" cy="15" r="7" fill="#0a4ecf"/>
+    <circle cx="94" cy="60" r="14" fill="#0a4ecf"/>
   </g>
   <text x="180" y="82" font-family="Sora, 'Segoe UI', Arial, sans-serif" font-weight="800" font-size="72" letter-spacing="-2" fill="#111111">Mockifyr</text>
   <text x="182" y="118" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-weight="500" font-size="20" letter-spacing="0.5" fill="#8a8a88">mock &amp; prototype, faster.</text>
