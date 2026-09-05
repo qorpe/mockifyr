@@ -1,9 +1,10 @@
-import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { Button } from '@qorpe/ui'
+import { Button, Dialog } from '@qorpe/ui'
 
 /**
  * A small centered confirmation dialog for irreversible actions (delete). Cancel, Escape, and an
  * outside click all dismiss without confirming — only the explicit confirm button fires onConfirm.
+ * Built ON the kit's Dialog since 2026-09-05 (closure audit: it duplicated the kit's modal with
+ * raw Radix); the API is unchanged, the chrome is the family's.
  */
 export function ConfirmDialog({ open, onOpenChange, title, body, confirmLabel, cancelLabel, onConfirm, destructive = false, children }: {
   open: boolean
@@ -17,21 +18,12 @@ export function ConfirmDialog({ open, onOpenChange, title, body, confirmLabel, c
   children?: React.ReactNode
 }) {
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content
-          className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-2xl outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
-        >
-          <DialogPrimitive.Title className="text-base font-semibold">{title}</DialogPrimitive.Title>
-          {body && <DialogPrimitive.Description className="mt-1.5 text-sm text-muted-foreground">{body}</DialogPrimitive.Description>}
-          {children}
-          <div className="mt-5 flex justify-end gap-2">
-            <DialogPrimitive.Close asChild><Button variant="ghost" size="sm">{cancelLabel}</Button></DialogPrimitive.Close>
-            <Button variant={destructive ? 'danger' : 'primary'} size="sm" onClick={onConfirm}>{confirmLabel}</Button>
-          </div>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+    <Dialog open={open} onOpenChange={onOpenChange} title={title} description={body} closeLabel={cancelLabel}>
+      {children}
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>{cancelLabel}</Button>
+        <Button variant={destructive ? 'danger' : 'primary'} size="sm" onClick={onConfirm}>{confirmLabel}</Button>
+      </div>
+    </Dialog>
   )
 }
