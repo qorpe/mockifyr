@@ -17,10 +17,9 @@ import {
   messageAttachmentUrl, type MessageBehaviors, type MessageChannel, resetMessageBehaviors, resetMessages,
   saveMessageBehaviors,
 } from '@/lib/api'
-import { Button, SearchBox, Sheet } from '@qorpe/ui'
+import { Button, SearchBox, Sheet, TabPanel, TabStrip } from '@qorpe/ui'
 import { EmptyState } from '@qorpe/ui'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input, Label } from '@/components/ui/field'
 import { Select } from '@qorpe/ui'
 
@@ -290,6 +289,10 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
 }) {
   const { t } = useTranslation()
   const hasHtml = !!message?.htmlBody
+  // Which section is open, per message — derived, not synced: a new message opens on its
+  // own default (the preview when there is one) without an effect that sets state.
+  const [messageTabs, setMessageTabs] = useState<Record<string, string>>({})
+  const messageTab = (message && messageTabs[message.id]) ?? (hasHtml ? 'preview' : 'text')
   return (
     <Sheet
       open={message !== null}
@@ -338,28 +341,36 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                     ))}
                   </div>
                 )}
-                <Tabs defaultValue={hasHtml ? 'preview' : 'text'} className="flex min-h-0 flex-1 flex-col">
-                  <TabsList className="mx-6 mt-4">
-                    {hasHtml && <TabsTrigger value="preview">{t('messages.preview')}</TabsTrigger>}
-                    <TabsTrigger value="text">{t('messages.text')}</TabsTrigger>
-                    <TabsTrigger value="source">{t('messages.source')}</TabsTrigger>
-                    <TabsTrigger value="meta">{t('messages.details')}</TabsTrigger>
-                  </TabsList>
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="mx-6 mt-4">
+                    <TabStrip
+                      label={t('common.sections')}
+                      scope="message"
+                      items={[
+                        ...(hasHtml ? [{ id: 'preview', label: t('messages.preview') }] : []),
+                        { id: 'text', label: t('messages.text') },
+                        { id: 'source', label: t('messages.source') },
+                        { id: 'meta', label: t('messages.details') },
+                      ]}
+                      activeId={messageTab}
+                      onSelect={(id) => setMessageTabs((current) => ({ ...current, [message.id]: id }))}
+                    />
+                  </div>
                   {hasHtml && (
-                    <TabsContent value="preview" className="flex min-h-0 flex-1 flex-col overflow-hidden p-6 pt-3">
+                    <TabPanel id="preview" activeId={messageTab} scope="message" className="flex min-h-0 flex-1 flex-col overflow-hidden p-6 pt-3">
                       <div className="mb-2 flex justify-end"><CopyButton text={message.htmlBody!} label={t('messages.copyHtml')} /></div>
                       {/* Sandboxed: no scripts, no navigation — captured HTML is untrusted content. */}
                       <iframe title="preview" sandbox="" srcDoc={message.htmlBody!} className="min-h-0 w-full flex-1 rounded-xl border border-border bg-white" />
-                    </TabsContent>
+                    </TabPanel>
                   )}
-                  <TabsContent value="text" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
+                  <TabPanel id="text" activeId={messageTab} scope="message" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
                     <div className="mb-2 flex justify-end"><CopyButton text={message.body} label={t('editor.copy')} /></div>
                     <pre className="whitespace-pre-wrap rounded-xl border border-border bg-muted/30 p-4 font-mono text-[12.5px]">{message.body || '—'}</pre>
-                  </TabsContent>
-                  <TabsContent value="source" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
+                  </TabPanel>
+                  <TabPanel id="source" activeId={messageTab} scope="message" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
                     <RawSource id={message.id} />
-                  </TabsContent>
-                  <TabsContent value="meta" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
+                  </TabPanel>
+                  <TabPanel id="meta" activeId={messageTab} scope="message" className="min-h-0 flex-1 overflow-y-auto p-6 pt-3">
                     <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-[12.5px]">
                       <dt className="text-faint">{t('messages.received')}</dt><dd>{new Date(message.receivedAt).toLocaleString(locale)}</dd>
                       <dt className="text-faint">id</dt><dd><CopyableValue value={message.id} /></dd>
@@ -367,8 +378,8 @@ function MessageDetailSheet({ message, thread, locale, onClose, onDelete }: {
                         <div key={k} className="contents"><dt className="text-faint">{k}</dt><dd><CopyableValue value={v} /></dd></div>
                       ))}
                     </dl>
-                  </TabsContent>
-                </Tabs>
+                  </TabPanel>
+                </div>
                 <div className="flex justify-end border-t border-border px-6 py-3">
                   <Button variant="ghost" onClick={() => onDelete(message.id)}><Trash2 />{t('stubs.delete')}</Button>
                 </div>

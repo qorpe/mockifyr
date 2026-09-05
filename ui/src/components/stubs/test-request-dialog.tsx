@@ -6,11 +6,10 @@ import { AlertTriangle, Copy, FlaskConical, Plus, Send, Terminal, WandSparkles, 
 import { cn } from '@/lib/utils'
 import { TENANT_HEADER } from '@/lib/tenants'
 import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
-import { Button } from '@qorpe/ui'
+import { Button, TabPanel, TabStrip } from '@qorpe/ui'
 import { Input } from '@/components/ui/field'
 import { Select } from '@qorpe/ui'
 import { selectOptions } from '@/components/ui/select-field'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { JsonField } from '@/components/ui/json-field'
 import { BodyView, HeadersView, StatusChip } from '@/components/ui/http-view'
 
@@ -111,6 +110,7 @@ export function TestRequestDialog({ open, onOpenChange, seed, tenant, environmen
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [response, setResponse] = useState<TestResponse | null>(null)
+  const [tab, setTab] = useState('params')
 
   // Re-seed from the stub's CURRENT configuration on every open (predictable reopen, per the issue).
   useEffect(() => {
@@ -206,19 +206,25 @@ export function TestRequestDialog({ open, onOpenChange, seed, tenant, environmen
                 </Button>
               </div>
 
-              <Tabs defaultValue="params">
-                <TabsList>
-                  <TabsTrigger value="params">{t('test.params')}{params.some((p) => p.name.trim()) ? ` (${params.filter((p) => p.name.trim()).length})` : ''}</TabsTrigger>
-                  <TabsTrigger value="headers">{t('test.headers')}{headers.some((h) => h.name.trim()) ? ` (${headers.filter((h) => h.name.trim()).length})` : ''}</TabsTrigger>
-                  <TabsTrigger value="body">{t('test.body')}</TabsTrigger>
-                </TabsList>
-                <TabsContent value="params" className="pt-3">
+              <div>
+                <TabStrip
+                  label={t('common.sections')}
+                  scope="test"
+                  items={[
+                    { id: 'params', label: t('test.params'), hint: params.some((p) => p.name.trim()) ? String(params.filter((p) => p.name.trim()).length) : undefined },
+                    { id: 'headers', label: t('test.headers'), hint: headers.some((h) => h.name.trim()) ? String(headers.filter((h) => h.name.trim()).length) : undefined },
+                    { id: 'body', label: t('test.body') },
+                  ]}
+                  activeId={tab}
+                  onSelect={setTab}
+                />
+                <TabPanel id="params" activeId={tab} scope="test" className="pt-3">
                   <KvRows rows={params} onChange={setParams} keyPlaceholder="page" addLabel={t('test.addParam')} removeLabel={t('common.remove')} />
-                </TabsContent>
-                <TabsContent value="headers" className="pt-3">
+                </TabPanel>
+                <TabPanel id="headers" activeId={tab} scope="test" className="pt-3">
                   <KvRows rows={headers} onChange={setHeaders} keyPlaceholder="Content-Type" addLabel={t('test.addHeader')} removeLabel={t('common.remove')} />
-                </TabsContent>
-                <TabsContent value="body" className="pt-3">
+                </TabPanel>
+                <TabPanel id="body" activeId={tab} scope="test" className="pt-3">
                   {BODYLESS.has(method) ? (
                     <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{t('test.bodySkipped', { method })}</p>
                   ) : (
@@ -229,8 +235,8 @@ export function TestRequestDialog({ open, onOpenChange, seed, tenant, environmen
                       </Button>
                     </div>
                   )}
-                </TabsContent>
-              </Tabs>
+                </TabPanel>
+              </div>
 
               <div className="border-t border-border pt-4">
                 {!response && !error && !sending && (

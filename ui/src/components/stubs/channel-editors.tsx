@@ -5,13 +5,12 @@ import { toast } from 'sonner'
 import { Braces, Cable, FileJson, Globe, Workflow } from 'lucide-react'
 import { fetchGrpcDescriptors, importOpenApi, saveMessageMapping, saveStub } from '@/lib/api'
 import { useUi } from '@/components/providers'
-import { Button } from '@qorpe/ui'
+import { Button, TabStrip } from '@qorpe/ui'
 import { Input, Label } from '@/components/ui/field'
 import { Select } from '@qorpe/ui'
 import { selectOptions } from '@/components/ui/select-field'
 import { JsonEditor, JsonField } from '@/components/ui/json-field'
 import { Switch } from '@qorpe/ui'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StubEditorForm } from '@/components/stubs/stub-editor'
 
 // The stub channels the Add flow offers (ADR 0010). HTTP renders the classic editor; the others are
@@ -45,15 +44,13 @@ export function NewStubWorkspace({ active, prefillUrl, onSaved, onDirtyChange }:
       {/* Same pilled-tabs language as every other view switcher (Form/JSON) — one segmented style. */}
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
         <span className="text-xs font-semibold text-muted-foreground">{t('channels.pick')}</span>
-        <Tabs value={channel} onValueChange={(v) => setChannel(v as StubChannel)}>
-          <TabsList>
-            {CHANNELS.map(({ id, icon: Icon }) => (
-              <TabsTrigger key={id} value={id} className="inline-flex items-center gap-1.5">
-                <Icon className="size-3.5" />{t(`channels.${id}`)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <TabStrip
+          label={t('channels.pick')}
+          scope="channel"
+          items={CHANNELS.map(({ id }) => ({ id, label: t(`channels.${id}`) }))}
+          activeId={channel}
+          onSelect={(id) => setChannel(id as StubChannel)}
+        />
       </div>
       {channel === 'http' && (
         <StubEditorForm editing={null} initialTab="form" prefillUrl={prefillUrl} active={active}

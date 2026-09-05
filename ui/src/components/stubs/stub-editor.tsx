@@ -10,8 +10,7 @@ import { useUi } from '@/components/providers'
 import { fetchEnvironments, importMappings, saveStub, type Stub } from '@/lib/api'
 import { BODY_OPS, BODY_SUB_OPS, emptyStub, FAULTS, fromMapping, MATCH_OPS, stubSchema, suggestName, toJson, URL_MATCH, type StubForm } from '@/lib/stub-schema'
 import { previewEnvironment, type EnvironmentKey } from '@/lib/environments'
-import { Sheet } from '@qorpe/ui'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Sheet, TabPanel, TabStrip } from '@qorpe/ui'
 import { ProtocolChip } from '@/components/ui/badges'
 import { Input, Label, Textarea } from '@/components/ui/field'
 import { SelectField, selectOptions } from '@/components/ui/select-field'
@@ -223,12 +222,16 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'form' | 'json')} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-3 px-6 pt-4">
-            <TabsList>
-              <TabsTrigger value="form" disabled={jsonOnly}>{t('editor.form')}</TabsTrigger>
-              <TabsTrigger value="json">JSON</TabsTrigger>
-            </TabsList>
+            {/* A custom-matcher stub has no form to show: the strip offers JSON only (the form tab was disabled before). */}
+            <TabStrip
+              label={t('common.sections')}
+              scope="editor"
+              items={jsonOnly ? [{ id: 'json', label: 'JSON' }] : [{ id: 'form', label: t('editor.form') }, { id: 'json', label: 'JSON' }]}
+              activeId={tab}
+              onSelect={(id) => setTab(id as 'form' | 'json')}
+            />
             {editing && <ProtocolChip protocol={editing.protocol} />}
             {jsonOnly && <span className="text-xs text-muted-foreground">{t('editor.jsonOnly')}</span>}
             {/* Test runner (#203) — HTTP-transported stubs only: a plain HTTP probe cannot exercise
@@ -240,7 +243,7 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
             )}
           </div>
 
-          <TabsContent value="form" className="scroll-area min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+          <TabPanel id="form" activeId={tab} scope="editor" className="scroll-area min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
             {/* Details — friendly name + description (WireMock name + metadata.description). */}
             <Section title={t('editor.details')}>
               <div><Label>{t('editor.name')}</Label><Input {...register('name')} placeholder={suggestName(watch('method'), watch('urlValue')) || 'Get users'} /></div>
@@ -364,16 +367,16 @@ export function StubEditorForm({ editing, initialTab = 'form', prefillUrl, templ
                 <JsonField value={watch('webhookBody') ?? ''} onChange={(v) => form.setValue('webhookBody', v, { shouldDirty: true })} height={300} lint={false} minimal />
               </div>
             </Section>
-          </TabsContent>
+          </TabPanel>
 
-          <TabsContent value="json" className="flex min-h-0 flex-1 flex-col gap-2 px-6 py-5">
+          <TabPanel id="json" activeId={tab} scope="editor" className="flex min-h-0 flex-1 flex-col gap-2 px-6 py-5">
             <span className={cn('text-xs', jsonError ? 'text-danger' : 'text-faint')}>{jsonError ?? 'JSON'}</span>
             <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={onPickFile} />
             <div className="min-h-[420px] flex-1">
               <JsonField fill value={rawJson} onChange={setRawJson} invalid={!!jsonError} onUpload={() => fileRef.current?.click()} />
             </div>
-          </TabsContent>
-        </Tabs>
+          </TabPanel>
+        </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
           {onCancel && <Button variant="ghost" onClick={onCancel}>{t('editor.cancel')}</Button>}
