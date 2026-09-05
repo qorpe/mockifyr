@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The kit-freshness gate (extraction RFC §5): the dashboard may not silently fall behind
-# the published @qorpe/ui. Red when the pinned version is >2 minors or >30 days behind
+# the published @qorpe/ui. Red when the pinned version is >1 minor or >14 days behind
 # the registry's latest — same discipline as the NuGet train-freshness step.
 set -euo pipefail
 cd "$(dirname "$0")/../ui"
@@ -23,7 +23,8 @@ AGE_DAYS=999
 if [ -n "$PUBLISHED_AT" ]; then
   AGE_DAYS=$(node -p "Math.floor((Date.now() - new Date('$PUBLISHED_AT').getTime()) / 86400000)")
 fi
-if [ "$L_MAJ" -gt "$P_MAJ" ] || [ $((L_MIN - P_MIN)) -gt 2 ] || { [ "$AGE_DAYS" -gt 30 ] && [ "$LATEST" != "$PINNED" ]; }; then
+# Tightened 2026-09-05 (family closure audit, same change as goldpath): one minor, two weeks.
+if [ "$L_MAJ" -gt "$P_MAJ" ] || [ $((L_MIN - P_MIN)) -gt 1 ] || { [ "$AGE_DAYS" -gt 14 ] && [ "$LATEST" != "$PINNED" ]; }; then
   echo "kit-freshness: pinned $PINNED is behind latest $LATEST (latest published ${AGE_DAYS}d ago) — update the pin."
   exit 1
 fi
