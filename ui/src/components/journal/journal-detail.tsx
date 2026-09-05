@@ -1,10 +1,10 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, ArrowUpRight, Clock } from 'lucide-react'
 import { fetchJournalDetail, fetchStubs, type JournalWebhook } from '@/lib/api'
-import { Sheet } from '@qorpe/ui'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Sheet, TabPanel, TabStrip } from '@qorpe/ui'
 import { MethodChip } from '@/components/ui/badges'
 // Shared with the stub test runner (#203) so both surfaces render HTTP traffic identically.
 import { BodyView as Body, HeadersView as Headers, StatusChip } from '@/components/ui/http-view'
@@ -88,6 +88,7 @@ function MatchedStubRow({ stubId, stubs, onOpen, t }: {
  * (#122). Opens when `id` is set; the detail is fetched on demand so the list stays lean.
  */
 export function JournalDetailSheet({ id, tenant, onClose }: { id: string | null; tenant: string; onClose: () => void }) {
+  const [tab, setTab] = useState('request')
   const { t } = useTranslation()
   const navigate = useNavigate()
   // The stub list resolves the matched stub's display name and whether it still exists (#156). It is
@@ -136,21 +137,27 @@ export function JournalDetailSheet({ id, tenant, onClose }: { id: string | null;
               onOpen={(sid) => { onClose(); void navigate(`/stubs?open=${sid}`) }}
               t={t}
             />
-            <Tabs defaultValue="request" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="px-6 pt-4">
-                <TabsList>
-                  <TabsTrigger value="request">{t('journal.tabRequest')}</TabsTrigger>
-                  <TabsTrigger value="response">{t('journal.tabResponse')}</TabsTrigger>
-                  <TabsTrigger value="webhook">{t('journal.tabCallback')}{data.webhooks.length > 0 ? ` (${data.webhooks.length})` : ''}</TabsTrigger>
-                </TabsList>
+                <TabStrip
+                  label={t('common.sections')}
+                  scope="journal"
+                  items={[
+                    { id: 'request', label: t('journal.tabRequest') },
+                    { id: 'response', label: t('journal.tabResponse') },
+                    { id: 'webhook', label: t('journal.tabCallback'), hint: data.webhooks.length > 0 ? String(data.webhooks.length) : undefined },
+                  ]}
+                  activeId={tab}
+                  onSelect={setTab}
+                />
               </div>
 
-              <TabsContent value="request" className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              <TabPanel id="request" activeId={tab} scope="journal" className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
                 <Headers headers={data.request.headers} label={t('journal.headers')} />
                 <Body body={data.request.body} label={t('journal.body')} empty={t('journal.noBody')} />
-              </TabsContent>
+              </TabPanel>
 
-              <TabsContent value="response" className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              <TabPanel id="response" activeId={tab} scope="journal" className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
                 {data.response ? (
                   <>
                     <Headers headers={data.response.headers} label={t('journal.headers')} />
@@ -159,16 +166,16 @@ export function JournalDetailSheet({ id, tenant, onClose }: { id: string | null;
                 ) : (
                   <p className="text-sm text-muted-foreground">{t('journal.noResponse')}</p>
                 )}
-              </TabsContent>
+              </TabPanel>
 
-              <TabsContent value="webhook" className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              <TabPanel id="webhook" activeId={tab} scope="journal" className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
                 {data.webhooks.length === 0 ? (
                   <p className="text-sm text-muted-foreground">{t('journal.noCallback')}</p>
                 ) : (
                   data.webhooks.map((w, i) => <WebhookCard key={i} webhook={w} t={t} />)
                 )}
-              </TabsContent>
-            </Tabs>
+              </TabPanel>
+            </div>
           </>
         )}
     </Sheet>
