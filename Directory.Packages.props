@@ -45,7 +45,7 @@
     <PackageVersion Include="MailKit" Version="4.17.0" />
     <!-- Official Twilio SDK for the G18d self-test: the SDK must accept our provider-profile responses.
          Tests only — the shipped profile emulates the wire format without any Twilio dependency. -->
-    <PackageVersion Include="Twilio" Version="7.14.9" />
+    <PackageVersion Include="Twilio" Version="8.0.0" />
     <!-- Embedded persistence provider (G16b). LiteDB is a single-file .NET document store; used only
          inside Mockifyr.Server behind the IStubPersistence seam. -->
     <PackageVersion Include="LiteDB" Version="5.0.21" />
