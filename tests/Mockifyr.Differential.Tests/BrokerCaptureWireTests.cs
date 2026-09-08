@@ -182,9 +182,16 @@ public sealed class BrokerCaptureWireTests(KafkaFixture fixture) : IClassFixture
         producer.Flush(TimeSpan.FromSeconds(10));
     }
 
+    // 90 × 500 ms, the same ceiling the AMQP suite already uses. Waiting longer is SAFE here
+    // rather than a way of hiding a race: the topic and the consumer group are both unique per
+    // test and the consumer reads from Earliest, so a message produced before the subscription
+    // is established is still delivered once the group is assigned — it cannot be lost, only
+    // late. The 30-second ceiling failed once on a runner that was also retrying its image
+    // pulls (main, 2026-09-08), where a cold group's coordination took longer than the wait.
     private static async Task<JsonElement> WaitForMessageAsync(HttpClient client, string? tenant = null)
     {
-        for (var attempt = 0; attempt < 60; attempt++)
+        var started = DateTimeOffset.UtcNow;
+        for (var attempt = 0; attempt < 90; attempt++)
         {
             var messages = await MessagesAsync(client, tenant);
             if (messages.Count > 0)
@@ -195,7 +202,13 @@ public sealed class BrokerCaptureWireTests(KafkaFixture fixture) : IClassFixture
             await Task.Delay(500);
         }
 
-        throw new InvalidOperationException("no message reached the inbox");
+        // The old message said only "no message reached the inbox", which tells the next reader
+        // nothing about whether the inbox was empty, the tenant filter was wrong, or the wait was
+        // simply short. Say what was actually observed.
+        var all = await MessagesAsync(client);
+        throw new InvalidOperationException(
+            $"no message reached the inbox after {(DateTimeOffset.UtcNow - started).TotalSeconds:F0}s " +
+            $"(tenant filter: {tenant ?? "<none>"}; messages visible without the filter: {all.Count})");
     }
 
     private static async Task<List<JsonElement>> MessagesAsync(HttpClient client, string? tenant = null)
