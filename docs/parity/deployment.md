@@ -80,6 +80,22 @@ Decisions worth remembering:
   Configuration cannot be unit-tested like the engine, but a template edit that weakens a default now
   fails the build. `helm lint` and `kubeconform` schema validation run alongside it.
 
+**A PVC undoes the image's own answer to arbitrary UIDs, and the chart does not set `fsGroup`.**
+The Dockerfile makes `/work` group-writable (`chmod -R g=u`) precisely so any UID in group 0 can use
+it — which is what the non-root section above buys. Mounting a PVC there *replaces* that directory
+with a freshly provisioned one, `root:root 0755`, and group 0 can only read it. Reproduced
+deliberately outside Kubernetes to be sure it was the ownership and not the application: an empty
+volume chowned to `root:root 0755`, entered as an arbitrary high UID with GID 0, refuses `touch` with
+`Permission denied`; give the same volume a group the process carries and it writes, the host starts,
+and stubs survive replacing the container.
+
+In practice OpenShift closes this itself — `restricted-v2` injects an `fsGroup` from the namespace's
+`openshift.io/sa.scc.supplemental-groups` range and the kubelet chowns the volume to match — which is
+why the chart carries none and why nothing has failed. The gap is that "usually" is doing real work in
+that sentence: on a cluster whose SCC does not inject one, the pod runs, the probes pass, and the
+first write fails. Setting `podSecurityContext.fsGroup` from that range removes the guess, and the
+README now says so beside the `helm install` line rather than leaving it to be discovered.
+
 **Deferred:** HPA guidance. The ServiceMonitor shipped with the metrics endpoint (#246), and the
 NetworkPolicy and PodDisruptionBudget shipped in #397 — see below.
 

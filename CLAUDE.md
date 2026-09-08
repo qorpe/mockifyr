@@ -73,6 +73,26 @@ WireMock**, never by self-assessment.
 
 ---
 
+## 2a. The agent layer (`.claude/`)
+
+Added 2026-09-08 from the family's delivery-cycle RFC (goldpath `docs/rfc/goldpath-delivery-cycle-v1.md`).
+It does NOT introduce a second rule book: §3, §3a and §3b below stay the rules, and
+`.claude/skills/mockifyr-change` enforces their SEQUENCE while adding the three steps the loop
+here does not have —
+
+- **prove the cause before touching code** when the change is a defect rather than a roadmap
+  item (§3 is roadmap-shaped and has no defect path),
+- **prove the test fails** by putting the fault back after the fix, not only before it, and
+- **watch the as-is**: is an existing test now asserting the old contract, did a field's
+  meaning change while its name did not.
+
+`.claude/hooks/stop-gate.sh` will not let a turn end on a red build or a red `docs-guard` /
+`kit-freshness`. It builds only the projects whose files changed, deliberately: a full solution
+build on every turn end is slow enough that the hook would be deleted, and a deleted gate is
+worse than an absent one.
+
+---
+
 ## 3. The development loop (per roadmap item)
 
 Every item in [docs/roadmap.md](docs/roadmap.md) is developed the same way:

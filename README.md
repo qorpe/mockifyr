@@ -192,6 +192,28 @@ PVC, Ingress and OpenShift Route, with credentials and crypto keys injected from
 helm install mockifyr deploy/helm/mockifyr --set persistence.enabled=true
 ```
 
+**With persistence on, prove the volume is writable rather than assuming it.** The image makes `/work`
+group-writable so any UID in group 0 can use it, but a PVC mounted there *replaces* that directory
+with a freshly provisioned one — `root:root 0755`, which group 0 can only read. OpenShift normally
+closes the gap itself: `restricted-v2` injects an `fsGroup` from the namespace's range and the kubelet
+chowns the volume to match. It usually just works, and it costs one command to know instead of
+finding out later from a write that fails:
+
+```
+oc rsh deploy/mockifyr touch /work/probe && echo WRITABLE
+```
+
+If it does not, the chart has no `fsGroup` of its own to fall back on — read the namespace's allowed
+range and pass a value from inside it:
+
+```
+oc get ns <namespace> \
+  -o jsonpath='{.metadata.annotations.openshift\.io/sa\.scc\.supplemental-groups}'
+
+helm upgrade mockifyr deploy/helm/mockifyr \
+  --set persistence.enabled=true --set podSecurityContext.fsGroup=<first-number-of-that-range>
+```
+
 ### Backup and restore
 
 `GET /__admin/backup` produces one archive of everything a tenant's operator authored — stubs,
