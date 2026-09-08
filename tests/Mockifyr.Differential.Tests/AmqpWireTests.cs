@@ -287,6 +287,7 @@ public sealed class AmqpWireTests(RabbitFixture fixture) : IClassFixture<RabbitF
 
     private static async Task<JsonElement> WaitForMessageAsync(HttpClient client, string? tenant = null)
     {
+        var started = DateTimeOffset.UtcNow;
         for (var attempt = 0; attempt < 90; attempt++)
         {
             var messages = await MessagesAsync(client, tenant);
@@ -298,7 +299,11 @@ public sealed class AmqpWireTests(RabbitFixture fixture) : IClassFixture<RabbitF
             await Task.Delay(500);
         }
 
-        throw new InvalidOperationException("no message reached the inbox");
+        // Same reasoning as the Kafka suite: report what was seen, not merely that nothing was.
+        var all = await MessagesAsync(client);
+        throw new InvalidOperationException(
+            $"no message reached the inbox after {(DateTimeOffset.UtcNow - started).TotalSeconds:F0}s " +
+            $"(tenant filter: {tenant ?? "<none>"}; messages visible without the filter: {all.Count})");
     }
 
     private static async Task<List<JsonElement>> MessagesAsync(HttpClient client, string? tenant = null)
