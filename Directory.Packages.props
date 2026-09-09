@@ -35,7 +35,7 @@
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
     <!-- gRPC facade (G13). Google.Protobuf drives generic protobuf <-> JSON via the descriptor;
          Grpc.AspNetCore hosts the gRPC endpoint. Used only inside Mockifyr.Facade.Grpc. -->
-    <PackageVersion Include="Google.Protobuf" Version="3.36.0" />
+    <PackageVersion Include="Google.Protobuf" Version="3.36.1" />
     <PackageVersion Include="Grpc.AspNetCore" Version="2.80.0" />
     <PackageVersion Include="Grpc.Tools" Version="2.83.0" />
     <!-- SMTP capture facade (G18b, ADR 0009). MimeKit parses the DATA payload into a MessageEnvelope;
@@ -68,7 +68,7 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <!-- Differential harness: runs the real Java WireMock oracle in a container. -->
-    <PackageVersion Include="Testcontainers" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers" Version="4.15.0" />
     <!-- Transitive pin, not a reference: Testcontainers 4.13.0 pulls SSH.NET 2025.1.0, which carries
          GHSA-q939-rpr3-3284 (an SCP recursive download can write outside the target directory when the
          server chooses the filenames). Nothing here uses SCP and the package never ships — it reaches
@@ -79,13 +79,13 @@
     <!-- In-memory test host for the admin HTTP facade differential (G7b). -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
     <!-- Real PostgreSQL container for the persistence differential (G16c). -->
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.15.0" />
     <!-- Real Redis container for the persistence differential (G16d). -->
-    <PackageVersion Include="Testcontainers.Redis" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.15.0" />
     <!-- The broker channel's integration harness (ADR 0013): a real Kafka, driven by the official
          client, because a mock broker proving a mock works would prove nothing. -->
-    <PackageVersion Include="Testcontainers.Kafka" Version="4.14.0" />
-    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.Kafka" Version="4.15.0" />
+    <PackageVersion Include="Testcontainers.RabbitMq" Version="4.15.0" />
     <!-- gRPC client to drive the G13 differential against both sides. -->
     <PackageVersion Include="Grpc.Net.Client" Version="2.83.0" />
 
