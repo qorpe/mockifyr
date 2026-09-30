@@ -227,9 +227,9 @@ public sealed class G19dApiKeyTests
     [Fact]
     public void A_configured_prefix_marks_new_tokens()
     {
-        var (token, _, _) = ApiKeyMaterial.Generate("dfx_");
+        var (token, _, _) = ApiKeyMaterial.Generate("acme_");
 
-        Assert.StartsWith("dfx_", token, StringComparison.Ordinal);
+        Assert.StartsWith("acme_", token, StringComparison.Ordinal);
         Assert.DoesNotContain("mfk_", token, StringComparison.Ordinal);
     }
 
@@ -250,16 +250,16 @@ public sealed class G19dApiKeyTests
         // The fragment is how an operator tells two keys apart in a list. Counted from the start of
         // the token, a ten-character marker would leave two random characters and two keys could show
         // the same fragment — so it is counted from the random part instead.
-        var (token, _, _) = ApiKeyMaterial.Generate("dfxsandbox_");
-        var fragment = ApiKeyMaterial.DisplayPrefix(token, "dfxsandbox_");
+        var (token, _, _) = ApiKeyMaterial.Generate("acmesandbox_");
+        var fragment = ApiKeyMaterial.DisplayPrefix(token, "acmesandbox_");
 
-        Assert.StartsWith("dfxsandbox_", fragment, StringComparison.Ordinal);
-        Assert.Equal("dfxsandbox_".Length + 8, fragment.Length);
+        Assert.StartsWith("acmesandbox_", fragment, StringComparison.Ordinal);
+        Assert.Equal("acmesandbox_".Length + 8, fragment.Length);
     }
 
     [Theory]
     [InlineData("mfk_")]
-    [InlineData("dfx_")]
+    [InlineData("acme_")]
     [InlineData("k")]
     // Every boundary of every range in one prefix: a and z, A and Z, 0 and 9. Without it the six
     // comparisons could each be off by one and every test would still pass.
@@ -279,9 +279,9 @@ public sealed class G19dApiKeyTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("dfx key_")]        // a quoted flag with a space in it
-    [InlineData("dfx.")]            // '.' is not a token character here
-    [InlineData("dfx/")]
+    [InlineData("acme key_")]        // a quoted flag with a space in it
+    [InlineData("acme.")]            // '.' is not a token character here
+    [InlineData("acme/")]
     [InlineData("anahtar_öneki")]   // non-ASCII
     [InlineData("aaaaaaaaaaaaa")]   // 13 characters: a marker, not a token
     public void Prefix_validation_refuses_the_rest(string prefix)

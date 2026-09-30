@@ -59,7 +59,7 @@ docker run -p 8080:8080 -v "$PWD/mappings:/work/mappings" ghcr.io/qorpe/mockifyr
 #   PowerShell:  -v "${PWD}/mappings:/work/mappings"       CMD:  -v "%cd%/mappings:/work/mappings"
 ```
 
-Files load into the **default tenant**; for a named tenant (e.g. `maestro`) use the dashboard **Import**,
+Files load into the **default tenant**; for a named tenant (e.g. `acme`) use the dashboard **Import**,
 or POST to `/__admin/mappings/import` with an `X-Mockifyr-Tenant` header. Durable datastores:
 
 ```bash

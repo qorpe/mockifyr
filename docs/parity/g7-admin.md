@@ -534,7 +534,7 @@ them with the rest of their packaging.
 
 **Validation.** `BrandOptionsTests` (16 unit cases, **Stryker 100 %**) and `BrandingWireTests`
 (13 wire cases against a real host with a real shell on disk), plus an observability case asserting
-that a renamed host publishes `dfx_mockapi_requests_served` and **no longer** publishes
+that a renamed host publishes `acme_mock_requests_served` and **no longer** publishes
 `mockifyr_requests_served` — a scrape carrying both would double-count, and one silently keeping the
 old name would make the flag look applied when it was not.
 

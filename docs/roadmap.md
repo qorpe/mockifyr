@@ -387,7 +387,7 @@ Delivered in phased, build-green PRs.
 
 - [x] **UI-P0** Foundation + app shell — React 19 + TS + Vite + Tailwind v4 + shadcn/ui (Radix).
   Token-first design system (near-black accent, one-file re-skin), class-driven dark mode, 6 locales
-  incl. RTL (react-i18next). Praxis-style shell: pill nav, segmented tabs, rounded auto-scroll surface,
+  incl. RTL (react-i18next). an app shell with: pill nav, segmented tabs, rounded auto-scroll surface,
   collapsible sidebar (icon rail + tooltips), bottom profile menu (language + dark mode). Dashboard page
   with KPI cards. `pnpm build` green; `dotnet build` unaffected. See `ui/README.md`.
 - [x] **UI-P1a** Stubs data-grid + tenant switcher — TanStack Table (sortable columns, URL filter,

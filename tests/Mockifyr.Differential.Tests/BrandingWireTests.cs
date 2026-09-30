@@ -86,7 +86,7 @@ public sealed class BrandingWireTests : IAsyncLifetime
     public async Task The_configured_identity_reaches_the_shell()
     {
         var (host, client) = await StartAsync(
-            "--brand-name", "dfx-mockapi",
+            "--brand-name", "acme-mock",
             "--brand-subtitle", "Integration Sandbox",
             "--support-url", "https://example.invalid/help",
             "--brand-logo", _logo);
@@ -95,7 +95,7 @@ public sealed class BrandingWireTests : IAsyncLifetime
 
         var config = ConfigIn(await client.GetStringAsync("/__mockifyr/"));
 
-        Assert.Equal("dfx-mockapi", config.GetProperty("brandName").GetString());
+        Assert.Equal("acme-mock", config.GetProperty("brandName").GetString());
         Assert.Equal("Integration Sandbox", config.GetProperty("brandSubtitle").GetString());
         Assert.Equal("https://example.invalid/help", config.GetProperty("supportUrl").GetString());
         // A URL, not the operator's filesystem path — the browser cannot read the latter and has no
@@ -172,13 +172,13 @@ public sealed class BrandingWireTests : IAsyncLifetime
     {
         // The title is baked into the built shell rather than rendered by the app, so a host branded
         // everywhere else still announced the product name in every tab. Found by running it.
-        var (host, client) = await StartAsync("--brand-name", "dfx-mockapi", "--brand-subtitle", "Sandbox");
+        var (host, client) = await StartAsync("--brand-name", "acme-mock", "--brand-subtitle", "Sandbox");
         using var _ = host;
         using var __ = client;
 
         var shell = await client.GetStringAsync("/__mockifyr/");
 
-        Assert.Contains("<title>dfx-mockapi — Sandbox</title>", shell, StringComparison.Ordinal);
+        Assert.Contains("<title>acme-mock — Sandbox</title>", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("<title>d</title>", shell, StringComparison.Ordinal);
     }
 
@@ -197,12 +197,12 @@ public sealed class BrandingWireTests : IAsyncLifetime
     {
         // The dashboard's status line and Settings screen render this. A literal here would have left
         // the product name at the bottom of every page of an otherwise branded host.
-        var (host, client) = await StartAsync("--brand-name", "dfx-mockapi");
+        var (host, client) = await StartAsync("--brand-name", "acme-mock");
         using var _ = host;
         using var __ = client;
 
         var health = JsonDocument.Parse(await client.GetStringAsync("/__admin/health")).RootElement;
-        Assert.Equal("dfx-mockapi", health.GetProperty("name").GetString());
+        Assert.Equal("acme-mock", health.GetProperty("name").GetString());
     }
 
     [Fact]

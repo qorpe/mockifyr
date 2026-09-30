@@ -1,4 +1,4 @@
-// Client-side faceted filtering shared by every list/table screen. Semantics mirror the Praxis filter
+// Client-side faceted filtering shared by every list/table screen. Semantics follow the usual faceted filter
 // model: within a single facet the selected values are OR'd; across different facets they are AND'd; a
 // free-text term (committed on Enter) additionally requires a substring match on the row's search field.
 //
