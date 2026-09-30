@@ -194,7 +194,7 @@ public sealed class ApiKeyPrefixWireTests : IAsyncLifetime
         Directory.CreateDirectory(_root);
         _host = MockifyrHost.Build([
             "--port", "0", "--sandbox-auth", "true", "--admin-user", "op", "--admin-pass", "secret",
-            "--root-dir", _root, "--api-key-prefix", "dfx_",
+            "--root-dir", _root, "--api-key-prefix", "acme_",
         ]);
         await _host.StartAsync();
         var address = _host.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses
@@ -228,10 +228,10 @@ public sealed class ApiKeyPrefixWireTests : IAsyncLifetime
         var body = JsonDocument.Parse(await issued.Content.ReadAsStringAsync()).RootElement;
         var token = body.GetProperty("key").GetString()!;
 
-        Assert.StartsWith("dfx_", token, StringComparison.Ordinal);
+        Assert.StartsWith("acme_", token, StringComparison.Ordinal);
         Assert.DoesNotContain("mfk_", token, StringComparison.Ordinal);
         // The stored fragment follows too — it is what the operator sees in the list from now on.
-        Assert.StartsWith("dfx_", body.GetProperty("prefix").GetString()!, StringComparison.Ordinal);
+        Assert.StartsWith("acme_", body.GetProperty("prefix").GetString()!, StringComparison.Ordinal);
 
         // And it actually works: a renamed marker that did not authenticate would be a cosmetic change
         // that broke the feature it decorates.
@@ -246,7 +246,7 @@ public sealed class ApiKeyPrefixWireTests : IAsyncLifetime
     public void A_malformed_marker_is_refused_at_startup()
     {
         var thrown = Assert.Throws<InvalidOperationException>(() => MockifyrHost.Build(
-            ["--port", "0", "--https-port", "0", "--api-key-prefix", "dfx key_"]));
+            ["--port", "0", "--https-port", "0", "--api-key-prefix", "acme key_"]));
 
         Assert.Contains("letters, digits", thrown.Message, StringComparison.Ordinal);
     }

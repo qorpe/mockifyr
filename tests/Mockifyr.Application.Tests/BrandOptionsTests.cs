@@ -79,7 +79,7 @@ public sealed class BrandOptionsTests
     [InlineData("/__mockapi")]
     [InlineData("/ui")]
     [InlineData("/a")]
-    [InlineData("/dfx-console")]
+    [InlineData("/acme-console")]
     public void A_single_leading_slash_segment_is_mountable(string path)
     {
         Assert.True(DashboardOptions.IsMountable(path));
