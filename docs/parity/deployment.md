@@ -170,6 +170,18 @@ old package removed. Verified in the browser afterwards, because a routing libra
 the change that type-checks and builds while breaking navigation: routes render, sidebar links
 navigate, and the tree/badges are intact.
 
+**The runtime stage upgrades the OS before it installs anything (2026-10).** The aspnet tag is
+refreshed on Microsoft's cadence, not Ubuntu's, so with `ignore-unfixed` on, a fix Ubuntu had already
+published but the tag did not yet carry (`libssl3t64`/`openssl`, CVE-2026-84782) failed every PR until
+the next base refresh. An `apt-get upgrade` in the runtime stage makes the scan answer for what Ubuntu
+has fixed rather than for when the base was last rebuilt. The same month, two advisories needed
+transitive lifts rather than parent bumps, because no parent release carried the fix yet:
+`System.Security.Cryptography.Pkcs` 10.0.13 (via MimeKit; a central `PackageVersion` pin) and
+`source-map-js` 1.2.2 (via `@tailwindcss/node` and postcss; a pnpm `overrides` entry). Both come out
+once their parents resolve the fixed version on their own: the Pkcs pin's comment says so, and the
+override (JSON carries no comment) is scoped to `source-map-js@<1.2.2`, so it stops matching anything
+the moment the tree no longer asks for an older one.
+
 
 ## Observability (#246)
 

@@ -30,7 +30,13 @@ RUN case "$TARGETARCH" in \
 # ---- Stage 3: runtime (pulled for the target arch automatically) ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 # git backs the optional --git-remote sync (ADR 0007); hosts without the flag never invoke it.
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+# The upgrade first: the aspnet tag is refreshed on Microsoft's cadence, not Ubuntu's, so it can trail
+# the noble-security pocket by days. A fix Ubuntu has already published (libssl3t64/openssl
+# 3.0.13-0ubuntu3.16, CVE-2026-84782) is a fix the scan rightly expects the shipped image to carry, and
+# waiting for the next base refresh left every PR red in the meantime.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app ./

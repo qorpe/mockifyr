@@ -8,6 +8,16 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Security
+
+- **`System.Security.Cryptography.Pkcs`** lifted to 10.0.13 past GHSA-846f-f764-76mx (high) and
+  GHSA-2fmv-rv2c-59x7 (moderate). It reaches the server transitively through MimeKit, so it ships.
+- **The image's OS packages are upgraded at build time**, so a fix Ubuntu has published reaches the
+  image without waiting for the next aspnet base refresh. The first one it carries is `libssl3t64`/
+  `openssl` 3.0.13-0ubuntu3.16 (CVE-2026-84782).
+- **`source-map-js`** lifted to 1.2.2 past GHSA-68fv-2mgg-jv7q (dashboard build toolchain only;
+  nothing of it ships in the bundle).
+
 ## Released
 
 ### [v1.19.1](https://github.com/qorpe/mockifyr/releases/tag/v1.19.1) — 2026-08-27
