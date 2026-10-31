@@ -10,6 +10,11 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Security
 
+- **`image-size`** in the demo deck generator (`demo/`) lifted from 1.2.1 to 2.0.4, past GHSA-5p2g-fcmc-qvqq and
+  GHSA-w3rx-r6r6-pgpr (both high: parser denial of service). `pptxgenjs` 4.0.1, still the newest release, pins
+  `^1.2.1`, so the demo's `package.json` carries an exact `pnpm.overrides` entry. pptxgenjs declares the package but
+  never loads it (its only call site is commented out), and the regenerated deck is unchanged. Demo tooling only:
+  nothing of it ships in the server or the image.
 - **`System.Security.Cryptography.Pkcs`** lifted to 10.0.13 past GHSA-846f-f764-76mx (high) and
   GHSA-2fmv-rv2c-59x7 (moderate). It reaches the server transitively through MimeKit, so it ships.
 - **The image's OS packages are upgraded at build time**, so a fix Ubuntu has published reaches the
