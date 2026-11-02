@@ -16,7 +16,7 @@
     <!-- JSON Schema validation for matchesJsonSchema (G1h). json-everything's JsonSchema.Net is the
          MIT-licensed .NET validator with Draft 6/7/2019-09/2020-12 support. Used only inside
          Mockifyr.Matching. -->
-    <PackageVersion Include="JsonSchema.Net" Version="9.5.0" />
+    <PackageVersion Include="JsonSchema.Net" Version="9.6.0" />
     <!-- GraphQL query normalization for the GraphQL matcher (G14). GraphQL-Parser is graphql-dotnet's
          lexer/parser/printer; used only inside Mockifyr.Matching. -->
     <PackageVersion Include="GraphQL-Parser" Version="9.5.1" />
@@ -37,7 +37,7 @@
          Grpc.AspNetCore hosts the gRPC endpoint. Used only inside Mockifyr.Facade.Grpc. -->
     <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
     <PackageVersion Include="Grpc.AspNetCore" Version="2.80.0" />
-    <PackageVersion Include="Grpc.Tools" Version="2.84.0" />
+    <PackageVersion Include="Grpc.Tools" Version="2.85.0" />
     <!-- SMTP capture facade (G18b, ADR 0009). MimeKit parses the DATA payload into a MessageEnvelope;
          MIT-licensed, used only inside Mockifyr.Facade.Smtp — Core never sees MIME. -->
     <PackageVersion Include="MimeKit" Version="4.18.2" />
@@ -48,7 +48,7 @@
          this line once MimeKit pulls 10.0.13 or later itself. -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- Real SMTP client for the G18b self-test (no oracle exists: WireMock has no SMTP). Tests only. -->
-    <PackageVersion Include="MailKit" Version="4.17.0" />
+    <PackageVersion Include="MailKit" Version="4.18.2" />
     <!-- Official Twilio SDK for the G18d self-test: the SDK must accept our provider-profile responses.
          Tests only — the shipped profile emulates the wire format without any Twilio dependency. -->
     <PackageVersion Include="Twilio" Version="8.1.0" />
@@ -60,7 +60,7 @@
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <!-- Key-value persistence provider (G16d). StackExchange.Redis is the .NET Redis client; used only
          inside Mockifyr.Server behind the IStubPersistence seam. -->
-    <PackageVersion Include="StackExchange.Redis" Version="3.4.20" />
+    <PackageVersion Include="StackExchange.Redis" Version="3.4.29" />
   </ItemGroup>
 
   <ItemGroup Label="Testing / harness">
@@ -93,7 +93,7 @@
     <PackageVersion Include="Testcontainers.Kafka" Version="4.16.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.16.0" />
     <!-- gRPC client to drive the G13 differential against both sides. -->
-    <PackageVersion Include="Grpc.Net.Client" Version="2.84.0" />
+    <PackageVersion Include="Grpc.Net.Client" Version="2.85.0" />
 
     <!-- Observability (#246). The OTLP exporter is the shipped default; the Prometheus scrape
          endpoint is opt-in behind a flag. Prometheus's ASP.NET exporter is still pre-release
