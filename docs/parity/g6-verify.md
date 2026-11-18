@@ -76,5 +76,19 @@ Verified WireMock verification behaviors against the oracle (`wiremock/wiremock:
   and the bare 404) and `NearMissAttributeTests` (22 unit cases covering every slot the dialect has).
   **Stryker: no survivors in the new logic**; the 18 remaining in `StubEngine.cs` are pre-existing and
   outside this change.
+- **The consumer's side (#457).** The question is asked first by the person whose call failed, and that
+  person holds a sandbox key, not an admin credential. `GET /__sandbox/requests/{id}/near-misses` gives
+  them the same ranking and attribution for their own journaled request — and, per tenant and only when
+  the host names it (`--explain-unmatched <tenant>`), the unmatched 404 carries the same summary as an
+  RFC 9457 problem document with a link to that route. **The decision above still holds by default:** a
+  tenant the host does not name — every tenant, unless configured — keeps the bare 404, asserted from both
+  sides, so the differential suite proves exactly what it proved before. The consumer's shape
+  (`ConsumerNearMiss`) is deliberately narrower than the operator's: distance and attributes, never the
+  stub's id and never its `expected` request block, because an operator may have written a credential into
+  a matcher (`equalTo` on an API key, `basicAuth`), and the caller who did not match is exactly who must not
+  be shown it. The explanatory 404 is computed from the **journaled** request, so journal masking (#227)
+  holds there too: a masked header a stub matches on is explained as `***`, never echoed. With the journal
+  disabled there is no entry to link to, so the link and the request id are left out and the live request
+  is explained. Validated by `UnmatchedExplanationTests` (9 wire cases) and the Core unit cases.
 - **Still deferred:** the reference engine's verbose 404 diagnostic body. Serving one would change a
   response the differential suite pins, so it stays a documented difference rather than a divergence.

@@ -157,6 +157,7 @@ The common flags, with the [full reference](https://mockifyr.qorpe.com/cli/) on 
 | `--mask-headers <names>` | keep named header values out of the journal entirely (comma-separated, case-insensitive) — e.g. `Authorization,Cookie,X-Api-Key` |
 | `--mask-body-fields <names>` | keep named JSON body fields out of the journal (any depth, arrays included) — e.g. `pan,cvv,password` |
 | `--journal-limit <n>` | per-tenant request-journal bound (default 1000, oldest evicted first; `<=0` = unbounded). `--max-request-journal-entries` is a kept alias |
+| `--explain-unmatched <tenant>` | repeatable — that tenant's unmatched requests are answered `404` with a problem document naming the closest stubs and which attributes differed (never a stub's id or expected values), and a link to `/__sandbox/requests/{id}/near-misses`; every other tenant keeps the bare `404` (#457) |
 | `--journal-disabled` | record nothing in the request journal (load tests); `--no-request-journal` is a kept alias |
 | `--resource-limit <n>` | per-collection sandbox document bound (default 1000, oldest evicted first) |
 | `--resource-max-body <bytes>` | per-document body cap for `/__admin/resources` (default 1 MiB; 413 beyond it) |
