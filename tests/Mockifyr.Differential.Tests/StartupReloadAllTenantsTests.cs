@@ -60,6 +60,81 @@ public abstract class StartupReloadAllTenantsFacts
         Assert.Equal(HttpStatusCode.NotFound, stranger.StatusCode);
     }
 
+    /// <summary>The id the client chose, shared by two tenants: the same mapping file imported into both.</summary>
+    protected const string SharedId = "6f1c1b7e-2d3a-4b5c-9e8f-0a1b2c3d4e5f";
+
+    /// <summary>A stub that carries its own id, as an imported mapping file or export bundle does.</summary>
+    protected static string StubWithId(string id, string body) =>
+        "{\"id\":\"" + id + "\",\"request\":{\"method\":\"GET\",\"url\":\"/t\"},\"response\":{\"status\":200,\"body\":\"" + body + "\"}}";
+
+    [Fact]
+    public async Task Two_tenants_holding_the_same_stub_id_both_serve_their_own_after_a_restart()
+    {
+        // #466, verifier on #468: a row keyed by the stub id alone let the second tenant's write take the first's.
+        await using (var first = await StartHostAsync())
+        {
+            using var client = Client(first);
+            foreach (var tenant in new[] { "acme", "globex", null })
+            {
+                using var created = await SendAsync(client, HttpMethod.Post, "/__admin/mappings", tenant, StubWithId(SharedId, tenant ?? "default"));
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            }
+        }
+
+        await using var second = await StartHostAsync();
+        using var fresh = Client(second);
+        foreach (var tenant in new[] { "acme", "globex", null })
+        {
+            using var served = await SendAsync(fresh, HttpMethod.Get, "/t", tenant);
+            Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+            Assert.Equal(tenant ?? "default", await served.Content.ReadAsStringAsync());
+        }
+    }
+
+    [Fact]
+    public async Task A_tenant_that_edits_or_deletes_its_copy_of_a_shared_stub_id_leaves_the_other_tenants_copy_alone()
+    {
+        await using (var first = await StartHostAsync())
+        {
+            using var client = Client(first);
+            foreach (var tenant in new[] { "acme", "globex" })
+            {
+                using var created = await SendAsync(client, HttpMethod.Post, "/__admin/mappings", tenant, StubWithId(SharedId, tenant));
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            }
+
+            // globex edits its copy, then deletes it; acme's copy must come back untouched.
+            using var edited = await SendAsync(client, HttpMethod.Put, "/__admin/mappings/" + SharedId, "globex", StubWithId(SharedId, "globex-2"));
+            Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+            using var deleted = await SendAsync(client, HttpMethod.Delete, "/__admin/mappings/" + SharedId, "globex");
+            Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        }
+
+        await using var second = await StartHostAsync();
+        using var fresh = Client(second);
+        using var acme = await SendAsync(fresh, HttpMethod.Get, "/t", "acme");
+        Assert.Equal(HttpStatusCode.OK, acme.StatusCode);
+        Assert.Equal("acme", await acme.Content.ReadAsStringAsync());
+        using var globex = await SendAsync(fresh, HttpMethod.Get, "/t", "globex");
+        Assert.Equal(HttpStatusCode.NotFound, globex.StatusCode);
+    }
+
+    /// <summary>Starts a host on the backend and asserts <paramref name="tenant"/> serves <paramref name="body"/>.</summary>
+    protected async Task AssertServesAfterStartAsync(string tenant, string body)
+    {
+        await using var host = await StartHostAsync();
+        using var client = Client(host);
+        using var served = await SendAsync(client, HttpMethod.Get, "/t", tenant);
+        Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+        Assert.Equal(body, await served.Content.ReadAsStringAsync());
+
+        // The migrated row is keyed per tenant now: another tenant may take the same id without moving it.
+        using var created = await SendAsync(client, HttpMethod.Post, "/__admin/mappings", "other", StubWithId(SharedId, "other"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        using var still = await SendAsync(client, HttpMethod.Get, "/t", tenant);
+        Assert.Equal(body, await still.Content.ReadAsStringAsync());
+    }
+
     private async Task<WebApplication> StartHostAsync()
     {
         var app = MockifyrHost.Build(["--port", "0", .. BackendArguments()]);
@@ -103,6 +178,27 @@ public sealed class StartupReloadAllTenantsPostgresTests : StartupReloadAllTenan
     public async Task DisposeAsync() => await _postgres.DisposeAsync();
 
     protected override string[] BackendArguments() => ["--postgres", _postgres.GetConnectionString()];
+
+    [Fact]
+    public async Task A_table_keyed_by_the_stub_id_alone_is_rekeyed_by_tenant_on_startup_and_its_rows_kept()
+    {
+        // The shape every Postgres deployment before #466 has: PRIMARY KEY (id), with a row in it.
+        await using (var connection = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString()))
+        {
+            await connection.OpenAsync();
+            await using var command = new Npgsql.NpgsqlCommand(
+                "CREATE TABLE stubs (id uuid PRIMARY KEY, tenant text NOT NULL, json text NOT NULL); " +
+                "INSERT INTO stubs (id, tenant, json) VALUES (@id, 'acme', @json)", connection);
+            command.Parameters.AddWithValue("id", Guid.Parse(SharedId));
+            command.Parameters.AddWithValue("json", StubWithId(SharedId, "legacy"));
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await AssertServesAfterStartAsync("acme", "legacy");
+
+        // Re-runnable: a second start on the migrated table changes nothing and still serves.
+        await AssertServesAfterStartAsync("acme", "legacy");
+    }
 }
 
 /// <summary><see cref="StartupReloadAllTenantsFacts"/> on Redis.</summary>
@@ -125,4 +221,22 @@ public sealed class StartupReloadAllTenantsLiteDbTests : StartupReloadAllTenants
     public void Dispose() => _dir.Delete(recursive: true);
 
     protected override string[] BackendArguments() => ["--litedb", Path.Combine(_dir.FullName, "mockifyr.db")];
+
+    [Fact]
+    public async Task A_document_keyed_by_the_stub_id_alone_is_rekeyed_by_tenant_on_startup_and_kept()
+    {
+        // The shape every LiteDB file before #466 has: the document key is the bare stub id.
+        using (var database = new LiteDB.LiteDatabase(Path.Combine(_dir.FullName, "mockifyr.db")))
+        {
+            database.GetCollection("stubs").Insert(new LiteDB.BsonDocument
+            {
+                ["_id"] = Guid.Parse(SharedId),
+                ["Tenant"] = "acme",
+                ["Json"] = StubWithId(SharedId, "legacy"),
+            });
+        }
+
+        await AssertServesAfterStartAsync("acme", "legacy");
+        await AssertServesAfterStartAsync("acme", "legacy");
+    }
 }

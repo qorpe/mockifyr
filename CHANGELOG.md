@@ -16,6 +16,12 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   until something re-imported it. Startup now loads every tenant from a backend that spans tenants, each
   under its own, as the change-feed reload already did. LiteDB gained the same all-tenant read. `--root-dir`
   still reloads the default tenant only (#467).
+- **Postgres and LiteDB key a persisted stub by its tenant and its id (#466).** Both keyed it by the stub id
+  alone, so when two tenants held the same id (the same mapping file imported into both), the second tenant's
+  write took the first's row and its delete removed it, and after a restart the first tenant had nothing.
+  Saves, edits and deletes are now scoped to the tenant. Existing data is migrated at startup, re-runnably:
+  Postgres's primary key becomes `(tenant, id)`, and LiteDB's documents are re-keyed `tenant|id`. Redis was
+  not affected.
 
 ### Security
 

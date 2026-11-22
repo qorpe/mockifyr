@@ -183,8 +183,32 @@ the same seam.
   `--change-feed`, so only startup can load them. Each tenant then serves its own stub and lists exactly one,
   and a tenant that never had stubs still answers 404. On `main` all three backends answered 404 for `acme`.
   This is coherence infrastructure, so there is no oracle.
+- **The storage key (found verifying #466).** Postgres keyed a stub row by `id` alone (`id uuid PRIMARY KEY`,
+  `ON CONFLICT (id) … SET tenant = @tenant`, `DELETE … WHERE id = @id`), and LiteDB keyed the document by the
+  stub id and deleted by it, ignoring the tenant. The id is the client's choice, so two tenants may hold the
+  same one (the same mapping file or export bundle imported into both). The second tenant's write moved the
+  first's row to itself, and its delete removed the only row: both tenants served until a restart, and then
+  the first had nothing. Once startup reloads every tenant this is a tenant-isolation leak in the
+  persistence layer, reachable by an ordinary scoped write. Redis keeps one hash per tenant and was not
+  affected; the resource and environment stores already keyed by tenant.
+  - **Now** a stub is keyed by `(tenant, id)` on both: Postgres's primary key is `(tenant, id)`, and LiteDB's
+    document key is `tenant|id` (the resource collection's pattern; a Guid has no `|`, so it is unambiguous).
+    Save, edit and delete are scoped to the tenant.
+  - **Existing data is migrated at startup, re-runnably.** Postgres drops a single-column primary key and adds
+    `(tenant, id)` under an advisory lock, so two hosts starting together run it one after the other; LiteDB
+    re-keys every document whose key is still a bare Guid. Every existing row already has a distinct id, so
+    nothing collides, and a second start changes nothing.
+  - **Rule for the class:** every tenant-scoped persisted record is keyed by its tenant together with its own
+    id, on every backend. The global records (tenants, API keys) are keyed by an id that is unique host-wide
+    by construction.
 - **Regression cases:** `StartupReloadAllTenantsPostgresTests`, `StartupReloadAllTenantsRedisTests`,
-  `StartupReloadAllTenantsLiteDbTests` (`A_new_host_serves_every_tenants_stubs_from_the_backend_without_the_change_feed`).
+  `StartupReloadAllTenantsLiteDbTests` (`A_new_host_serves_every_tenants_stubs_from_the_backend_without_the_change_feed`,
+  `Two_tenants_holding_the_same_stub_id_both_serve_their_own_after_a_restart`,
+  `A_tenant_that_edits_or_deletes_its_copy_of_a_shared_stub_id_leaves_the_other_tenants_copy_alone`), and the
+  migrations: `StartupReloadAllTenantsPostgresTests.A_table_keyed_by_the_stub_id_alone_is_rekeyed_by_tenant_on_startup_and_its_rows_kept`,
+  `StartupReloadAllTenantsLiteDbTests.A_document_keyed_by_the_stub_id_alone_is_rekeyed_by_tenant_on_startup_and_kept`.
+  Planting the old key back turns the shared-id facts red on Postgres and LiteDB (`acme` answers 404); planting
+  either migration out turns its fact red.
 
 ## Environments and sandbox resources on the change feed (#279)
 
