@@ -8,6 +8,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Fixed
+
+- **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
+  reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
+  container served none of them: their tenants and API keys came back, and their imported API answered 404
+  until something re-imported it. Startup now loads every tenant from a backend that spans tenants, each
+  under its own, as the change-feed reload already did. LiteDB gained the same all-tenant read. `--root-dir`
+  still reloads the default tenant only (#467).
+
 ### Security
 
 - **`image-size`** in the demo deck generator (`demo/`) lifted from 1.2.1 to 2.0.4, past GHSA-5p2g-fcmc-qvqq and

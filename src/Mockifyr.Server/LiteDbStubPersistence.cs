@@ -50,7 +50,7 @@ public sealed class LiteDbStubPersistence(LiteDatabase database) : IStubPersiste
 /// counterpart, run at startup. Reads the tenant's documents and parses each stored JSON back into a
 /// <see cref="StubMapping"/> (ids are preserved because the JSON was id-stamped when saved).
 /// </summary>
-public sealed class LiteDbMappingsLoader(LiteDatabase database, IMatcherRegistry? matchers = null) : IMappingsLoader
+public sealed class LiteDbMappingsLoader(LiteDatabase database, IMatcherRegistry? matchers = null) : IMappingsLoader, IMultiTenantMappingsLoader
 {
     private readonly ILiteCollection<StoredStub> _stubs =
         database.GetCollection<StoredStub>(LiteDbStubPersistence.Collection);
@@ -62,6 +62,19 @@ public sealed class LiteDbMappingsLoader(LiteDatabase database, IMatcherRegistry
         foreach (var stored in _stubs.Find(row => row.Tenant == tenant.Value))
         {
             stubs.AddRange(MappingJsonReader.Read(stored.Json, tenant, matchers));
+        }
+
+        return stubs;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Every row carries its tenant, so startup reloads them all, each under its own (#466).</remarks>
+    public IReadOnlyList<StubMapping> LoadAllTenants()
+    {
+        var stubs = new List<StubMapping>();
+        foreach (var stored in _stubs.FindAll())
+        {
+            stubs.AddRange(MappingJsonReader.Read(stored.Json, new TenantId(stored.Tenant), matchers));
         }
 
         return stubs;
