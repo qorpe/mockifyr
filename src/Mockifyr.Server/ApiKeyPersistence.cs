@@ -117,7 +117,7 @@ public sealed class LiteDbApiKeyPersistence(LiteDatabase database) : IApiKeyPers
 {
     internal const string Collection = "apikeys";
 
-    private readonly ILiteCollection<StoredApiKey> _rows = database.GetCollection<StoredApiKey>(Collection);
+    private readonly ILiteCollection<StoredApiKey> _rows = LiteDbCollation.EnsureOrdinal(database).GetCollection<StoredApiKey>(Collection);
 
     /// <inheritdoc />
     public void Save(ApiKey key) => _rows.Upsert(new StoredApiKey { Id = key.Id, Json = ApiKeyJson.Serialize(key) });

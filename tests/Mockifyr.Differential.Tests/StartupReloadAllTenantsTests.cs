@@ -119,6 +119,37 @@ public abstract class StartupReloadAllTenantsFacts
         Assert.Equal(HttpStatusCode.NotFound, globex.StatusCode);
     }
 
+    [Fact]
+    public async Task Tenants_whose_names_differ_only_in_case_keep_their_own_stubs_through_a_write_a_reset_and_a_restart()
+    {
+        // Verifier on #468 (P6, P7): LiteDB compared tenants case-insensitively, so ACME's write took acme's stub and
+        // ACME's reset removed it. Tenants are ordinal everywhere else, on every backend.
+        await using (var first = await StartHostAsync())
+        {
+            using var client = Client(first);
+            foreach (var tenant in new[] { "acme", "ACME", "Acme" })
+            {
+                using var created = await SendAsync(client, HttpMethod.Post, "/__admin/mappings", tenant, StubWithId(SharedId, tenant));
+                Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            }
+
+            using var reset = await SendAsync(client, HttpMethod.Post, "/__admin/mappings/reset", "Acme");
+            Assert.True(reset.IsSuccessStatusCode, reset.StatusCode.ToString());
+        }
+
+        await using var second = await StartHostAsync();
+        using var fresh = Client(second);
+        foreach (var tenant in new[] { "acme", "ACME" })
+        {
+            using var served = await SendAsync(fresh, HttpMethod.Get, "/t", tenant);
+            Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+            Assert.Equal(tenant, await served.Content.ReadAsStringAsync());
+        }
+
+        using var gone = await SendAsync(fresh, HttpMethod.Get, "/t", "Acme");
+        Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+    }
+
     /// <summary>Starts a host on the backend and asserts <paramref name="tenant"/> serves <paramref name="body"/>.</summary>
     protected async Task AssertServesAfterStartAsync(string tenant, string body)
     {
@@ -238,5 +269,31 @@ public sealed class StartupReloadAllTenantsLiteDbTests : StartupReloadAllTenants
 
         await AssertServesAfterStartAsync("acme", "legacy");
         await AssertServesAfterStartAsync("acme", "legacy");
+    }
+
+    [Fact]
+    public async Task A_file_with_the_default_case_insensitive_collation_is_rebuilt_ordinal_on_startup_and_keeps_case_variant_tenants_apart()
+    {
+        // A file written before #468 has LiteDB's default collation; its case-variant tenants hold distinct ids.
+        var other = Guid.NewGuid().ToString();
+        using (var database = new LiteDB.LiteDatabase(Path.Combine(_dir.FullName, "mockifyr.db")))
+        {
+            Assert.NotEqual(System.Globalization.CompareOptions.Ordinal, database.Collation.SortOptions);
+            var stubs = database.GetCollection("stubs");
+            stubs.Insert(new LiteDB.BsonDocument { ["_id"] = "acme|" + SharedId, ["Tenant"] = "acme", ["Json"] = StubWithId(SharedId, "lower") });
+            stubs.Insert(new LiteDB.BsonDocument { ["_id"] = "ACME|" + other, ["Tenant"] = "ACME", ["Json"] = StubWithId(other, "upper") });
+        }
+
+        await AssertServesAfterStartAsync("acme", "lower");
+        await AssertServesAfterStartAsync("ACME", "upper");
+
+        // The host's own database is the one the components use, and it is ordinal (wired, not only unit-tested).
+        var app = MockifyrHost.Build(["--port", "0", .. BackendArguments()]);
+        await using (app)
+        {
+            Assert.Equal(
+                System.Globalization.CompareOptions.Ordinal,
+                app.Services.GetRequiredService<LiteDB.LiteDatabase>().Collation.SortOptions);
+        }
     }
 }

@@ -859,7 +859,7 @@ public static class MockifyrHost
         var liteDbPath = builder.Configuration["litedb"];
         if (!string.IsNullOrWhiteSpace(liteDbPath))
         {
-            builder.Services.AddSingleton(_ => new LiteDB.LiteDatabase(liteDbPath));
+            builder.Services.AddSingleton(_ => LiteDbCollation.Open(liteDbPath));
             builder.Services.AddSingleton<IStubPersistence>(sp =>
                 new LiteDbStubPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
             builder.Services.AddSingleton<IMappingsLoader>(sp =>

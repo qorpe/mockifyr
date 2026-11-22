@@ -201,6 +201,23 @@ the same seam.
   - **Rule for the class:** every tenant-scoped persisted record is keyed by its tenant together with its own
     id, on every backend. The global records (tenants, API keys) are keyed by an id that is unique host-wide
     by construction.
+  - **Case-variant names on LiteDB (found verifying #468).** LiteDB 5 opens a file with the current culture and
+    `IgnoreCase`, and that one collation governs the document key and every query comparison in the file. So the
+    keys `acme|<id>` and `ACME|<id>` were one key, and `Tenant == "acme"` matched `ACME` too: one tenant's write,
+    delete or reset took or removed a case-variant tenant's stubs after a restart. The same held for resources
+    (tenant, collection and id), environments (tenant and key) and declared tenants. Postgres (`text =` under its
+    deterministic default collation), Redis (binary keys) and the in-memory store are ordinal.
+  - **Rule for the class (fail-closed):** no LiteDB-backed component reads or writes until its file's collation is
+    ordinal. `LiteDbCollation.EnsureOrdinal` rebuilds a non-ordinal file once (`Rebuild` with an ordinal collation,
+    re-runnable, no document lost, since a case-insensitive file cannot hold two documents that differ only in case)
+    and every LiteDB persistence and loader calls it before taking its collection, so the rule holds for whoever
+    constructs one; the host opens its file through `LiteDbCollation.Open`. A reflection sweep
+    (`Every_component_built_on_a_LiteDB_file_makes_it_ordinal_before_it_uses_it`) finds every type that takes a
+    `LiteDatabase` and fails for one that leaves the file case-insensitive, including components not written yet.
+  - **Regression cases:** `Tenants_whose_names_differ_only_in_case_keep_their_own_stubs_through_a_write_a_reset_and_a_restart`
+    on all three backends; `StartupReloadAllTenantsLiteDbTests.A_file_with_the_default_case_insensitive_collation_is_rebuilt_ordinal_on_startup_and_keeps_case_variant_tenants_apart`;
+    `LiteDbOrdinalCollationTests` (stubs, resources, environments, declared tenants, and `istanbul`/`Istanbul`/`İSTANBUL`/`ıstanbul`
+    under `tr-TR`). Disabling the rebuild turns the LiteDB facts red (8 of them) while Postgres and Redis stay green.
 - **Regression cases:** `StartupReloadAllTenantsPostgresTests`, `StartupReloadAllTenantsRedisTests`,
   `StartupReloadAllTenantsLiteDbTests` (`A_new_host_serves_every_tenants_stubs_from_the_backend_without_the_change_feed`,
   `Two_tenants_holding_the_same_stub_id_both_serve_their_own_after_a_restart`,
