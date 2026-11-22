@@ -859,7 +859,7 @@ public static class MockifyrHost
         var liteDbPath = builder.Configuration["litedb"];
         if (!string.IsNullOrWhiteSpace(liteDbPath))
         {
-            builder.Services.AddSingleton(_ => new LiteDB.LiteDatabase(liteDbPath));
+            builder.Services.AddSingleton(_ => LiteDbCollation.Open(liteDbPath));
             builder.Services.AddSingleton<IStubPersistence>(sp =>
                 new LiteDbStubPersistence(sp.GetRequiredService<LiteDB.LiteDatabase>()));
             builder.Services.AddSingleton<IMappingsLoader>(sp =>
@@ -1639,7 +1639,12 @@ public static class MockifyrHost
         }
     }
 
-    /// <summary>Loads every registered <see cref="IMappingsLoader"/> into the store for the default tenant.</summary>
+    /// <summary>
+    /// Loads every registered <see cref="IMappingsLoader"/> into the store: a loader whose backend spans tenants
+    /// (<see cref="IMultiTenantMappingsLoader"/> — Postgres, Redis, LiteDB) loads every tenant's stubs, each under its
+    /// own tenant (#466); a single-tenant loader (a mappings directory) loads into the default tenant. The same split
+    /// the change-feed reconciler makes, so startup and a reload cannot disagree about what a backend holds.
+    /// </summary>
     private static void ApplyStartupMappings(WebApplication app)
     {
         var store = app.Services.GetRequiredService<IStubStore>();
@@ -1650,7 +1655,8 @@ public static class MockifyrHost
         var broker = app.Services.GetService<Facade.Broker.IBrokerPublisher>() is not null;
         foreach (var loader in app.Services.GetServices<IMappingsLoader>())
         {
-            foreach (var stub in loader.Load(TenantId.Default))
+            var stubs = loader is IMultiTenantMappingsLoader multi ? multi.LoadAllTenants() : loader.Load(TenantId.Default);
+            foreach (var stub in stubs)
             {
                 store.Put(stub);
                 if (stub.Source is { } source)

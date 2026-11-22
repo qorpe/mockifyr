@@ -30,7 +30,8 @@ the same seam.
   restart.
 - **Deferred (explicitly tracked — not a silent gap):** multi-tenant persistence *reload* (non-default
   tenants are written to per-tenant subdirectories, but startup only reloads the default tenant's
-  flat dir); WireMock's `persistent:false` opt-out (all admin mutations persist when a root-dir is
+  flat dir — still open for this provider alone, [#467](https://github.com/qorpe/mockifyr/issues/467); the
+  database backends reload every tenant since #466, see "Startup reload covers every tenant" below); WireMock's `persistent:false` opt-out (all admin mutations persist when a root-dir is
   set); and the other providers — **LiteDB (G16b), Postgres (G16c), Redis (G16d)** — plus
   **change-feed reload (G16e)**, each behind this same seam.
 - **Regression cases:** `G16aPersistenceTests.CreatedStub_SurvivesRestart_AndMatchesOracle`,
@@ -54,7 +55,8 @@ the same seam.
   response matches the oracle. Delete + reset stay gone after a restart.
 - **Deferred (tracked):** the remaining providers — **Postgres (G16c), Redis (G16d)** — and
   **change-feed reload (G16e)**, plus the multi-tenant-reload / `persistent:false` items noted under
-  G16a.
+  G16a. (LiteDB's own multi-tenant reload closed in #466: every row carries its tenant, and startup now
+  loads them all.)
 - **Regression cases:** `G16bLiteDbPersistenceTests.CreatedStub_SurvivesRestart_AndMatchesOracle`,
   `G16bLiteDbPersistenceTests.DeletedStub_And_Reset_StayGoneAfterRestart`.
 
@@ -156,6 +158,88 @@ the same seam.
   resolution is still a placeholder—default tenant—so non-default tenants are written via the persistence
   seam, which is how a tenant-aware peer would.) Coherence infrastructure, so no oracle.
 - **Regression case:** `G16gMultiTenantReloadTests.Reload_Reconciles_All_Tenants_Independently`.
+
+## Startup reload covers every tenant (#466)
+
+- **The defect.** `ApplyStartupMappings` called `Load(TenantId.Default)` on every loader. G16g taught the
+  *change-feed* reconciler to load every tenant through `IMultiTenantMappingsLoader`, and startup never
+  learned it. So a host started on a Postgres or Redis database that already held stubs for non-default
+  tenants served none of them: the rows were there, the tenants and their API keys came back (their startup
+  loaders already read every row), and the tenants' imported API answered 404. As the report found, a plain
+  `docker stop`/`start` hid it: the image's default `--root-dir /work` keeps file-system state in the
+  container layer. Recreating the container (an image bump, `compose down`/`up`, a rescheduled pod) showed it.
+- **The fix.** Startup makes the reconciler's split: a loader that spans tenants loads every tenant, each
+  stub under its own; a single-tenant loader (a mappings directory) loads into the default tenant. Startup
+  and a reload therefore cannot disagree about what a backend holds.
+- **One more member of the class.** LiteDB stores `{ Id, Tenant, Json }`, so it spans tenants too, but its
+  loader did not implement `IMultiTenantMappingsLoader`: the same defect on the third database backend, and
+  a git-sync reconcile on a LiteDB host saw only the default tenant. `LiteDbMappingsLoader` now implements it.
+- **What startup reload covers.** Postgres, Redis and LiteDB: every tenant. `--root-dir`: the default tenant
+  only. A non-default tenant's files under `mappings/<tenant>/` are written and not reloaded, and that stays
+  tracked as [#467](https://github.com/qorpe/mockifyr/issues/467), because reading subdirectories as tenants
+  would change the meaning of a hand-organised mappings tree.
+- **Validation.** For each backend, a host writes stubs for two non-default tenants and the default tenant
+  through the admin API (`X-Mockifyr-Tenant`). It is replaced by a fresh host on the same backend, **without**
+  `--change-feed`, so only startup can load them. Each tenant then serves its own stub and lists exactly one,
+  and a tenant that never had stubs still answers 404. On `main` all three backends answered 404 for `acme`.
+  This is coherence infrastructure, so there is no oracle.
+- **The storage key (found verifying #466).** Postgres keyed a stub row by `id` alone (`id uuid PRIMARY KEY`,
+  `ON CONFLICT (id) … SET tenant = @tenant`, `DELETE … WHERE id = @id`), and LiteDB keyed the document by the
+  stub id and deleted by it, ignoring the tenant. The id is the client's choice, so two tenants may hold the
+  same one (the same mapping file or export bundle imported into both). The second tenant's write moved the
+  first's row to itself, and its delete removed the only row: both tenants served until a restart, and then
+  the first had nothing. Once startup reloads every tenant this is a tenant-isolation leak in the
+  persistence layer, reachable by an ordinary scoped write. Redis keeps one hash per tenant and was not
+  affected; the resource and environment stores already keyed by tenant.
+  - **Now** a stub is keyed by `(tenant, id)` on both: Postgres's primary key is `(tenant, id)`, and LiteDB's
+    document key is `tenant|id` (the resource collection's pattern; a Guid has no `|`, so it is unambiguous).
+    Save, edit and delete are scoped to the tenant.
+  - **Existing data is migrated at startup, re-runnably.** Postgres drops a single-column primary key and adds
+    `(tenant, id)` under an advisory lock, so two hosts starting together run it one after the other; LiteDB
+    re-keys every document whose key is still a bare Guid. Every existing row already has a distinct id, so
+    nothing collides, and a second start changes nothing.
+  - **Rule for the class:** every tenant-scoped persisted record is keyed by its tenant together with its own
+    id, on every backend. The global records (tenants, API keys) are keyed by an id that is unique host-wide
+    by construction.
+  - **Case-variant names on LiteDB (found verifying #468).** LiteDB 5 opens a file with the current culture and
+    `IgnoreCase`, and that one collation governs the document key and every query comparison in the file. So the
+    keys `acme|<id>` and `ACME|<id>` were one key, and `Tenant == "acme"` matched `ACME` too: one tenant's write,
+    delete or reset took or removed a case-variant tenant's stubs after a restart. The same held for resources
+    (tenant, collection and id), environments (tenant and key) and declared tenants. Postgres (`text =` under its
+    deterministic default collation), Redis (binary keys) and the in-memory store are ordinal.
+  - **Rule for the class (fail-closed):** no LiteDB-backed component reads or writes a file whose collation is
+    not ordinal. Every LiteDB persistence and loader calls `LiteDbCollation.RequireOrdinal` before taking its
+    collection and refuses a case-insensitive file. Only `LiteDbCollation.Open`, the host's entry point for
+    `--litedb`, changes a file, because only it knows what the connection said about it. A new or empty file and
+    `:memory:` are created ordinal through the connection string, so nothing is rebuilt; LiteDB reads that setting
+    only at creation and refuses an existing file whose header names another collation. An existing
+    case-insensitive file is rebuilt once (`Rebuild` with an ordinal collation, re-runnable, no document lost,
+    since a case-insensitive file cannot hold two documents that differ only in case). A reflection sweep finds
+    every type that takes a `LiteDatabase` and fails for one that accepts a case-insensitive file
+    (`Every_component_built_on_a_LiteDB_file_refuses_a_case_insensitive_one_and_leaves_it_unchanged`), including
+    components not written yet.
+  - **A rebuild carries what the connection said about the file (found verifying #468, round 3).** In LiteDB 5
+    `RebuildOptions.Password` is the password the *rebuilt* file gets, and `null` means none. A rebuild given only
+    the collation therefore wrote an encrypted file back in plaintext, then failed to reopen it with the
+    connection's password (`File is not encrypted`), so the host could not start. `Open` passes the connection's
+    own password. A component never rebuilds, because it cannot know the password; that is why it refuses instead.
+    `:memory:` could not be rebuilt at all, and is now created ordinal. Cases:
+    `An_encrypted_file_is_rebuilt_ordinal_and_stays_encrypted_with_its_own_password`,
+    `A_new_encrypted_file_is_created_ordinal_and_encrypted`, `A_memory_database_opens_ordinal`,
+    `A_new_file_is_created_ordinal_whatever_collation_the_connection_string_names`, and through the real host
+    `StartupReloadAllTenantsLiteDbTests.An_encrypted_file_with_the_default_collation_is_rebuilt_ordinal_on_startup_and_stays_encrypted`.
+  - **Regression cases:** `Tenants_whose_names_differ_only_in_case_keep_their_own_stubs_through_a_write_a_reset_and_a_restart`
+    on all three backends; `StartupReloadAllTenantsLiteDbTests.A_file_with_the_default_case_insensitive_collation_is_rebuilt_ordinal_on_startup_and_keeps_case_variant_tenants_apart`;
+    `LiteDbOrdinalCollationTests` (stubs, resources, environments, declared tenants, and `istanbul`/`Istanbul`/`İSTANBUL`/`ıstanbul`
+    under `tr-TR`). Disabling the rebuild turns the LiteDB facts red (8 of them) while Postgres and Redis stay green.
+- **Regression cases:** `StartupReloadAllTenantsPostgresTests`, `StartupReloadAllTenantsRedisTests`,
+  `StartupReloadAllTenantsLiteDbTests` (`A_new_host_serves_every_tenants_stubs_from_the_backend_without_the_change_feed`,
+  `Two_tenants_holding_the_same_stub_id_both_serve_their_own_after_a_restart`,
+  `A_tenant_that_edits_or_deletes_its_copy_of_a_shared_stub_id_leaves_the_other_tenants_copy_alone`), and the
+  migrations: `StartupReloadAllTenantsPostgresTests.A_table_keyed_by_the_stub_id_alone_is_rekeyed_by_tenant_on_startup_and_its_rows_kept`,
+  `StartupReloadAllTenantsLiteDbTests.A_document_keyed_by_the_stub_id_alone_is_rekeyed_by_tenant_on_startup_and_kept`.
+  Planting the old key back turns the shared-id facts red on Postgres and LiteDB (`acme` answers 404); planting
+  either migration out turns its fact red.
 
 ## Environments and sandbox resources on the change feed (#279)
 

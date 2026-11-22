@@ -8,6 +8,30 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Fixed
+
+- **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
+  reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
+  container served none of them: their tenants and API keys came back, and their imported API answered 404
+  until something re-imported it. Startup now loads every tenant from a backend that spans tenants, each
+  under its own, as the change-feed reload already did. LiteDB gained the same all-tenant read. `--root-dir`
+  still reloads the default tenant only (#467).
+- **Postgres and LiteDB key a persisted stub by its tenant and its id (#466).** Both keyed it by the stub id
+  alone, so when two tenants held the same id (the same mapping file imported into both), the second tenant's
+  write took the first's row and its delete removed it, and after a restart the first tenant had nothing.
+  Saves, edits and deletes are now scoped to the tenant. Existing data is migrated at startup, re-runnably:
+  Postgres's primary key becomes `(tenant, id)`, and LiteDB's documents are re-keyed `tenant|id`. Redis was
+  not affected.
+- **A LiteDB file compares tenants, collections, resource ids and environment keys case-sensitively (#466).**
+  LiteDB opens a file with a case-insensitive collation, so on a LiteDB host `acme` and `ACME` were one tenant
+  to the store: one's write took the other's stub, and one's reset or delete removed the other's stubs,
+  resources or environment keys after a restart (and `orders`/`Orders`, `apiToken`/`APITOKEN` collided the same
+  way). Every LiteDB file the host opens is now ordinal, as Postgres, Redis and the in-memory store already were.
+  A new file (and `:memory:`) is created ordinal and never rebuilt. An existing file is rebuilt once under the
+  ordinal collation at startup, keeping every document; a file already ordinal is left alone. An encrypted file
+  (`--litedb "Filename=…;Password=…"`) is rebuilt with its own password and stays encrypted. The rebuild rewrites
+  the file, so the first start after upgrading takes time in proportion to its size.
+
 ### Security
 
 - **`image-size`** in the demo deck generator (`demo/`) lifted from 1.2.1 to 2.0.4, past GHSA-5p2g-fcmc-qvqq and

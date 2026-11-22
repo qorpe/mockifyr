@@ -8,24 +8,50 @@ namespace Mockifyr.Server;
 /// <summary>
 /// Creates the persistence table if it is absent — shared by the Postgres provider and loader so
 /// whichever runs first (the loader runs at startup, before any mutation) finds the schema in place.
+/// A stub row is keyed by <c>(tenant, id)</c>, as every other tenant-scoped table here is: the id is the
+/// client's choice, so two tenants may hold the same one (the same mapping file imported into both), and
+/// a key of <c>id</c> alone let one tenant's write move the other's row and its delete remove it (#466).
 /// </summary>
 internal static class PostgresSchema
 {
     private const string CreateTable =
-        "CREATE TABLE IF NOT EXISTS stubs (id uuid PRIMARY KEY, tenant text NOT NULL, json text NOT NULL)";
+        "CREATE TABLE IF NOT EXISTS stubs (id uuid NOT NULL, tenant text NOT NULL, json text NOT NULL, " +
+        "PRIMARY KEY (tenant, id))";
+
+    // A table created before #466 has the primary key (id). Every row it holds already has a distinct id, so the
+    // composite key holds over it unchanged. Re-runnable: a table already keyed by (tenant, id) is left as it is,
+    // and the advisory lock makes two hosts starting together run it one after the other.
+    private const string MigrateKey = """
+        DO $$
+        DECLARE single_column_key name;
+        BEGIN
+            PERFORM pg_advisory_xact_lock(hashtext('mockifyr.stubs.tenant-key'));
+            SELECT conname INTO single_column_key FROM pg_constraint
+             WHERE conrelid = to_regclass('stubs') AND contype = 'p' AND array_length(conkey, 1) = 1;
+            IF single_column_key IS NOT NULL THEN
+                EXECUTE format('ALTER TABLE stubs DROP CONSTRAINT %I', single_column_key);
+                ALTER TABLE stubs ADD PRIMARY KEY (tenant, id);
+            END IF;
+        END $$
+        """;
 
     public static void Ensure(string connectionString)
     {
         using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
-        using var command = new NpgsqlCommand(CreateTable, connection);
-        command.ExecuteNonQuery();
+        using (var create = new NpgsqlCommand(CreateTable, connection))
+        {
+            create.ExecuteNonQuery();
+        }
+
+        using var migrate = new NpgsqlCommand(MigrateKey, connection);
+        migrate.ExecuteNonQuery();
     }
 }
 
 /// <summary>
 /// PostgreSQL-backed stub persistence (G16c): the third provider behind the <see cref="IStubPersistence"/>
-/// seam — a real SQL backend. Each stub is a row <c>(id, tenant, json)</c>; the stored JSON is
+/// seam — a real SQL backend. Each stub is a row <c>(id, tenant, json)</c> keyed by <c>(tenant, id)</c>; the stored JSON is
 /// id-stamped (shared <see cref="PersistableJson"/>) so ids round-trip identically to the file/LiteDB
 /// backends. Connections are opened per operation from Npgsql's pool (thread-safe). The counterpart
 /// <see cref="PostgresMappingsLoader"/> reloads rows on startup.
@@ -52,7 +78,7 @@ public sealed class PostgresStubPersistence : IStubPersistence
         connection.Open();
         using var command = new NpgsqlCommand(
             "INSERT INTO stubs (id, tenant, json) VALUES (@id, @tenant, @json) " +
-            "ON CONFLICT (id) DO UPDATE SET tenant = @tenant, json = @json",
+            "ON CONFLICT (tenant, id) DO UPDATE SET json = @json",
             connection);
         command.Parameters.AddWithValue("id", stub.Id);
         command.Parameters.AddWithValue("tenant", stub.TenantId.Value);
@@ -66,7 +92,8 @@ public sealed class PostgresStubPersistence : IStubPersistence
     {
         using var connection = new NpgsqlConnection(_connectionString);
         connection.Open();
-        using var command = new NpgsqlCommand("DELETE FROM stubs WHERE id = @id", connection);
+        using var command = new NpgsqlCommand("DELETE FROM stubs WHERE tenant = @tenant AND id = @id", connection);
+        command.Parameters.AddWithValue("tenant", tenant.Value);
         command.Parameters.AddWithValue("id", id);
         command.ExecuteNonQuery();
         ChangeFeedAnnouncement.Postgres(connection, _writer);

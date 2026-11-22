@@ -32,7 +32,9 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 ## Tracked — real gaps with issues
 
-*Nothing is open.*
+| Item | Issue | What is reachable today |
+|------|-------|-------------------------|
+| Startup reload of a non-default tenant's stubs on `--root-dir` | [#467](https://github.com/qorpe/mockifyr/issues/467) | The file provider writes them to `mappings/<tenant>/`, and the directory loader reads only the flat `mappings/`. Postgres, Redis and LiteDB reload every tenant since [#466](https://github.com/qorpe/mockifyr/issues/466). Reading subdirectories as tenants would change what a hand-organised mappings tree means, so it waits for a decision |
 
 Three entries left this section by shipping: **resource embedding**
 ([#378](https://github.com/qorpe/mockifyr/issues/378) — `?_expand=customer`, see `g19-sandbox.md`),
