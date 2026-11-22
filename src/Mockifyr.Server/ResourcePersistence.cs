@@ -178,7 +178,7 @@ public sealed class LiteDbResourcePersistence(LiteDatabase database) : IResource
     internal const string CollectionName = "resources";
 
     private readonly ILiteCollection<StoredResource> _rows =
-        LiteDbCollation.EnsureOrdinal(database).GetCollection<StoredResource>(CollectionName);
+        LiteDbCollation.RequireOrdinal(database).GetCollection<StoredResource>(CollectionName);
 
     internal static string IdFor(TenantId tenant, string collection, string id) =>
         $"{tenant.Value}|{collection}|{id}";
@@ -205,7 +205,7 @@ public sealed class LiteDbResourcePersistence(LiteDatabase database) : IResource
 public sealed class LiteDbResourcesLoader(LiteDatabase database) : IResourcesLoader
 {
     private readonly ILiteCollection<StoredResource> _rows =
-        LiteDbCollation.EnsureOrdinal(database).GetCollection<StoredResource>(LiteDbResourcePersistence.CollectionName);
+        LiteDbCollation.RequireOrdinal(database).GetCollection<StoredResource>(LiteDbResourcePersistence.CollectionName);
 
     /// <inheritdoc />
     public IReadOnlyDictionary<TenantId, IReadOnlyList<ResourceDocument>> LoadAll() =>

@@ -207,13 +207,27 @@ the same seam.
     delete or reset took or removed a case-variant tenant's stubs after a restart. The same held for resources
     (tenant, collection and id), environments (tenant and key) and declared tenants. Postgres (`text =` under its
     deterministic default collation), Redis (binary keys) and the in-memory store are ordinal.
-  - **Rule for the class (fail-closed):** no LiteDB-backed component reads or writes until its file's collation is
-    ordinal. `LiteDbCollation.EnsureOrdinal` rebuilds a non-ordinal file once (`Rebuild` with an ordinal collation,
-    re-runnable, no document lost, since a case-insensitive file cannot hold two documents that differ only in case)
-    and every LiteDB persistence and loader calls it before taking its collection, so the rule holds for whoever
-    constructs one; the host opens its file through `LiteDbCollation.Open`. A reflection sweep
-    (`Every_component_built_on_a_LiteDB_file_makes_it_ordinal_before_it_uses_it`) finds every type that takes a
-    `LiteDatabase` and fails for one that leaves the file case-insensitive, including components not written yet.
+  - **Rule for the class (fail-closed):** no LiteDB-backed component reads or writes a file whose collation is
+    not ordinal. Every LiteDB persistence and loader calls `LiteDbCollation.RequireOrdinal` before taking its
+    collection and refuses a case-insensitive file. Only `LiteDbCollation.Open`, the host's entry point for
+    `--litedb`, changes a file, because only it knows what the connection said about it. A new or empty file and
+    `:memory:` are created ordinal through the connection string, so nothing is rebuilt; LiteDB reads that setting
+    only at creation and refuses an existing file whose header names another collation. An existing
+    case-insensitive file is rebuilt once (`Rebuild` with an ordinal collation, re-runnable, no document lost,
+    since a case-insensitive file cannot hold two documents that differ only in case). A reflection sweep finds
+    every type that takes a `LiteDatabase` and fails for one that accepts a case-insensitive file
+    (`Every_component_built_on_a_LiteDB_file_refuses_a_case_insensitive_one_and_leaves_it_unchanged`), including
+    components not written yet.
+  - **A rebuild carries what the connection said about the file (found verifying #468, round 3).** In LiteDB 5
+    `RebuildOptions.Password` is the password the *rebuilt* file gets, and `null` means none. A rebuild given only
+    the collation therefore wrote an encrypted file back in plaintext, then failed to reopen it with the
+    connection's password (`File is not encrypted`), so the host could not start. `Open` passes the connection's
+    own password. A component never rebuilds, because it cannot know the password; that is why it refuses instead.
+    `:memory:` could not be rebuilt at all, and is now created ordinal. Cases:
+    `An_encrypted_file_is_rebuilt_ordinal_and_stays_encrypted_with_its_own_password`,
+    `A_new_encrypted_file_is_created_ordinal_and_encrypted`, `A_memory_database_opens_ordinal`,
+    `A_new_file_is_created_ordinal_whatever_collation_the_connection_string_names`, and through the real host
+    `StartupReloadAllTenantsLiteDbTests.An_encrypted_file_with_the_default_collation_is_rebuilt_ordinal_on_startup_and_stays_encrypted`.
   - **Regression cases:** `Tenants_whose_names_differ_only_in_case_keep_their_own_stubs_through_a_write_a_reset_and_a_restart`
     on all three backends; `StartupReloadAllTenantsLiteDbTests.A_file_with_the_default_case_insensitive_collation_is_rebuilt_ordinal_on_startup_and_keeps_case_variant_tenants_apart`;
     `LiteDbOrdinalCollationTests` (stubs, resources, environments, declared tenants, and `istanbul`/`Istanbul`/`İSTANBUL`/`ıstanbul`

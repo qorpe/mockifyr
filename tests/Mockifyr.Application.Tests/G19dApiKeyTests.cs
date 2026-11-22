@@ -195,7 +195,7 @@ public sealed class G19dApiKeyTests
         var file = Path.Combine(Path.GetTempPath(), "mockifyr-apikeys-" + Guid.NewGuid().ToString("N") + ".db");
         try
         {
-            using (var database = new LiteDB.LiteDatabase(file))
+            using (var database = LiteDbCollation.Open(file))
             {
                 var persistence = new LiteDbApiKeyPersistence(database);
                 persistence.Save(SampleKey());
@@ -203,7 +203,7 @@ public sealed class G19dApiKeyTests
                 persistence.Remove("id-2");
             }
 
-            using var reopened = new LiteDB.LiteDatabase(file);
+            using var reopened = LiteDbCollation.Open(file);
             var loaded = new LiteDbApiKeyPersistence(reopened).LoadAll();
             Assert.Equal("id-1", Assert.Single(loaded).Id);
         }

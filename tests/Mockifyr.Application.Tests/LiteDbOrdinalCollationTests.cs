@@ -7,9 +7,11 @@ namespace Mockifyr.Application.Tests;
 /// <summary>
 /// Every LiteDB-backed component compares strings ordinally (#466, verifier on #468). LiteDB 5 opens a file with a
 /// case-insensitive collation, so on a LiteDB host two tenants — or two collections, ids or environment keys — whose
-/// names differ only in case were one key and one filter match. Each fact opens a file with LiteDB's own default, the
-/// shape every file written before this change has, and hands it to the component as the host would: the component
-/// must make it ordinal before it touches it, whoever constructed it.
+/// names differ only in case were one key and one filter match. Each component fact creates a file with LiteDB's own
+/// default, the shape every file written before this change has, and opens it as the host does
+/// (<see cref="LiteDbCollation.Open"/>); a component handed a case-insensitive database it did not open refuses it.
+/// The rebuild carries what the connection says about the file: an encrypted file stays encrypted (verifier on #468,
+/// round 3).
 /// </summary>
 public sealed class LiteDbOrdinalCollationTests : IDisposable
 {
@@ -70,24 +72,132 @@ public sealed class LiteDbOrdinalCollationTests : IDisposable
 
     [Theory]
     [MemberData(nameof(LiteDbComponents))]
-    public void Every_component_built_on_a_LiteDB_file_makes_it_ordinal_before_it_uses_it(Type component)
+    public void Every_component_built_on_a_LiteDB_file_refuses_a_case_insensitive_one_and_leaves_it_unchanged(Type component)
     {
         // The fail-closed rule for the class: any component that takes a LiteDatabase, including one nobody has
-        // written yet, leaves its file ordinal, so no key or filter of it can compare case-insensitively.
+        // written yet, refuses a file that compares case-insensitively. It does not rebuild it either: it cannot know
+        // the file's password, and a rebuild without it would write an encrypted file back in plaintext.
         using var database = new LiteDB.LiteDatabase(File);
         Assert.NotEqual(CompareOptions.Ordinal, database.Collation.SortOptions);
+        var refused = Assert.Throws<System.Reflection.TargetInvocationException>(() => Construct(component, database));
+        Assert.IsType<InvalidOperationException>(refused.InnerException);
+        Assert.Contains("LiteDbCollation.Open", refused.InnerException!.Message, StringComparison.Ordinal);
+        Assert.NotEqual(CompareOptions.Ordinal, database.Collation.SortOptions);
+    }
+
+    [Theory]
+    [MemberData(nameof(LiteDbComponents))]
+    public void Every_component_built_on_a_LiteDB_file_accepts_the_one_the_host_entry_point_opened(Type component)
+    {
+        using var database = LiteDbCollation.Open(File);
+        Construct(component, database);
+        Assert.Equal(CompareOptions.Ordinal, database.Collation.SortOptions);
+    }
+
+    [Fact]
+    public void An_encrypted_file_is_rebuilt_ordinal_and_stays_encrypted_with_its_own_password()
+    {
+        // The class: a rebuild that does not carry what the connection said about the file. RebuildOptions.Password
+        // is the REBUILT file's password and null means none, so a rebuild without it decrypts the file.
+        const string Secret = "SECRET-PAYLOAD-468";
+        var connection = $"Filename={File};Password=s3cret";
+        using (var legacy = new LiteDB.LiteDatabase(connection))
+        {
+            Assert.NotEqual(CompareOptions.Ordinal, legacy.Collation.SortOptions);
+            legacy.GetCollection("stubs").Insert(new LiteDB.BsonDocument { ["_id"] = "acme|1", ["Tenant"] = "acme", ["Json"] = Secret });
+        }
+
+        Assert.False(ContainsPlaintext(Secret));
+
+        using (var database = LiteDbCollation.Open(connection))
+        {
+            Assert.Equal(CompareOptions.Ordinal, database.Collation.SortOptions);
+            Assert.Equal(Secret, database.GetCollection("stubs").FindById("acme|1")["Json"].AsString);
+            new LiteDbStubPersistence(database);   // the host's components accept it
+        }
+
+        Assert.False(ContainsPlaintext(Secret));
+        Assert.ThrowsAny<Exception>(() => new LiteDB.LiteDatabase(File).GetCollectionNames().ToList());   // no password, no file
+
+        using var reopened = LiteDbCollation.Open(connection);
+        Assert.Equal(CompareOptions.Ordinal, reopened.Collation.SortOptions);
+        Assert.Equal(1, reopened.GetCollection("stubs").Count());
+    }
+
+    [Fact]
+    public void A_new_encrypted_file_is_created_ordinal_and_encrypted()
+    {
+        const string Secret = "SECRET-NEW-468";
+        var connection = $"Filename={File};Password=s3cret";
+        using (var database = LiteDbCollation.Open(connection))
+        {
+            Assert.Equal(CompareOptions.Ordinal, database.Collation.SortOptions);
+            database.GetCollection("stubs").Insert(new LiteDB.BsonDocument { ["_id"] = "a", ["Json"] = Secret });
+        }
+
+        Assert.False(ContainsPlaintext(Secret));
+        using var reopened = LiteDbCollation.Open(connection);
+        Assert.Equal(1, reopened.GetCollection("stubs").Count());
+    }
+
+    [Theory]
+    [InlineData(":memory:")]
+    [InlineData("Filename=:memory:")]
+    public void A_memory_database_opens_ordinal(string connection)
+    {
+        using var database = LiteDbCollation.Open(connection);
+        Assert.Equal(CompareOptions.Ordinal, database.Collation.SortOptions);
+        var stubs = new LiteDbStubPersistence(database);
+        stubs.Clear(Lower);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(";Collation=en-US/IgnoreCase")]
+    [InlineData(";Connection=shared")]
+    public void A_new_file_is_created_ordinal_whatever_collation_the_connection_string_names(string suffix)
+    {
+        using var database = LiteDbCollation.Open($"Filename={File}{suffix}");
+        Assert.Equal(CompareOptions.Ordinal, database.Collation.SortOptions);
+        var stubs = database.GetCollection("stubs");
+        stubs.Insert(new LiteDB.BsonDocument { ["_id"] = "acme|1" });
+        stubs.Insert(new LiteDB.BsonDocument { ["_id"] = "ACME|1" });
+        Assert.Equal(2, stubs.Count());
+    }
+
+    private bool ContainsPlaintext(string text)
+    {
+        var bytes = System.IO.File.ReadAllBytes(File);
+        return System.Text.Encoding.UTF8.GetString(bytes).Contains(text, StringComparison.Ordinal)
+            || System.Text.Encoding.Unicode.GetString(bytes).Contains(text, StringComparison.Ordinal);
+    }
+
+    private static object Construct(Type component, LiteDB.LiteDatabase database)
+    {
         var ctor = component.GetConstructors().First(c => c.GetParameters().Any(p => p.ParameterType == typeof(LiteDB.LiteDatabase)));
         var arguments = ctor.GetParameters()
             .Select(p => p.ParameterType == typeof(LiteDB.LiteDatabase) ? database : p.HasDefaultValue ? p.DefaultValue : null)
             .ToArray();
-        ctor.Invoke(arguments);
-        Assert.Equal(CompareOptions.Ordinal, database.Collation.SortOptions);
+        return ctor.Invoke(arguments);
+    }
+
+    /// <summary>A file with LiteDB's case-insensitive default, the shape every file before #468 has, opened as the host opens it.</summary>
+    private LiteDB.LiteDatabase OpenLegacy()
+    {
+        using (var legacy = new LiteDB.LiteDatabase(File))
+        {
+            Assert.NotEqual(CompareOptions.Ordinal, legacy.Collation.SortOptions);
+            legacy.GetCollection("probe").Insert(new LiteDB.BsonDocument { ["_id"] = 1 });
+            legacy.GetCollection("probe").Delete(1);
+        }
+
+        return LiteDbCollation.Open(File);
     }
 
     [Fact]
     public void Stub_persistence_keeps_case_variant_tenants_apart_on_a_default_collation_file()
     {
-        using var database = new LiteDB.LiteDatabase(File);
+        using var database = OpenLegacy();
         var stubs = new LiteDbStubPersistence(database);
         var persistence = new Persisting(stubs);
         var loader = new LiteDbMappingsLoader(database);
@@ -110,7 +220,7 @@ public sealed class LiteDbOrdinalCollationTests : IDisposable
     [Fact]
     public void Resource_persistence_keeps_case_variant_tenants_collections_and_ids_apart()
     {
-        using var database = new LiteDB.LiteDatabase(File);
+        using var database = OpenLegacy();
         var persistence = new LiteDbResourcePersistence(database);
         var loader = new LiteDbResourcesLoader(database);
 
@@ -131,7 +241,7 @@ public sealed class LiteDbOrdinalCollationTests : IDisposable
     [Fact]
     public void Environment_persistence_keeps_case_variant_tenants_and_keys_apart()
     {
-        using var database = new LiteDB.LiteDatabase(File);
+        using var database = OpenLegacy();
         var persistence = new LiteDbEnvironmentPersistence(database);
         var loader = new LiteDbEnvironmentsLoader(database);
 
@@ -148,7 +258,7 @@ public sealed class LiteDbOrdinalCollationTests : IDisposable
     [Fact]
     public void Tenant_persistence_keeps_case_variant_declarations_apart()
     {
-        using var database = new LiteDB.LiteDatabase(File);
+        using var database = OpenLegacy();
         var persistence = new LiteDbTenantPersistence(database);
 
         persistence.Save(new TenantRecord(Lower, "lower", DateTimeOffset.UnixEpoch));
@@ -166,7 +276,7 @@ public sealed class LiteDbOrdinalCollationTests : IDisposable
         CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
         try
         {
-            using var database = new LiteDB.LiteDatabase(File);
+            using var database = OpenLegacy();
             var stubs = new LiteDbStubPersistence(database);
             var persistence = new Persisting(stubs);
             var loader = new LiteDbMappingsLoader(database);

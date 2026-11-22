@@ -27,9 +27,10 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   to the store: one's write took the other's stub, and one's reset or delete removed the other's stubs,
   resources or environment keys after a restart (and `orders`/`Orders`, `apiToken`/`APITOKEN` collided the same
   way). Every LiteDB file the host opens is now ordinal, as Postgres, Redis and the in-memory store already were.
-  An existing file is rebuilt once under the ordinal collation at startup, keeping every document; a file
-  already ordinal is left alone. The rebuild rewrites the file, so the first start after upgrading takes time in
-  proportion to its size.
+  A new file (and `:memory:`) is created ordinal and never rebuilt. An existing file is rebuilt once under the
+  ordinal collation at startup, keeping every document; a file already ordinal is left alone. An encrypted file
+  (`--litedb "Filename=…;Password=…"`) is rebuilt with its own password and stays encrypted. The rebuild rewrites
+  the file, so the first start after upgrading takes time in proportion to its size.
 
 ### Security
 

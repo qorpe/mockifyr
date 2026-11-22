@@ -251,13 +251,45 @@ public sealed class StartupReloadAllTenantsLiteDbTests : StartupReloadAllTenants
 
     public void Dispose() => _dir.Delete(recursive: true);
 
-    protected override string[] BackendArguments() => ["--litedb", Path.Combine(_dir.FullName, "mockifyr.db")];
+    // A test may name a connection string instead of the bare file, as --litedb takes either.
+    private string? _connection;
+
+    private string FilePath => Path.Combine(_dir.FullName, "mockifyr.db");
+
+    protected override string[] BackendArguments() => ["--litedb", _connection ?? FilePath];
+
+    [Fact]
+    public async Task An_encrypted_file_with_the_default_collation_is_rebuilt_ordinal_on_startup_and_stays_encrypted()
+    {
+        // Verifier on #468, round 3: the rebuild must carry the connection's password, or the first start after the
+        // upgrade writes the file back in plaintext and the host can never open it with its password again.
+        const string Secret = "encrypted-legacy-468";
+        _connection = $"Filename={FilePath};Password=s3cret";
+        using (var database = new LiteDB.LiteDatabase(_connection))
+        {
+            Assert.NotEqual(System.Globalization.CompareOptions.Ordinal, database.Collation.SortOptions);
+            database.GetCollection("stubs").Insert(new LiteDB.BsonDocument
+            {
+                ["_id"] = "acme|" + SharedId,
+                ["Tenant"] = "acme",
+                ["Json"] = StubWithId(SharedId, Secret),
+            });
+        }
+
+        await AssertServesAfterStartAsync("acme", Secret);
+        await AssertServesAfterStartAsync("acme", Secret);
+
+        var raw = await File.ReadAllBytesAsync(FilePath);
+        Assert.DoesNotContain(Secret, Encoding.UTF8.GetString(raw), StringComparison.Ordinal);
+        using var withPassword = new LiteDB.LiteDatabase(_connection);
+        Assert.Equal(System.Globalization.CompareOptions.Ordinal, withPassword.Collation.SortOptions);
+    }
 
     [Fact]
     public async Task A_document_keyed_by_the_stub_id_alone_is_rekeyed_by_tenant_on_startup_and_kept()
     {
         // The shape every LiteDB file before #466 has: the document key is the bare stub id.
-        using (var database = new LiteDB.LiteDatabase(Path.Combine(_dir.FullName, "mockifyr.db")))
+        using (var database = new LiteDB.LiteDatabase(FilePath))
         {
             database.GetCollection("stubs").Insert(new LiteDB.BsonDocument
             {
@@ -276,7 +308,7 @@ public sealed class StartupReloadAllTenantsLiteDbTests : StartupReloadAllTenants
     {
         // A file written before #468 has LiteDB's default collation; its case-variant tenants hold distinct ids.
         var other = Guid.NewGuid().ToString();
-        using (var database = new LiteDB.LiteDatabase(Path.Combine(_dir.FullName, "mockifyr.db")))
+        using (var database = new LiteDB.LiteDatabase(FilePath))
         {
             Assert.NotEqual(System.Globalization.CompareOptions.Ordinal, database.Collation.SortOptions);
             var stubs = database.GetCollection("stubs");

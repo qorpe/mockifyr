@@ -98,7 +98,7 @@ public sealed class LiteDbTenantPersistence(LiteDatabase database) : ITenantPers
 {
     internal const string Collection = "tenants";
 
-    private readonly ILiteCollection<StoredTenantRow> _rows = LiteDbCollation.EnsureOrdinal(database).GetCollection<StoredTenantRow>(Collection);
+    private readonly ILiteCollection<StoredTenantRow> _rows = LiteDbCollation.RequireOrdinal(database).GetCollection<StoredTenantRow>(Collection);
 
     /// <inheritdoc />
     public void Save(TenantRecord tenant) =>

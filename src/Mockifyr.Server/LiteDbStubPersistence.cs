@@ -31,7 +31,7 @@ public sealed class LiteDbStubPersistence : IStubPersistence
 
     public LiteDbStubPersistence(LiteDatabase database)
     {
-        MigrateKeys(LiteDbCollation.EnsureOrdinal(database));
+        MigrateKeys(LiteDbCollation.RequireOrdinal(database));
         _stubs = database.GetCollection<StoredStub>(Collection);
     }
 
@@ -89,7 +89,7 @@ public sealed class LiteDbMappingsLoader : IMappingsLoader, IMultiTenantMappings
 
     public LiteDbMappingsLoader(LiteDatabase database, IMatcherRegistry? matchers = null)
     {
-        LiteDbStubPersistence.MigrateKeys(LiteDbCollation.EnsureOrdinal(database));
+        LiteDbStubPersistence.MigrateKeys(LiteDbCollation.RequireOrdinal(database));
         _stubs = database.GetCollection<StoredStub>(LiteDbStubPersistence.Collection);
         _matchers = matchers;
     }

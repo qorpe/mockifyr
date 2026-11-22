@@ -145,7 +145,7 @@ public sealed class LiteDbEnvironmentPersistence(LiteDatabase database) : IEnvir
     internal const string Collection = "environments";
 
     private readonly ILiteCollection<StoredEnvironment> _rows =
-        LiteDbCollation.EnsureOrdinal(database).GetCollection<StoredEnvironment>(Collection);
+        LiteDbCollation.RequireOrdinal(database).GetCollection<StoredEnvironment>(Collection);
 
     internal static string IdFor(TenantId tenant, string key) => $"{tenant.Value}|{key}";
 
@@ -169,7 +169,7 @@ public sealed class LiteDbEnvironmentPersistence(LiteDatabase database) : IEnvir
 public sealed class LiteDbEnvironmentsLoader(LiteDatabase database) : IEnvironmentsLoader
 {
     private readonly ILiteCollection<StoredEnvironment> _rows =
-        LiteDbCollation.EnsureOrdinal(database).GetCollection<StoredEnvironment>(LiteDbEnvironmentPersistence.Collection);
+        LiteDbCollation.RequireOrdinal(database).GetCollection<StoredEnvironment>(LiteDbEnvironmentPersistence.Collection);
 
     /// <inheritdoc />
     public IReadOnlyDictionary<TenantId, IReadOnlyList<EnvironmentKey>> LoadAll() =>
