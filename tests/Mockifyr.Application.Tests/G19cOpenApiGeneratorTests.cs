@@ -258,4 +258,243 @@ public sealed class G19cOpenApiGeneratorTests
         Assert.Equal(OpenApiImportError.TooDeep,
             Assert.Throws<OpenApiImportException>(() => OpenApiStubGenerator.Generate(cyclic)).Error);
     }
+
+    // ---- named examples as scenario states (#449) ----
+
+    private const string EdgeSpec = """
+        openapi: 3.0.3
+        info: { title: Edges, version: "1" }
+        paths:
+          /pay:
+            post:
+              operationId: pay
+              responses:
+                "201":
+                  description: ok
+                  content:
+                    application/json:
+                      examples:
+                        approved: { value: { s: A } }
+                        Started: { value: { s: S } }
+                        "late": { externalValue: "https://example.test/late.json" }
+                        twice: { value: { s: T201 } }
+                "409":
+                  description: conflict
+                  content:
+                    application/json:
+                      examples:
+                        twice: { value: { s: T409 } }
+                        conflict: { value: { s: C } }
+          /items:
+            get:
+              responses:
+                "200":
+                  description: list
+                  content:
+                    application/json:
+                      examples:
+                        empty: { value: [] }
+            post:
+              responses:
+                "201": { description: created }
+          /items/{id}:
+            get:
+              responses:
+                "200":
+                  description: one
+                  content:
+                    application/json:
+                      examples:
+                        gone: { value: { id: x } }
+        """;
+
+    [Fact]
+    public void Every_named_example_that_cannot_be_a_state_is_reported_with_its_reason_and_binds_nothing()
+    {
+        var import = OpenApiStubGenerator.GenerateWithRelations(EdgeSpec, stateful: true, scenarios: true, scenarioName: "edges");
+        var report = Assert.IsType<OpenApiScenarioReport>(import.Scenarios);
+
+        Assert.Equal("edges", report.Scenario);
+        Assert.Equal(["pay approved 201", "pay twice 201", "pay conflict 409"], report.States.Select(s => $"{s.Operation} {s.State} {s.Status}"));
+        var ignored = report.Ignored.ToDictionary(i => $"{i.Operation} {i.State}", i => i.Reason);
+        Assert.Equal(5, ignored.Count);
+        Assert.StartsWith("'Started' is the state every scenario starts in", ignored["pay Started"], StringComparison.Ordinal);
+        Assert.StartsWith("the example has no inline value", ignored["pay late"], StringComparison.Ordinal);
+        Assert.StartsWith("the 201 response already binds this state", ignored["pay twice"], StringComparison.Ordinal);
+        Assert.StartsWith("the operation is wired to sandbox state", ignored["GET /items empty"], StringComparison.Ordinal);
+        Assert.StartsWith("the operation is wired to sandbox state", ignored["GET /items/{id} gone"], StringComparison.Ordinal);
+
+        // Exactly one stub per bound state, at priority 1, bound to the one scenario; the 201 "twice" wins.
+        var bound = import.Mappings.Select(m => JsonDocument.Parse(m).RootElement).Where(m => m.TryGetProperty("scenarioName", out _)).ToList();
+        Assert.Equal(3, bound.Count);
+        Assert.All(bound, m => Assert.Equal((1, "edges"), (m.GetProperty("priority").GetInt32(), m.GetProperty("scenarioName").GetString())));
+        var twice = Assert.Single(bound, m => m.GetProperty("requiredScenarioState").GetString() == "twice");
+        Assert.Equal(201, twice.GetProperty("response").GetProperty("status").GetInt32());
+        Assert.Contains("T201", twice.GetProperty("response").GetProperty("body").GetString(), StringComparison.Ordinal);
+        var conflict = Assert.Single(bound, m => m.GetProperty("requiredScenarioState").GetString() == "conflict");
+        Assert.Equal(409, conflict.GetProperty("response").GetProperty("status").GetInt32());
+    }
+
+    [Fact]
+    public void Without_scenarios_the_mappings_are_exactly_the_ones_an_import_generated_before()
+    {
+        var plain = OpenApiStubGenerator.GenerateWithRelations(EdgeSpec);
+        var withScenarios = OpenApiStubGenerator.GenerateWithRelations(EdgeSpec, scenarios: true);
+
+        Assert.Null(plain.Scenarios);
+        Assert.Equal(OpenApiStubGenerator.Generate(EdgeSpec), plain.Mappings);
+        // The default stubs stay byte-identical with scenarios on: the example stubs are added beside them.
+        Assert.Equal(plain.Mappings, withScenarios.Mappings.Where(m => !JsonDocument.Parse(m).RootElement.TryGetProperty("scenarioName", out _)));
+        Assert.All(plain.Mappings, m => Assert.False(JsonDocument.Parse(m).RootElement.TryGetProperty("priority", out _)));
+    }
+
+    [Theory]
+    [InlineData(null, "Edges")]
+    [InlineData("  payments  ", "payments")]
+    [InlineData("çekirdek İ", "çekirdek İ")]
+    public void The_scenario_name_is_the_one_asked_for_trimmed_or_the_document_title(string? asked, string expected)
+    {
+        var import = OpenApiStubGenerator.GenerateWithRelations(EdgeSpec, scenarios: true, scenarioName: asked);
+        Assert.Equal(expected, import.Scenarios!.Scenario);
+    }
+
+    [Fact]
+    public void A_scenario_name_at_the_bound_is_accepted_and_one_over_it_is_refused()
+    {
+        var atBound = new string('n', OpenApiStubGenerator.MaxScenarioNameLength);
+        Assert.Equal(atBound, OpenApiStubGenerator.GenerateWithRelations(EdgeSpec, scenarios: true, scenarioName: atBound).Scenarios!.Scenario);
+
+        var refused = Assert.Throws<OpenApiImportException>(() => OpenApiStubGenerator.GenerateWithRelations(
+            EdgeSpec, scenarios: true, scenarioName: atBound + "n"));
+        Assert.Equal(OpenApiImportError.Invalid, refused.Error);
+        Assert.StartsWith("The scenario name is 129 characters long; a scenario name is at most 128", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("", "The scenario name is empty")]
+    [InlineData("   ", "The scenario name is empty")]
+    [InlineData("a\nb", "The scenario name carries a control character")]
+    [InlineData("a\u0000b", "The scenario name carries a control character")]
+    [InlineData("v1/payments", "The scenario name contains '/'")]
+    [InlineData(" .. ", "The scenario name is only dots")]
+    public void An_unusable_scenario_name_is_refused_naming_the_fix(string asked, string expected)
+    {
+        var refused = Assert.Throws<OpenApiImportException>(() => OpenApiStubGenerator.GenerateWithRelations(
+            EdgeSpec, scenarios: true, scenarioName: asked));
+        Assert.StartsWith(expected, refused.Message, StringComparison.Ordinal);
+        Assert.EndsWith("pass ?scenario=<name>.", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_title_the_state_route_cannot_select_needs_an_explicit_name()
+    {
+        var slashed = EdgeSpec.Replace("info: { title: Edges, version: \"1\" }", "info: { title: \"Payments / v1\", version: \"1\" }", StringComparison.Ordinal);
+        Assert.NotEqual(EdgeSpec, slashed);
+        var refused = Assert.Throws<OpenApiImportException>(() => OpenApiStubGenerator.GenerateWithRelations(slashed, scenarios: true));
+        Assert.StartsWith("The document's info.title contains '/'", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_document_without_a_usable_title_needs_an_explicit_name()
+    {
+        var untitled = EdgeSpec.Replace("info: { title: Edges, version: \"1\" }", "info: { title: \"  \", version: \"1\" }", StringComparison.Ordinal);
+        var refused = Assert.Throws<OpenApiImportException>(() => OpenApiStubGenerator.GenerateWithRelations(untitled, scenarios: true));
+        Assert.StartsWith("The document's info.title is empty", refused.Message, StringComparison.Ordinal);
+        Assert.Equal("named", OpenApiStubGenerator.GenerateWithRelations(untitled, scenarios: true, scenarioName: "named").Scenarios!.Scenario);
+    }
+
+    [Fact]
+    public void A_state_name_with_a_control_character_is_reported_shown_safely_and_not_bound()
+    {
+        var spec = EdgeSpec.Replace("conflict: { value: { s: C } }", "\"con\\tflict\": { value: { s: C } }", StringComparison.Ordinal);
+        var report = OpenApiStubGenerator.GenerateWithRelations(spec, scenarios: true, scenarioName: "edges").Scenarios!;
+        var ignored = Assert.Single(report.Ignored, i => i.State == "con?flict");
+        Assert.StartsWith("a state name must be non-empty and carry no control character", ignored.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(report.States, s => s.State.Contains('\t', StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_bound_stub_is_named_for_its_state_and_carries_its_content_type_and_templating_only_when_needed()
+    {
+        const string spec = """
+            openapi: 3.0.3
+            info: { title: Kinds, version: "1" }
+            paths:
+              /echo:
+                get:
+                  operationId: echo
+                  responses:
+                    "200":
+                      description: text only
+                      content:
+                        text/plain:
+                          examples:
+                            plain: { value: "hello" }
+                            templated: { value: "you asked for {{request.path}}" }
+            """;
+        var bound = OpenApiStubGenerator.GenerateWithRelations(spec, scenarios: true).Mappings
+            .Select(m => JsonDocument.Parse(m).RootElement)
+            .Where(m => m.TryGetProperty("scenarioName", out _))
+            .ToDictionary(m => m.GetProperty("requiredScenarioState").GetString()!);
+
+        Assert.Equal("echo [plain]", bound["plain"].GetProperty("name").GetString());
+        foreach (var stub in bound.Values)
+        {
+            // No application/json is declared, so the first content type answers, and it rides into the stub.
+            Assert.Equal("text/plain", stub.GetProperty("response").GetProperty("headers").GetProperty("Content-Type").GetString());
+        }
+
+        Assert.False(bound["plain"].GetProperty("response").TryGetProperty("transformers", out _));
+        Assert.Equal("response-template", bound["templated"].GetProperty("response").GetProperty("transformers")[0].GetString());
+    }
+
+    [Theory]
+    [InlineData(64, false)]
+    [InlineData(65, true)]
+    public void A_refused_state_name_is_shown_at_most_64_characters_long(int length, bool cut)
+    {
+        var name = "\t" + new string('s', length - 1);
+        var spec = EdgeSpec.Replace("conflict: { value: { s: C } }", $"\"{name.Replace("\t", "\\t", StringComparison.Ordinal)}\": {{ value: {{ s: C }} }}", StringComparison.Ordinal);
+        var ignored = Assert.Single(
+            OpenApiStubGenerator.GenerateWithRelations(spec, scenarios: true, scenarioName: "edges").Scenarios!.Ignored,
+            i => i.Reason.StartsWith("a state name must", StringComparison.Ordinal));
+
+        var shown = "?" + new string('s', Math.Min(length, 64) - 1);
+        Assert.Equal(cut ? shown + "…" : shown, ignored.State);
+    }
+
+    [Fact]
+    public void Among_several_content_types_the_json_examples_are_the_ones_bound()
+    {
+        const string spec = """
+            openapi: 3.0.3
+            info: { title: Types, version: "1" }
+            paths:
+              /doc:
+                get:
+                  operationId: doc
+                  responses:
+                    "200":
+                      description: two types
+                      content:
+                        application/xml:
+                          examples:
+                            only-xml: { value: "<a/>" }
+                        application/json:
+                          examples:
+                            json-one: { value: { a: 1 } }
+            """;
+        var report = OpenApiStubGenerator.GenerateWithRelations(spec, scenarios: true).Scenarios!;
+        var state = Assert.Single(report.States);
+        Assert.Equal("json-one", state.State);
+
+        var stub = OpenApiStubGenerator.GenerateWithRelations(spec, scenarios: true).Mappings
+            .Select(m => JsonDocument.Parse(m).RootElement)
+            .Single(m => m.TryGetProperty("scenarioName", out _));
+        Assert.Equal("application/json", stub.GetProperty("response").GetProperty("headers").GetProperty("Content-Type").GetString());
+    }
+
+    [Fact]
+    public void The_reserved_state_is_the_one_every_scenario_starts_in()
+        => Assert.Equal(Mockifyr.Stores.InMemory.InMemoryScenarioStateStore.Started, OpenApiStubGenerator.InitialScenarioState);
 }

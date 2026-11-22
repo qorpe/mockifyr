@@ -8,6 +8,23 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- **An imported API's named examples are selectable scenario states (#449, Part 1).**
+  `POST /__admin/openapi/import?scenarios=true` turns every named example of an operation's responses into a
+  stub bound to one scenario (`&scenario=<name>`, else the document's `info.title`), in the state of the
+  example's name and with the status of the response that declares it. Selecting `insufficient-funds` with
+  `PUT /__admin/scenarios/{name}/state` serves the `402` example. An operation without an example of that
+  name keeps its default answer, and `Started` serves what an import without scenarios serves. Off by default:
+  without the parameter, an import generates exactly what it did and answers `{"imported": n}` as before.
+  With it, the answer also lists every bound state per operation and every example it did not bind, with the
+  reason (an example named `Started`, a name another response of the operation already binds, a name with a
+  control character, an `externalValue`, an operation wired by `?stateful=true`). A scenario name the state route
+  could not select is refused with a 422 and nothing lands: blank, over 128 characters, a control character, a
+  `/` (an escaped slash stays escaped in a route value, so the state would land on another name) or only dots
+  (a dot-segment a client removes). Every other name is driven through the route end to end. The served
+  answers are differentially confirmed against the reference engine. `?callbacks=true` is Part 2.
+
 ### Fixed
 
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup

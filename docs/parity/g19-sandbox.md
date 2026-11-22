@@ -117,6 +117,41 @@ schemas synthesize samples (`SchemaSample`), and with `?stateful=true` resource-
   the generated output byte-for-byte (petstore + a real-world-shaped orders YAML, stateful
   included).
 
+**Named examples as scenario states (#449, Part 1).** With `?scenarios=true`, each named example
+(`responses.<status>.content.<type>.examples.<name>`) of an operation also becomes a stub that requires the
+scenario state `<name>` and answers with that response's status and the example's value. What was decided,
+and what the reference engine confirmed:
+
+- **One scenario per import, not one per operation.** A consumer picks "insufficient-funds" for a product, not
+  for each of its operations. The scenario is `?scenario=<name>` or, without it, the document's `info.title`;
+  it is trimmed, and refused when the route `PUT /__admin/scenarios/{name}/state`, whose path segment it is,
+  could not select it: blank, over 128 characters, a control character, a `/` or only dots. The last two were
+  found by driving names through the route rather than reasoning about them: an escaped `/` stays escaped in an
+  ASP.NET Core route value, so the select answered 200 and set the state on `payments%2Fv1` while nothing
+  changed, and `.`/`..` are dot-segments the client removes, so the select answered 404. `%`, `+`, space,
+  `?`, `#`, `\`, `İ` and a literal `%2F` all round-trip, and each is a test row.
+- **The default stub stays exactly what an import without scenarios generates** — no scenario, the default
+  priority 5 — and every example stub carries priority 1. So an operation with no example of the selected
+  name keeps its default answer in that state, and `Started` serves what it always served. Differentially
+  confirmed: `G19cOpenApiScenarioDifferentialTests` loads the generated set raw into Java WireMock and
+  Mockifyr beside one selector stub per state (`newScenarioState`), and every step of
+  Started → `insufficient-funds` → `pending` → Started agrees, the 402 included.
+- **What is not bound is reported, never dropped silently:** an example named `Started` (every scenario's
+  initial state, so it could never be *selected*); a name a higher-ranked response of the same operation
+  already binds (ranked as response selection ranks them: lowest 2xx, `default`, then ascending); a name
+  that is empty or carries a control character (shown with `?` in its place); an example with no inline
+  value (`externalValue` is never fetched, the import's SSRF rule); and any example of an operation
+  `?stateful=true` wired to sandbox state, which answers from the stored documents.
+- **Part 2 is open:** `?callbacks=true` (a document's `callbacks` as `webhook` actions). Tracked in
+  `deferred-edges.md`.
+- **Mutation testing** (Stryker.NET, `Mockifyr.Application.Tests` → `OpenApiStubGenerator.cs`, the lines this
+  slice added): 98 of 99 testable mutants killed. The one survivor is equivalent: `content.First()` →
+  `FirstOrDefault()` where a guard two lines above has already skipped empty content. Six more are
+  `CompileError` (Stryker cannot mutate an interpolated string handed to `string.Create`, nor the `out var` of a
+  conditional) and are not a coverage gap. The run found four real gaps first — a non-JSON content type, the
+  stub's `Content-Type`, a templated example and the 64-character display cap — each now held by a fact, and an
+  equivalent null/empty guard on `operation.Responses` that was removed rather than tested.
+
 **Validation story.** `G19cOpenApiGeneratorTests` (goldens + generation table + all five typed
 refusals), `G19cSchemaSampleTests` (format map, exact depth boundary, allOf, corners),
 `G19cOpenApiImportTests` (wire: import then SERVE — declared examples verbatim, synthesized

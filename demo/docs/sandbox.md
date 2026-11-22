@@ -35,6 +35,10 @@ documents. Run a plain stub twice — nothing accumulates anywhere. That's the d
   example-less schemas get synthesized sample data.
 - Resource-shaped path pairs (`/payments` + `/payments/{id}`) are detected and wired into
   **live CRUD** against the document store — no hand-written wiring.
+- With `?scenarios=true`, every named example becomes a scenario state: the import binds them all to one
+  scenario (`&scenario=<name>`, else the spec's title), and `PUT /__admin/scenarios/<name>/state` with
+  `{"state": "insufficient-funds"}` makes every operation that declares that example answer with it — its
+  status included. The import's answer lists what it bound and what it could not.
 - The store itself is schema-less: whatever JSON your app sends is what gets stored.
   The OpenAPI schema shapes the *generated examples*; it does not police the store.
   Validation belongs to matchers (request-time) or the conformance reports (after the fact).

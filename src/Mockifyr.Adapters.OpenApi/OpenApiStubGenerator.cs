@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -68,13 +69,41 @@ public static partial class OpenApiStubGenerator
     /// customers, keyed by customerId". Making the user restate it would be asking them to repeat
     /// something they have already written down.
     /// </remarks>
-    public sealed record OpenApiImport(IReadOnlyList<string> Mappings, IReadOnlyList<ResourceSchema> Relations);
+    /// <param name="Mappings">The generated mapping JSON, one document per stub.</param>
+    /// <param name="Relations">The relations the path shapes declared.</param>
+    /// <param name="Scenarios">What the named examples became when scenarios were asked for (#449); null otherwise.</param>
+    public sealed record OpenApiImport(
+        IReadOnlyList<string> Mappings, IReadOnlyList<ResourceSchema> Relations, OpenApiScenarioReport? Scenarios = null);
+
+    /// <summary>The longest scenario name an import accepts (#449).</summary>
+    public const int MaxScenarioNameLength = 128;
+
+    /// <summary>The state every scenario starts in; an example of that name cannot be a selectable state.</summary>
+    public const string InitialScenarioState = "Started";
 
     /// <summary>The mappings alone, for callers that do not wire sandbox state.</summary>
     public static IReadOnlyList<string> Generate(string specText, bool stateful = false) =>
         GenerateWithRelations(specText, stateful).Mappings;
 
-    public static OpenApiImport GenerateWithRelations(string specText, bool stateful = false)
+    /// <summary>
+    /// Generates the mappings and the relations; with <paramref name="scenarios"/>, every named example of an
+    /// operation's responses also becomes a stub bound to one scenario (#449).
+    /// </summary>
+    /// <param name="specText">The OpenAPI document, JSON or YAML.</param>
+    /// <param name="stateful">Wire resource-shaped path pairs to sandbox state (G19b).</param>
+    /// <param name="scenarios">Make named examples selectable scenario states (#449).</param>
+    /// <param name="scenarioName">
+    /// The one scenario every example stub of this import binds to; the document's <c>info.title</c> when null.
+    /// </param>
+    /// <remarks>
+    /// One scenario per import, not one per operation: a consumer selects "insufficient-funds" for a product and
+    /// every operation that declares an example of that name answers with it, while an operation that declares
+    /// none keeps its default answer. The default stub is the one an import without scenarios generates, at the
+    /// default priority (5) and bound to no scenario, so it answers in every state; each example stub requires its
+    /// state and outranks it at priority 1.
+    /// </remarks>
+    public static OpenApiImport GenerateWithRelations(
+        string specText, bool stateful = false, bool scenarios = false, string? scenarioName = null)
     {
         GuardSpec(specText);
 
@@ -109,15 +138,37 @@ public static partial class OpenApiStubGenerator
         var (stateWired, relations) = stateful
             ? DetectResourcePairs(document)
             : ([], []);
+        var scenario = scenarios ? ScenarioNameFor(scenarioName, document) : null;
+        var bound = new List<OpenApiScenarioState>();
+        var ignored = new List<OpenApiScenarioIgnored>();
         var mappings = new List<string>();
         foreach (var (path, item) in document.Paths.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
             foreach (var (operationType, operation) in item.Operations)
             {
                 var method = operationType.ToString().ToUpperInvariant();
-                mappings.Add(stateWired.TryGetValue((path, method), out var wired)
-                    ? wired
-                    : ExampleMapping(path, method, operation));
+                if (stateWired.TryGetValue((path, method), out var wired))
+                {
+                    mappings.Add(wired);
+                    if (scenario is not null)
+                    {
+                        // A state-wired stub answers from the sandbox's documents, not from an example: binding an
+                        // example to it would replace the state it reads with a fixed body.
+                        foreach (var (state, _, _) in NamedExamples(operation))
+                        {
+                            ignored.Add(new OpenApiScenarioIgnored(NameFor(operation, method, path), method, path, state,
+                                "the operation is wired to sandbox state (stateful=true), which answers from the stored documents"));
+                        }
+                    }
+
+                    continue;
+                }
+
+                mappings.Add(ExampleMapping(path, method, operation));
+                if (scenario is not null)
+                {
+                    mappings.AddRange(ScenarioMappings(scenario, path, method, operation, bound, ignored));
+                }
             }
         }
 
@@ -126,7 +177,148 @@ public static partial class OpenApiStubGenerator
             throw new OpenApiImportException(OpenApiImportError.Empty, "The document declares no operations to import.");
         }
 
-        return new OpenApiImport(mappings, relations);
+        return new OpenApiImport(mappings, relations, scenario is null ? null : new OpenApiScenarioReport(scenario, bound, ignored));
+    }
+
+    /// <summary>
+    /// The scenario name: the one asked for, else the document's title, trimmed. It is a path segment of
+    /// <c>PUT /__admin/scenarios/{name}/state</c>, so a name that route could not select is refused here, where the fix
+    /// is one parameter away: blank, longer than <see cref="MaxScenarioNameLength"/>, a control character, a <c>/</c>,
+    /// or only dots.
+    /// </summary>
+    private static string ScenarioNameFor(string? asked, OpenApiDocument document)
+    {
+        var name = (asked ?? document.Info?.Title)?.Trim();
+        var source = asked is null ? "The document's info.title" : "The scenario name";
+        if (string.IsNullOrEmpty(name))
+        {
+            throw new OpenApiImportException(OpenApiImportError.Invalid,
+                $"{source} is empty, and a scenario needs a name: pass ?scenario=<name>.");
+        }
+
+        if (name.Length > MaxScenarioNameLength)
+        {
+            throw new OpenApiImportException(OpenApiImportError.Invalid, string.Create(CultureInfo.InvariantCulture,
+                $"{source} is {name.Length} characters long; a scenario name is at most {MaxScenarioNameLength}: pass ?scenario=<name>."));
+        }
+
+        if (name.Any(char.IsControl))
+        {
+            throw new OpenApiImportException(OpenApiImportError.Invalid,
+                $"{source} carries a control character, and a scenario name must not: pass ?scenario=<name>.");
+        }
+
+        // The two kinds of name the admin route cannot round-trip: an escaped '/' stays escaped in a route value, so
+        // the state would be set on another name and nothing would change, and '.' or '..' is a dot-segment a client
+        // removes before it sends the request. Everything else a client escapes decodes back (proven per character).
+        if (name.Contains('/', StringComparison.Ordinal))
+        {
+            throw new OpenApiImportException(OpenApiImportError.Invalid,
+                $"{source} contains '/', which PUT /__admin/scenarios/{{name}}/state cannot select: pass ?scenario=<name>.");
+        }
+
+        if (name.All(c => c == '.'))
+        {
+            throw new OpenApiImportException(OpenApiImportError.Invalid,
+                $"{source} is only dots, a path segment a client removes before it sends the request: pass ?scenario=<name>.");
+        }
+
+        return name;
+    }
+
+    /// <summary>
+    /// Every named example of every response the operation declares, in the order <see cref="PickResponse"/> ranks
+    /// the responses (lowest 2xx, then <c>default</c>, then the rest ascending).
+    /// </summary>
+    private static IEnumerable<(string State, int Status, (OpenApiMediaType Media, string ContentType, Microsoft.OpenApi.Any.IOpenApiAny? Value) Example)> NamedExamples(OpenApiOperation operation)
+    {
+        // A plain null-and-count check rather than a property pattern: a pattern variable read inside an iterator is
+        // what Stryker's mutants fail to compile on (CS0165), which removed this whole method from the mutation run.
+        foreach (var entry in RankResponses(operation.Responses ?? new OpenApiResponses()))
+        {
+            var content = entry.Value.Content;
+            if (content is null || content.Count == 0)
+            {
+                continue;
+            }
+
+            var media = content.TryGetValue("application/json", out var json)
+                ? new KeyValuePair<string, OpenApiMediaType>("application/json", json)
+                : content.First();
+            foreach (var (name, example) in media.Value.Examples ?? new Dictionary<string, OpenApiExample>())
+            {
+                yield return (name, entry.Parsed ?? 200, (media.Value, media.Key, example?.Value));
+            }
+        }
+    }
+
+    /// <summary>
+    /// One stub per named example, bound to <paramref name="scenario"/> in the state of the example's name, with
+    /// the status of the response that declares it. A name declared by two responses of one operation binds the
+    /// higher-ranked one; the other, an example named <see cref="InitialScenarioState"/>, a name with a control
+    /// character and an example with no inline value (<c>externalValue</c> is never fetched) are reported, not bound.
+    /// </summary>
+    private static IEnumerable<string> ScenarioMappings(
+        string scenario, string path, string method, OpenApiOperation operation,
+        List<OpenApiScenarioState> bound, List<OpenApiScenarioIgnored> ignored)
+    {
+        var operationName = NameFor(operation, method, path);
+        var taken = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (state, status, (_, contentType, value)) in NamedExamples(operation))
+        {
+            string? reason = null;
+            if (taken.TryGetValue(state, out var first))
+            {
+                reason = string.Create(CultureInfo.InvariantCulture, $"the {first} response already binds this state; a state selects one answer");
+            }
+            else if (string.Equals(state, InitialScenarioState, StringComparison.Ordinal))
+            {
+                reason = $"'{InitialScenarioState}' is the state every scenario starts in, so it cannot select an example";
+            }
+            else if (state.Length == 0 || state.Any(char.IsControl))
+            {
+                reason = "a state name must be non-empty and carry no control character";
+            }
+            else if (value is null)
+            {
+                reason = "the example has no inline value (externalValue is never fetched)";
+            }
+
+            if (reason is not null)
+            {
+                ignored.Add(new OpenApiScenarioIgnored(operationName, method, path, Shown(state), reason));
+                continue;
+            }
+
+            taken[state] = status;
+            bound.Add(new OpenApiScenarioState(operationName, method, path, state, status));
+            var body = SchemaSample.WriteExample(value!);
+            var response = new Dictionary<string, object>
+            {
+                ["status"] = status,
+                ["body"] = body,
+                ["headers"] = new Dictionary<string, object> { ["Content-Type"] = contentType },
+            };
+            if (body.Contains("{{", StringComparison.Ordinal))
+            {
+                response["transformers"] = new object[] { "response-template" };
+            }
+
+            yield return Serialize($"{operationName} [{state}]", path, method, response,
+                new Dictionary<string, object>
+                {
+                    ["priority"] = 1,
+                    ["scenarioName"] = scenario,
+                    ["requiredScenarioState"] = state,
+                });
+        }
+    }
+
+    /// <summary>A state name as a report may show it: control characters replaced, at most 64 characters.</summary>
+    private static string Shown(string state)
+    {
+        var clean = new string([.. state.Select(c => char.IsControl(c) ? '?' : c)]);
+        return clean.Length > 64 ? clean[..64] + "…" : clean;
     }
 
     private static string ExampleMapping(string path, string method, OpenApiOperation operation)
@@ -164,11 +356,7 @@ public static partial class OpenApiStubGenerator
             return (200, null, null);
         }
 
-        var chosen = responses
-            .Select(pair => (Key: pair.Key, Parsed: int.TryParse(pair.Key, out var code) ? code : (int?)null, pair.Value))
-            .OrderBy(entry => entry.Parsed is >= 200 and < 300 ? 0 : entry.Key == "default" ? 1 : 2)
-            .ThenBy(entry => entry.Parsed ?? int.MaxValue)
-            .First();
+        var chosen = RankResponses(responses).First();
 
         var status = chosen.Parsed ?? 200;
         if (chosen.Value.Content is { Count: > 0 } content)
@@ -181,6 +369,13 @@ public static partial class OpenApiStubGenerator
 
         return (status, null, null);
     }
+
+    /// <summary>The responses in the order the generator prefers them: lowest 2xx, then <c>default</c>, then the rest.</summary>
+    private static IEnumerable<(string Key, int? Parsed, OpenApiResponse Value)> RankResponses(OpenApiResponses responses) =>
+        responses
+            .Select(pair => (Key: pair.Key, Parsed: int.TryParse(pair.Key, out var code) ? code : (int?)null, pair.Value))
+            .OrderBy(entry => entry.Parsed is >= 200 and < 300 ? 0 : entry.Key == "default" ? 1 : 2)
+            .ThenBy(entry => entry.Parsed ?? int.MaxValue);
 
     /// <summary>
     /// Finds resource-shaped pairs — a collection path plus an item path that adds exactly one
@@ -339,7 +534,8 @@ public static partial class OpenApiStubGenerator
         return name.Length > 64 ? name[..64] : name;
     }
 
-    private static string Serialize(string name, string path, string method, Dictionary<string, object> response)
+    private static string Serialize(
+        string name, string path, string method, Dictionary<string, object> response, Dictionary<string, object>? binding = null)
     {
         var request = new Dictionary<string, object>
         {
@@ -347,14 +543,40 @@ public static partial class OpenApiStubGenerator
             [path.Contains('{', StringComparison.Ordinal) ? "urlPathTemplate" : "urlPath"] = path,
         };
 
-        return JsonSerializer.Serialize(new Dictionary<string, object>
+        var mapping = new Dictionary<string, object> { ["name"] = name };
+        foreach (var (key, value) in binding ?? [])
         {
-            ["name"] = name,
-            ["request"] = request,
-            ["response"] = response,
-        }, JsonOptions);
+            mapping[key] = value;
+        }
+
+        mapping["request"] = request;
+        mapping["response"] = response;
+        return JsonSerializer.Serialize(mapping, JsonOptions);
     }
 
     private static string NameFor(OpenApiOperation operation, string method, string path) =>
         string.IsNullOrWhiteSpace(operation.OperationId) ? $"{method} {path}" : operation.OperationId;
 }
+
+/// <summary>What an import's named examples became (#449): the scenario, the states it bound and what it did not bind.</summary>
+/// <param name="Scenario">The one scenario every example stub of the import binds to.</param>
+/// <param name="States">Every bound state, per operation.</param>
+/// <param name="Ignored">Every named example that was not bound, with the reason.</param>
+public sealed record OpenApiScenarioReport(
+    string Scenario, IReadOnlyList<OpenApiScenarioState> States, IReadOnlyList<OpenApiScenarioIgnored> Ignored);
+
+/// <summary>One named example bound as a scenario state (#449).</summary>
+/// <param name="Operation">The operation's id, or <c>METHOD path</c> when it has none.</param>
+/// <param name="Method">The HTTP method.</param>
+/// <param name="Path">The path template.</param>
+/// <param name="State">The state that selects the example: the example's name.</param>
+/// <param name="Status">The status of the response that declares the example.</param>
+public sealed record OpenApiScenarioState(string Operation, string Method, string Path, string State, int Status);
+
+/// <summary>One named example an import did not bind, and why (#449).</summary>
+/// <param name="Operation">The operation's id, or <c>METHOD path</c> when it has none.</param>
+/// <param name="Method">The HTTP method.</param>
+/// <param name="Path">The path template.</param>
+/// <param name="State">The example's name, control characters replaced.</param>
+/// <param name="Reason">Why it was not bound.</param>
+public sealed record OpenApiScenarioIgnored(string Operation, string Method, string Path, string State, string Reason);
