@@ -138,7 +138,8 @@ and what the reference engine confirmed:
   Started → `insufficient-funds` → `pending` → Started agrees, the 402 included.
 - **What is not bound is reported, never dropped silently:** an example named `Started` (every scenario's
   initial state, so it could never be *selected*); a name a higher-ranked response of the same operation
-  already binds (ranked as response selection ranks them: lowest 2xx, `default`, then ascending); a name
+  already binds (ranked as response selection ranks them: 2xx, `default`, then the rest; within each band
+  every exact code before every range, then ascending); a name
   that is empty or carries a control character (shown with `?` in its place); an example with no inline
   value (`externalValue` is never fetched, the import's SSRF rule); and any example of an operation
   `?stateful=true` wired to sandbox state, which answers from the stored documents.
@@ -152,6 +153,17 @@ and what the reference engine confirmed:
   reads keys by the same rule, which fixes the pre-existing G19c edge of an operation whose only response is
   `4XX` answering 200; `default` keeps its documented 200 there, because a default stub must answer something.
   The oracle confirms a `4XX` example answers 400 (`G19cOpenApiScenarioDifferentialTests`).
+- **An exact code outranks a range in its band, whatever their values** (verifier, round 2: `2XX` read as 200
+  sorted ahead of `201`, so a document pairing `201` with a `2XX` catch-all had its default stub answer 200
+  with the range's body, and `404` + `4XX` answered 400 — both answered the exact code on `main`, where a range
+  was unread and ranked last). The rank is band (2xx, `default`, the rest), then exact before range, then the
+  lower status. OpenAPI 3 gives an explicit code precedence over a range, and the pairing means the range as
+  the catch-all. The same order binds named examples, so an example under both `201` and `2XX` binds the `201`
+  one and reports the range's. Against `main` the only moves left are the intended ones: a range alone in its
+  band is read as its status, and `2XX` ranks with the success codes ahead of `default` and the errors.
+  `500` + `4XX` therefore binds `500` (the rest band holds an exact code), which is also what `main` chose.
+  Mutation run over the ranking after this fix (Stryker.NET 5.1.0, `G19cOpenApi*` facts, 2026-11-23): every
+  mutant on `RankResponses` and `IsRange` killed, 0 survived; overall file score 87.46%.
   Mutation run over the generator after this fix (Stryker.NET 5.1.0, `G19cOpenApi*` facts, 2026-11-23): on the
   changed lines 73 killed, 7 survived, 12 `CompileError`. All seven survivors are equivalent. Two are
   `First()` → `FirstOrDefault()` after a non-empty guard (pre-existing, as above). The other five are in the key

@@ -235,7 +235,7 @@ public static partial class OpenApiStubGenerator
 
     /// <summary>
     /// Every named example of every response the operation declares, in the order <see cref="PickResponse"/> ranks
-    /// the responses (lowest 2xx, then <c>default</c>, then the rest ascending), with the response's key and the
+    /// the responses (2xx, then <c>default</c>, then the rest; exact codes before ranges in each band), with the response's key and the
     /// status <see cref="StatusOf"/> reads from it (<see langword="null"/> for <c>default</c>, which declares none).
     /// </summary>
     private static IEnumerable<(string State, string Response, int? Status, (OpenApiMediaType Media, string ContentType, Microsoft.OpenApi.Any.IOpenApiAny? Value) Example)> NamedExamples(OpenApiOperation operation)
@@ -366,8 +366,8 @@ public static partial class OpenApiStubGenerator
     }
 
     /// <summary>
-    /// Lowest 2xx first (a range <c>2XX</c> as 200, after an exact code of the same value), then <c>default</c>
-    /// (as 200), then the rest ascending (a range <c>nXX</c> as <c>n00</c>). Only <c>default</c> and a key that is
+    /// The first response <see cref="RankResponses"/> ranks: 2xx, then <c>default</c> (as 200), then the rest, an exact
+    /// code before any range in its band (a range <c>nXX</c> answers <c>n00</c>). Only <c>default</c> and a key that is
     /// not a response key at all answer the fallback 200: the default stub must answer something.
     /// </summary>
     private static (int Status, OpenApiMediaType? Media, string? ContentType) PickResponse(OpenApiOperation operation)
@@ -392,15 +392,25 @@ public static partial class OpenApiStubGenerator
     }
 
     /// <summary>
-    /// The responses in the order the generator prefers them: lowest 2xx, then <c>default</c>, then the rest; an
-    /// exact code before a range of the same value. <c>Parsed</c> is <see cref="StatusOf"/> the key.
+    /// The responses in the order the generator prefers them, in three bands: 2xx, then <c>default</c>, then the rest.
+    /// Within a band every exact code outranks every range, whatever their values — OpenAPI 3 gives an explicit code
+    /// precedence over a range, and a document pairing <c>201</c> with <c>2XX</c> (or <c>404</c> with <c>4XX</c>) means
+    /// the range as the catch-all — and only then the lower status first. So a range is chosen only when its band
+    /// declares no exact code: <c>201</c> before <c>2XX</c>, <c>500</c> before <c>4XX</c>, and <c>2XX</c> before
+    /// <c>default</c> and any error. <c>Parsed</c> is <see cref="StatusOf"/> the key.
     /// </summary>
     private static IEnumerable<(string Key, int? Parsed, OpenApiResponse Value)> RankResponses(OpenApiResponses responses) =>
         responses
             .Select(pair => (Key: pair.Key, Parsed: StatusOf(pair.Key), pair.Value))
             .OrderBy(entry => entry.Parsed is >= 200 and < 300 ? 0 : entry.Key == "default" ? 1 : 2)
-            .ThenBy(entry => entry.Parsed ?? int.MaxValue)
-            .ThenBy(entry => entry.Key.EndsWith("XX", StringComparison.Ordinal) ? 1 : 0);
+            .ThenBy(entry => IsRange(entry.Key) ? 1 : 0)
+            .ThenBy(entry => entry.Parsed ?? int.MaxValue);
+
+    /// <summary>
+    /// Whether the key is a status range (<c>1XX</c>-<c>5XX</c>) rather than an exact code or <c>default</c>: a key
+    /// <see cref="StatusOf"/> reads is three characters, and its second is <c>X</c> only in a range.
+    /// </summary>
+    private static bool IsRange(string key) => StatusOf(key) is not null && key[1] == 'X';
 
     /// <summary>
     /// The status a response key declares, or <see langword="null"/> when it declares none. Only the two shapes

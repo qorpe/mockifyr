@@ -34,7 +34,10 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 - **An OpenAPI import reads a range response key as the status it declares (#449).** The default stub of an
   operation whose only response is `4XX` answered 200, and a `2XX` response lost to an error response
   because a range was ranked as an unknown key. A range `nXX` now answers `n00`, a `2XX` ranks with the
-  success codes (after an exact code of the same value), and only `default` keeps the documented 200.
+  success codes, and only `default` keeps the documented 200. Within each band (2xx, `default`, the rest) an
+  exact code outranks every range whatever its value, as OpenAPI 3 gives an explicit code precedence: `201` +
+  `2XX` still answers 201 and `404` + `4XX` still answers 404, exactly as before, and a range is used only
+  when its band declares no exact code.
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404

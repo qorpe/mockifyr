@@ -583,7 +583,7 @@ public sealed class G19cOpenApiGeneratorTests
     }
 
     [Fact]
-    public void A_state_bound_by_a_range_names_the_range_when_another_response_declares_it_too()
+    public void A_state_an_exact_code_and_a_range_both_declare_binds_the_exact_code_and_names_the_range_ignored()
     {
         const string spec = """
             openapi: 3.0.3
@@ -601,8 +601,75 @@ public sealed class G19cOpenApiGeneratorTests
             """;
         var report = OpenApiStubGenerator.GenerateWithRelations(spec, scenarios: true).Scenarios!;
 
-        Assert.Equal(("4XX", 400), (Assert.Single(report.States).Response, report.States[0].Status));
-        Assert.StartsWith("the 4XX response already binds this state", Assert.Single(report.Ignored).Reason, StringComparison.Ordinal);
+        // An exact code outranks every range in its band (the rest: 500 over 4XX), as it did on main for the default stub.
+        Assert.Equal(("500", 500), (Assert.Single(report.States).Response, report.States[0].Status));
+        Assert.StartsWith("the 500 response already binds this state", Assert.Single(report.Ignored).Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Verifier round 2: an exact code outranks a range in its band whatever their values — the range sorted by its
+    /// lowest code put <c>2XX</c> (200) ahead of <c>201</c>. Each row pairs an exact code with a range of a lower or
+    /// equal value, the default stub must answer the exact one with its body, and a state both declare binds it.
+    /// </summary>
+    [Theory]
+    [InlineData("201", "2XX")]
+    [InlineData("299", "2XX")]
+    [InlineData("200", "2XX")]
+    [InlineData("404", "4XX")]
+    [InlineData("599", "5XX")]
+    [InlineData("500", "4XX")]
+    [InlineData("418", "3XX")]
+    [InlineData("101", "1XX")]
+    public void An_exact_code_outranks_a_range_in_its_band_whatever_their_values(string exact, string range)
+    {
+        var stub = DefaultStub($$"""
+                    "{{range}}": { description: range, content: { application/json: { example: { e: RANGE } } } }
+                    "{{exact}}": { description: exact, content: { application/json: { example: { e: EXACT } } } }
+            """);
+        Assert.Equal(int.Parse(exact, System.Globalization.CultureInfo.InvariantCulture), stub.GetProperty("status").GetInt32());
+        Assert.Contains("EXACT", stub.GetProperty("body").GetString(), StringComparison.Ordinal);
+
+        var report = OpenApiStubGenerator.GenerateWithRelations($$"""
+            openapi: 3.0.3
+            info: { title: Dup, version: "1" }
+            paths:
+              /pay:
+                post:
+                  responses:
+                    "{{range}}":
+                      description: range
+                      content: { application/json: { examples: { ok: { value: { s: R } } } } }
+                    "{{exact}}":
+                      description: exact
+                      content: { application/json: { examples: { ok: { value: { s: E } } } } }
+            """, scenarios: true).Scenarios!;
+        Assert.Equal(exact, Assert.Single(report.States).Response);
+        Assert.StartsWith($"the {exact} response already binds this state", Assert.Single(report.Ignored).Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>The bands still come first: a 2xx range outranks <c>default</c> and every error, and the lowest exact 2xx wins among several.</summary>
+    [Fact]
+    public void A_band_outranks_the_exactness_of_a_code_in_a_later_band()
+    {
+        var range = DefaultStub("""
+                    "default": { description: d, content: { application/json: { example: { e: DEFAULT } } } }
+                    "400": { description: e, content: { application/json: { example: { e: ERR } } } }
+                    "2XX": { description: ok, content: { application/json: { example: { e: RANGE } } } }
+            """);
+        Assert.Equal((200, true), (range.GetProperty("status").GetInt32(), range.GetProperty("body").GetString()!.Contains("RANGE", StringComparison.Ordinal)));
+
+        var lowest = DefaultStub("""
+                    "2XX": { description: ok, content: { application/json: { example: { e: RANGE } } } }
+                    "204": { description: nc }
+                    "202": { description: acc, content: { application/json: { example: { e: ACCEPTED } } } }
+            """);
+        Assert.Equal(202, lowest.GetProperty("status").GetInt32());
+
+        var errors = DefaultStub("""
+                    "5XX": { description: s, content: { application/json: { example: { e: RANGE } } } }
+                    "default": { description: d, content: { application/json: { example: { e: DEFAULT } } } }
+            """);
+        Assert.Equal((200, true), (errors.GetProperty("status").GetInt32(), errors.GetProperty("body").GetString()!.Contains("DEFAULT", StringComparison.Ordinal)));
     }
 
     private static JsonElement DefaultStub(string responses) => JsonDocument.Parse(Assert.Single(OpenApiStubGenerator.Generate($$"""
