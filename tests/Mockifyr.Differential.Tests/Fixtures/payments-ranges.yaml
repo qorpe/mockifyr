@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info:
+  title: Payments ranges
+  version: 1.0.0
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      responses:
+        "201":
+          description: Accepted
+          content:
+            application/json:
+              examples:
+                approved:
+                  value: { status: APPROVED }
+        "4XX":
+          description: Declined
+          content:
+            application/json:
+              examples:
+                insufficient-funds:
+                  value: { error: INSUFFICIENT_FUNDS }
+        default:
+          description: Anything else
+          content:
+            application/json:
+              examples:
+                server-down:
+                  value: { error: DOWN }

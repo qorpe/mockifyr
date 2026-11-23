@@ -142,6 +142,24 @@ and what the reference engine confirmed:
   that is empty or carries a control character (shown with `?` in its place); an example with no inline
   value (`externalValue` is never fetched, the import's SSRF rule); and any example of an operation
   `?stateful=true` wired to sandbox state, which answers from the stored documents.
+- **An example is served only with a status its document declares** (verifier, round 1: an example under
+  `4XX` or `default` was served as 200 because `int.TryParse("4XX")` fails and the code fell back). One
+  allow-list reads a response key: three ASCII digits 100–599 is that code, and a range `1XX`–`5XX` is its
+  lowest code (`4XX` → 400), reported with the key it came from (`"response": "4XX"`). `default` declares no
+  status, so its examples are reported (`the 'default' response declares no status`) and never bound: picking
+  a status for it would invent one. Every other key — `600`, `4xx`, `+20`, `٤٠٢`, `Default` — is refused by the
+  reader at parse (a typed 422), which a test holds, so no key reaches the generator unread. The default stub
+  reads keys by the same rule, which fixes the pre-existing G19c edge of an operation whose only response is
+  `4XX` answering 200; `default` keeps its documented 200 there, because a default stub must answer something.
+  The oracle confirms a `4XX` example answers 400 (`G19cOpenApiScenarioDifferentialTests`).
+  Mutation run over the generator after this fix (Stryker.NET 5.1.0, `G19cOpenApi*` facts, 2026-11-23): on the
+  changed lines 73 killed, 7 survived, 12 `CompileError`. All seven survivors are equivalent. Two are
+  `First()` → `FirstOrDefault()` after a non-empty guard (pre-existing, as above). The other five are in the key
+  reader's own guards: `&&`/`||` swaps on the length, first-digit, `XX` and digit checks, and the early return
+  removed. They cannot be told apart because the reader only ever receives keys the OpenAPI reader has already
+  accepted (a three-character code, a range or `default`). The refused-key theory pins that contract, so a
+  looser reader would turn that test red before it turned these guards live.
+- **`?scenario=<name>` without `?scenarios=true` is refused** (422) rather than silently dropped.
 - **Part 2 is open:** `?callbacks=true` (a document's `callbacks` as `webhook` actions). Tracked in
   `deferred-edges.md`.
 - **Mutation testing** (Stryker.NET, `Mockifyr.Application.Tests` → `OpenApiStubGenerator.cs`, the lines this

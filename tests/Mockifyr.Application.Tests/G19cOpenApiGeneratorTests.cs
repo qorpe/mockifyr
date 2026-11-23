@@ -497,4 +497,156 @@ public sealed class G19cOpenApiGeneratorTests
     [Fact]
     public void The_reserved_state_is_the_one_every_scenario_starts_in()
         => Assert.Equal(Mockifyr.Stores.InMemory.InMemoryScenarioStateStore.Started, OpenApiStubGenerator.InitialScenarioState);
+
+    // ---- the status an example is served with: only one its document declares (#449, verifier round 1) ----
+
+    private static string KeyedSpec(string key) => $$"""
+        openapi: 3.0.3
+        info: { title: Keys, version: "1" }
+        paths:
+          /pay:
+            post:
+              operationId: pay
+              responses:
+                "201":
+                  description: ok
+                  content:
+                    application/json:
+                      examples:
+                        approved: { value: { s: A } }
+                "{{key}}":
+                  description: keyed
+                  content:
+                    application/json:
+                      examples:
+                        keyed: { value: { s: K } }
+        """;
+
+    /// <summary>
+    /// The class: a response key that is not a plain three-digit code. Each shape OpenAPI 3 defines answers the status
+    /// it declares (a range its lowest code), and every other key is reported, never served with a fallback 200.
+    /// </summary>
+    [Theory]
+    [InlineData("402", 402)]
+    [InlineData("4XX", 400)]
+    [InlineData("5XX", 500)]
+    [InlineData("1XX", 100)]
+    [InlineData("3XX", 300)]
+    [InlineData("599", 599)]
+    [InlineData("100", 100)]
+    public void A_named_example_answers_the_status_its_response_key_declares(string key, int expected)
+    {
+        var report = OpenApiStubGenerator.GenerateWithRelations(KeyedSpec(key), scenarios: true).Scenarios!;
+
+        var keyed = Assert.Single(report.States, s => s.State == "keyed");
+        Assert.Equal((key, expected), (keyed.Response, keyed.Status));
+        Assert.Empty(report.Ignored);
+        var stub = OpenApiStubGenerator.GenerateWithRelations(KeyedSpec(key), scenarios: true).Mappings
+            .Select(m => JsonDocument.Parse(m).RootElement)
+            .Single(m => m.TryGetProperty("requiredScenarioState", out var state) && state.GetString() == "keyed");
+        Assert.Equal(expected, stub.GetProperty("response").GetProperty("status").GetInt32());
+    }
+
+    [Fact]
+    public void A_named_example_under_default_is_reported_and_never_served()
+    {
+        var import = OpenApiStubGenerator.GenerateWithRelations(KeyedSpec("default"), scenarios: true);
+        var report = import.Scenarios!;
+
+        Assert.Equal(["approved"], report.States.Select(s => s.State));
+        var ignored = Assert.Single(report.Ignored);
+        Assert.Equal("keyed", ignored.State);
+        Assert.StartsWith("the 'default' response declares no status", ignored.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(import.Mappings, m => m.Contains("\"requiredScenarioState\":\"keyed\"", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The rest of the class never reaches the generator: every key that is not a code, a range or <c>default</c> is
+    /// refused at parse with a typed 422, so no example can be served under a status nobody declared.
+    /// </summary>
+    [Theory]
+    [InlineData("600")]
+    [InlineData("099")]
+    [InlineData("6XX")]
+    [InlineData("4xx")]
+    [InlineData("40X")]
+    [InlineData("4X0")]
+    [InlineData("+20")]
+    [InlineData("4020")]
+    [InlineData("٤٠٢")]
+    [InlineData("Default")]
+    public void A_response_key_that_is_not_a_code_a_range_or_default_refuses_the_import(string key)
+    {
+        var refused = Assert.Throws<OpenApiImportException>(() => OpenApiStubGenerator.GenerateWithRelations(KeyedSpec(key), scenarios: true));
+        Assert.Equal(OpenApiImportError.Invalid, refused.Error);
+        Assert.Contains("Responses key must be 'default', an HTTP status code", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_state_bound_by_a_range_names_the_range_when_another_response_declares_it_too()
+    {
+        const string spec = """
+            openapi: 3.0.3
+            info: { title: Dup, version: "1" }
+            paths:
+              /pay:
+                post:
+                  responses:
+                    "4XX":
+                      description: range
+                      content: { application/json: { examples: { declined: { value: { s: R } } } } }
+                    "500":
+                      description: exact
+                      content: { application/json: { examples: { declined: { value: { s: E } } } } }
+            """;
+        var report = OpenApiStubGenerator.GenerateWithRelations(spec, scenarios: true).Scenarios!;
+
+        Assert.Equal(("4XX", 400), (Assert.Single(report.States).Response, report.States[0].Status));
+        Assert.StartsWith("the 4XX response already binds this state", Assert.Single(report.Ignored).Reason, StringComparison.Ordinal);
+    }
+
+    private static JsonElement DefaultStub(string responses) => JsonDocument.Parse(Assert.Single(OpenApiStubGenerator.Generate($$"""
+        openapi: 3.0.3
+        info: { title: Default, version: "1" }
+        paths:
+          /pay:
+            post:
+              responses:
+        {{responses}}
+        """))).RootElement.GetProperty("response");
+
+    /// <summary>The same class on the default stub (pre-existing since G19c): a range is read as the status it declares.</summary>
+    [Fact]
+    public void The_default_stub_of_an_operation_whose_only_response_is_a_range_answers_that_range()
+    {
+        var response = DefaultStub("""
+                    "4XX": { description: err, content: { application/json: { example: { e: 1 } } } }
+            """);
+        Assert.Equal(400, response.GetProperty("status").GetInt32());
+    }
+
+    [Fact]
+    public void A_2XX_range_outranks_an_error_for_the_default_stub_and_an_exact_200_outranks_the_range()
+    {
+        var range = DefaultStub("""
+                    "404": { description: nf, content: { application/json: { example: { e: NF } } } }
+                    "2XX": { description: ok, content: { application/json: { example: { e: OK } } } }
+            """);
+        Assert.Equal(200, range.GetProperty("status").GetInt32());
+        Assert.Contains("OK", range.GetProperty("body").GetString(), StringComparison.Ordinal);
+
+        var exact = DefaultStub("""
+                    "2XX": { description: ok, content: { application/json: { example: { e: RANGE } } } }
+                    "200": { description: ok, content: { application/json: { example: { e: EXACT } } } }
+            """);
+        Assert.Contains("EXACT", exact.GetProperty("body").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_scenario_name_without_scenarios_is_refused_rather_than_dropped()
+    {
+        var refused = Assert.Throws<OpenApiImportException>(() => OpenApiStubGenerator.GenerateWithRelations(EdgeSpec, scenarioName: "edges"));
+        Assert.Equal(OpenApiImportError.Invalid, refused.Error);
+        Assert.StartsWith("?scenario=<name> names the scenario of ?scenarios=true", refused.Message, StringComparison.Ordinal);
+    }
 }

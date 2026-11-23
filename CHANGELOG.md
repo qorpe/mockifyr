@@ -24,9 +24,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   `/` (an escaped slash stays escaped in a route value, so the state would land on another name) or only dots
   (a dot-segment a client removes). Every other name is driven through the route end to end. The served
   answers are differentially confirmed against the reference engine. `?callbacks=true` is Part 2.
+  An example is served only with a status its document declares: one under a range key answers the range's
+  lowest code (`4XX` serves 400), each bound state names the key that declares it (`"response": "4XX"`), and
+  one under `default`, which declares no status, is reported rather than served as 200. `?scenario=<name>`
+  without `?scenarios=true` is refused with a 422 rather than dropped.
 
 ### Fixed
 
+- **An OpenAPI import reads a range response key as the status it declares (#449).** The default stub of an
+  operation whose only response is `4XX` answered 200, and a `2XX` response lost to an error response
+  because a range was ranked as an unknown key. A range `nXX` now answers `n00`, a `2XX` ranks with the
+  success codes (after an exact code of the same value), and only `default` keeps the documented 200.
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404

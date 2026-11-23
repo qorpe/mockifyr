@@ -945,7 +945,7 @@ public static class AdminEndpoints
                         scenarios = new
                         {
                             scenario = report.Scenario,
-                            states = report.States.Select(s => new { operation = s.Operation, method = s.Method, path = s.Path, state = s.State, status = s.Status }),
+                            states = report.States.Select(s => new { operation = s.Operation, method = s.Method, path = s.Path, state = s.State, response = s.Response, status = s.Status }),
                             ignored = report.Ignored.Select(i => new { operation = i.Operation, method = i.Method, path = i.Path, state = i.State, reason = i.Reason }),
                         },
                     }

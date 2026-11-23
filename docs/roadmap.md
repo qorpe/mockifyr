@@ -579,7 +579,8 @@ each item's definition of done, not follow-ups.
   /__admin/openapi/import?scenarios=true[&scenario=<name>]`: every named example of an operation's responses
   becomes a stub bound to ONE scenario per import (the name asked for, else `info.title`) in the state of the
   example's name, with the status of the response that declares it, so selecting `insufficient-funds` serves
-  the `402` example. The default stub is unchanged and answers in every state. The import report lists every
+  the `402` example (a range `4XX` answers 400; `default` declares no status and is reported, never served as
+  200). The default stub is unchanged and answers in every state. The import report lists every
   bound state and every example it could not bind, with the reason. Part 2 — `?callbacks=true`, a document's
   `callbacks` as `webhook` actions — is open: `docs/parity/deferred-edges.md`.
 - [x] **G19d — Sandbox access: API keys + quotas.** Opt-in `--sandbox-auth`: hashed per-tenant keys

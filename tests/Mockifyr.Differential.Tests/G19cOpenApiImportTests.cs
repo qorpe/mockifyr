@@ -291,4 +291,48 @@ public sealed class G19cOpenApiImportTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.UnprocessableEntity, status);
         Assert.Contains($"The scenario name {expected}", body, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A named example under a range answers the range's lowest code, never 200; one under <c>default</c> declares no
+    /// status, so it is reported and selecting its name leaves the default answer in place (#449, verifier round 1).
+    /// </summary>
+    [Fact]
+    public async Task An_example_under_a_range_is_served_with_that_range_and_one_under_default_is_reported()
+    {
+        var (importStatus, importBody) = await SendAsync(
+            HttpMethod.Post, "/__admin/openapi/import?scenarios=true&scenario=ranges", Fixture("payments-ranges.yaml"));
+        Assert.Equal(HttpStatusCode.OK, importStatus);
+        using (var report = JsonDocument.Parse(importBody))
+        {
+            var scenarios = report.RootElement.GetProperty("scenarios");
+            Assert.Equal(
+                ["approved 201 201", "insufficient-funds 4XX 400"],
+                scenarios.GetProperty("states").EnumerateArray().Select(s =>
+                    $"{s.GetProperty("state").GetString()} {s.GetProperty("response").GetString()} {s.GetProperty("status").GetInt32()}"));
+            var ignored = Assert.Single(scenarios.GetProperty("ignored").EnumerateArray());
+            Assert.Equal("server-down", ignored.GetProperty("state").GetString());
+            Assert.StartsWith("the 'default' response declares no status", ignored.GetProperty("reason").GetString(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(HttpStatusCode.OK, (await SelectAsync("ranges", "insufficient-funds")).Status);
+        var (status, body) = await PayAsync();
+        Assert.Equal((400, true), (status, body.Contains("INSUFFICIENT_FUNDS", StringComparison.Ordinal)));
+
+        await SelectAsync("ranges", "server-down");
+        (status, body) = await PayAsync();
+        Assert.Equal((201, true), (status, body.Contains("APPROVED", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task A_scenario_name_without_scenarios_is_refused_and_nothing_lands()
+    {
+        var (status, body) = await SendAsync(
+            HttpMethod.Post, "/__admin/openapi/import?scenario=payments-v1", Fixture("payments-scenarios.yaml"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, status);
+        Assert.Contains("?scenario=<name> names the scenario of ?scenarios=true", body, StringComparison.Ordinal);
+
+        var (_, mappings) = await SendAsync(HttpMethod.Get, "/__admin/mappings");
+        using var doc = JsonDocument.Parse(mappings);
+        Assert.Empty(doc.RootElement.GetProperty("mappings").EnumerateArray());
+    }
 }

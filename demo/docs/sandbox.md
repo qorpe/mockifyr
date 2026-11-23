@@ -38,7 +38,8 @@ documents. Run a plain stub twice — nothing accumulates anywhere. That's the d
 - With `?scenarios=true`, every named example becomes a scenario state: the import binds them all to one
   scenario (`&scenario=<name>`, else the spec's title), and `PUT /__admin/scenarios/<name>/state` with
   `{"state": "insufficient-funds"}` makes every operation that declares that example answer with it — its
-  status included. The import's answer lists what it bound and what it could not.
+  status included (a range key such as `4XX` answers 400; an example under `default`, which declares no
+  status, is not bound). The import's answer lists what it bound and what it could not.
 - The store itself is schema-less: whatever JSON your app sends is what gets stored.
   The OpenAPI schema shapes the *generated examples*; it does not police the store.
   Validation belongs to matchers (request-time) or the conformance reports (after the fact).

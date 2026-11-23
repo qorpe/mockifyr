@@ -84,4 +84,54 @@ public sealed class G19cOpenApiScenarioDifferentialTests : IAsyncLifetime
         Assert.Contains("PENDING", payments[2].Body, StringComparison.Ordinal);
         Assert.Contains("APPROVED", payments[3].Body, StringComparison.Ordinal);
     }
+
+    /// <summary>A range's example answers the range's lowest code on both engines; the reference engine agrees (#449).</summary>
+    [Fact]
+    public async Task An_example_under_a_range_is_served_with_the_ranges_code_as_the_reference_engine_serves_it()
+    {
+        const string scenario = "ranges";
+        var import = OpenApiStubGenerator.GenerateWithRelations(
+            File.ReadAllText(Path.Combine("Fixtures", "payments-ranges.yaml")), scenarios: true, scenarioName: scenario);
+        var mappings = new JsonArray([.. import.Mappings.Select(m => JsonNode.Parse(m))]);
+        foreach (var state in new[] { "insufficient-funds", "server-down" })
+        {
+            mappings.Add(JsonNode.Parse(JsonSerializer.Serialize(new Dictionary<string, object>
+            {
+                ["scenarioName"] = scenario,
+                ["newScenarioState"] = state,
+                ["request"] = new { method = "POST", urlPath = $"/__select/{state}" },
+                ["response"] = new { status = 204 },
+            })));
+        }
+
+        await _runner.LoadAsync(new JsonObject { ["mappings"] = mappings }.ToJsonString());
+
+        RequestSpec[] steps =
+        [
+            Post("/payments"),
+            Post("/__select/insufficient-funds"),
+            Post("/payments"),                      // the 4XX example, as 400
+            Post("/__select/server-down"),
+            Post("/payments"),                      // `default` bound nothing: the default answer
+        ];
+
+        var failures = new List<string>();
+        var payments = new List<int>();
+        for (var step = 0; step < steps.Length; step++)
+        {
+            var outcome = await _runner.ProbeAsync(steps[step]);
+            if (!outcome.Diff.IsMatch)
+            {
+                failures.Add($"step {step} {steps[step].Method} {steps[step].Url}: {outcome.Diff.Report}");
+            }
+
+            if (steps[step].Url == "/payments")
+            {
+                payments.Add(outcome.Oracle.Status);
+            }
+        }
+
+        Assert.True(failures.Count == 0, $"{failures.Count} divergence(s):\n{string.Join("\n", failures)}");
+        Assert.Equal([201, 400, 201], payments);
+    }
 }

@@ -94,6 +94,7 @@ public static partial class OpenApiStubGenerator
     /// <param name="scenarios">Make named examples selectable scenario states (#449).</param>
     /// <param name="scenarioName">
     /// The one scenario every example stub of this import binds to; the document's <c>info.title</c> when null.
+    /// Refused without <paramref name="scenarios"/>, rather than dropped.
     /// </param>
     /// <remarks>
     /// One scenario per import, not one per operation: a consumer selects "insufficient-funds" for a product and
@@ -106,6 +107,12 @@ public static partial class OpenApiStubGenerator
         string specText, bool stateful = false, bool scenarios = false, string? scenarioName = null)
     {
         GuardSpec(specText);
+        if (!scenarios && scenarioName is not null)
+        {
+            // A name for a scenario nobody asked for would otherwise be dropped without a word.
+            throw new OpenApiImportException(OpenApiImportError.Invalid,
+                "?scenario=<name> names the scenario of ?scenarios=true, which this import does not ask for: add ?scenarios=true or drop ?scenario.");
+        }
 
         var reader = new OpenApiStringReader(new OpenApiReaderSettings
         {
@@ -154,7 +161,7 @@ public static partial class OpenApiStubGenerator
                     {
                         // A state-wired stub answers from the sandbox's documents, not from an example: binding an
                         // example to it would replace the state it reads with a fixed body.
-                        foreach (var (state, _, _) in NamedExamples(operation))
+                        foreach (var (state, _, _, _) in NamedExamples(operation))
                         {
                             ignored.Add(new OpenApiScenarioIgnored(NameFor(operation, method, path), method, path, state,
                                 "the operation is wired to sandbox state (stateful=true), which answers from the stored documents"));
@@ -228,9 +235,10 @@ public static partial class OpenApiStubGenerator
 
     /// <summary>
     /// Every named example of every response the operation declares, in the order <see cref="PickResponse"/> ranks
-    /// the responses (lowest 2xx, then <c>default</c>, then the rest ascending).
+    /// the responses (lowest 2xx, then <c>default</c>, then the rest ascending), with the response's key and the
+    /// status <see cref="StatusOf"/> reads from it (<see langword="null"/> for <c>default</c>, which declares none).
     /// </summary>
-    private static IEnumerable<(string State, int Status, (OpenApiMediaType Media, string ContentType, Microsoft.OpenApi.Any.IOpenApiAny? Value) Example)> NamedExamples(OpenApiOperation operation)
+    private static IEnumerable<(string State, string Response, int? Status, (OpenApiMediaType Media, string ContentType, Microsoft.OpenApi.Any.IOpenApiAny? Value) Example)> NamedExamples(OpenApiOperation operation)
     {
         // A plain null-and-count check rather than a property pattern: a pattern variable read inside an iterator is
         // what Stryker's mutants fail to compile on (CS0165), which removed this whole method from the mutation run.
@@ -247,29 +255,32 @@ public static partial class OpenApiStubGenerator
                 : content.First();
             foreach (var (name, example) in media.Value.Examples ?? new Dictionary<string, OpenApiExample>())
             {
-                yield return (name, entry.Parsed ?? 200, (media.Value, media.Key, example?.Value));
+                yield return (name, entry.Key, entry.Parsed, (media.Value, media.Key, example?.Value));
             }
         }
     }
 
     /// <summary>
     /// One stub per named example, bound to <paramref name="scenario"/> in the state of the example's name, with
-    /// the status of the response that declares it. A name declared by two responses of one operation binds the
-    /// higher-ranked one; the other, an example named <see cref="InitialScenarioState"/>, a name with a control
-    /// character and an example with no inline value (<c>externalValue</c> is never fetched) are reported, not bound.
+    /// the status of the response that declares it (a range key <c>nXX</c> answers <c>n00</c>). A name declared by
+    /// two responses of one operation binds the higher-ranked one; the other, an example named
+    /// <see cref="InitialScenarioState"/>, a name with a control character, an example with no inline value
+    /// (<c>externalValue</c> is never fetched) and an example under a key that declares no status (<c>default</c>, or
+    /// anything that is not a status code or a range) are reported, not bound. Fail-closed: an example is served only
+    /// with a status its document declares, never with a fallback.
     /// </summary>
     private static IEnumerable<string> ScenarioMappings(
         string scenario, string path, string method, OpenApiOperation operation,
         List<OpenApiScenarioState> bound, List<OpenApiScenarioIgnored> ignored)
     {
         var operationName = NameFor(operation, method, path);
-        var taken = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var (state, status, (_, contentType, value)) in NamedExamples(operation))
+        var taken = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (state, key, status, (_, contentType, value)) in NamedExamples(operation))
         {
             string? reason = null;
             if (taken.TryGetValue(state, out var first))
             {
-                reason = string.Create(CultureInfo.InvariantCulture, $"the {first} response already binds this state; a state selects one answer");
+                reason = $"the {first} response already binds this state; a state selects one answer";
             }
             else if (string.Equals(state, InitialScenarioState, StringComparison.Ordinal))
             {
@@ -283,6 +294,11 @@ public static partial class OpenApiStubGenerator
             {
                 reason = "the example has no inline value (externalValue is never fetched)";
             }
+            else if (status is null)
+            {
+                // 'default' is the one key the reader accepts that declares no status; any other is refused at parse.
+                reason = $"the '{key}' response declares no status, and an example is served only with one its document declares";
+            }
 
             if (reason is not null)
             {
@@ -290,12 +306,13 @@ public static partial class OpenApiStubGenerator
                 continue;
             }
 
-            taken[state] = status;
-            bound.Add(new OpenApiScenarioState(operationName, method, path, state, status));
+            taken[state] = key;
+            var code = status!.Value;
+            bound.Add(new OpenApiScenarioState(operationName, method, path, state, key, code));
             var body = SchemaSample.WriteExample(value!);
             var response = new Dictionary<string, object>
             {
-                ["status"] = status,
+                ["status"] = code,
                 ["body"] = body,
                 ["headers"] = new Dictionary<string, object> { ["Content-Type"] = contentType },
             };
@@ -348,7 +365,11 @@ public static partial class OpenApiStubGenerator
         return Serialize(NameFor(operation, method, path), path, method, response);
     }
 
-    /// <summary>Lowest 2xx first, then <c>default</c> (as 200), then the first declared response.</summary>
+    /// <summary>
+    /// Lowest 2xx first (a range <c>2XX</c> as 200, after an exact code of the same value), then <c>default</c>
+    /// (as 200), then the rest ascending (a range <c>nXX</c> as <c>n00</c>). Only <c>default</c> and a key that is
+    /// not a response key at all answer the fallback 200: the default stub must answer something.
+    /// </summary>
     private static (int Status, OpenApiMediaType? Media, string? ContentType) PickResponse(OpenApiOperation operation)
     {
         if (operation.Responses is not { Count: > 0 } responses)
@@ -370,12 +391,42 @@ public static partial class OpenApiStubGenerator
         return (status, null, null);
     }
 
-    /// <summary>The responses in the order the generator prefers them: lowest 2xx, then <c>default</c>, then the rest.</summary>
+    /// <summary>
+    /// The responses in the order the generator prefers them: lowest 2xx, then <c>default</c>, then the rest; an
+    /// exact code before a range of the same value. <c>Parsed</c> is <see cref="StatusOf"/> the key.
+    /// </summary>
     private static IEnumerable<(string Key, int? Parsed, OpenApiResponse Value)> RankResponses(OpenApiResponses responses) =>
         responses
-            .Select(pair => (Key: pair.Key, Parsed: int.TryParse(pair.Key, out var code) ? code : (int?)null, pair.Value))
+            .Select(pair => (Key: pair.Key, Parsed: StatusOf(pair.Key), pair.Value))
             .OrderBy(entry => entry.Parsed is >= 200 and < 300 ? 0 : entry.Key == "default" ? 1 : 2)
-            .ThenBy(entry => entry.Parsed ?? int.MaxValue);
+            .ThenBy(entry => entry.Parsed ?? int.MaxValue)
+            .ThenBy(entry => entry.Key.EndsWith("XX", StringComparison.Ordinal) ? 1 : 0);
+
+    /// <summary>
+    /// The status a response key declares, or <see langword="null"/> when it declares none. Only the two shapes
+    /// OpenAPI 3 defines are read: three ASCII digits from 100 to 599, and a range <c>1XX</c>-<c>5XX</c>, which
+    /// answers its lowest code. <c>default</c> declares none. The reader already refuses every other key at parse
+    /// (<c>600</c>, <c>4xx</c>, <c>+20</c>, ...), so this is an allow-list behind an allow-list: a key nobody has thought
+    /// of is never read as a status by accident (<c>int.TryParse</c> read nothing from <c>4XX</c>, which is how a
+    /// range came to answer 200).
+    /// </summary>
+    private static int? StatusOf(string key)
+    {
+        if (key.Length != 3 || key[0] is < '1' or > '5')
+        {
+            return null;
+        }
+
+        var hundreds = (key[0] - '0') * 100;
+        if (key[1] == 'X' && key[2] == 'X')
+        {
+            return hundreds;
+        }
+
+        return char.IsAsciiDigit(key[1]) && char.IsAsciiDigit(key[2])
+            ? hundreds + ((key[1] - '0') * 10) + (key[2] - '0')
+            : null;
+    }
 
     /// <summary>
     /// Finds resource-shaped pairs — a collection path plus an item path that adds exactly one
@@ -570,8 +621,9 @@ public sealed record OpenApiScenarioReport(
 /// <param name="Method">The HTTP method.</param>
 /// <param name="Path">The path template.</param>
 /// <param name="State">The state that selects the example: the example's name.</param>
-/// <param name="Status">The status of the response that declares the example.</param>
-public sealed record OpenApiScenarioState(string Operation, string Method, string Path, string State, int Status);
+/// <param name="Response">The response key that declares the example, as the document spells it (<c>402</c>, <c>4XX</c>).</param>
+/// <param name="Status">The status the stub answers: the key's code, or a range's lowest (<c>4XX</c> answers 400).</param>
+public sealed record OpenApiScenarioState(string Operation, string Method, string Path, string State, string Response, int Status);
 
 /// <summary>One named example an import did not bind, and why (#449).</summary>
 /// <param name="Operation">The operation's id, or <c>METHOD path</c> when it has none.</param>
