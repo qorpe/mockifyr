@@ -10,12 +10,19 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Fixed
 
+- **A `--root-dir` host now serves a non-default tenant's stubs after a restart (#467).** The file provider wrote
+  them to `mappings/<tenant>/`, and startup read only the flat `mappings/*.json`, so a tenant's stub created over the
+  admin API was persisted and never served again. A subdirectory of `mappings/` is now read as a tenant when every
+  file in it is one the provider wrote: `<guid>.json` holding one stub whose id is that guid. Any other subdirectory
+  (notes, hand-organised stubs, a bundle, a nested directory) is skipped whole and logged once, so a mappings tree you
+  organised yourself does not start creating tenants. Git sync reloads with the same loader, so a pull now carries a
+  tenant's stubs, and it no longer prunes the stubs of a tenant held in memory.
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404
   until something re-imported it. Startup now loads every tenant from a backend that spans tenants, each
-  under its own, as the change-feed reload already did. LiteDB gained the same all-tenant read. `--root-dir`
-  still reloads the default tenant only (#467).
+  under its own, as the change-feed reload already did. LiteDB gained the same all-tenant read. (`--root-dir`
+  followed in #467.)
 - **Postgres and LiteDB key a persisted stub by its tenant and its id (#466).** Both keyed it by the stub id
   alone, so when two tenants held the same id (the same mapping file imported into both), the second tenant's
   write took the first's row and its delete removed it, and after a restart the first tenant had nothing.

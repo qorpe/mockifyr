@@ -8,7 +8,8 @@ namespace Mockifyr.Server;
 /// <c>&lt;root-dir&gt;/mappings</c> layout — the persistence directory <em>is</em> the load directory.
 /// The stub's id is stamped into the saved JSON so the reloaded stub keeps the same id (the reader
 /// mints a fresh id when none is present). Default-tenant stubs are written flat (matching the loader);
-/// other tenants go in a per-tenant subdirectory (their startup reload is deferred).
+/// other tenants go in a per-tenant subdirectory, which <see cref="DirectoryMappingsLoader.LoadAllTenants"/> reads
+/// back as that tenant because every file in it is one this provider wrote (#467).
 /// File I/O lives at the host edge, never in Core.
 /// </summary>
 public sealed class FileSystemStubPersistence(string mappingsDirectory) : IStubPersistence

@@ -28,10 +28,10 @@ the same seam.
   the file was written, start a **fresh** host on the same dir, and serve the reloaded stub — its
   response matches the oracle's for the same mapping. Delete + reset are confirmed to stay gone after a
   restart.
-- **Deferred (explicitly tracked — not a silent gap):** multi-tenant persistence *reload* (non-default
-  tenants are written to per-tenant subdirectories, but startup only reloads the default tenant's
-  flat dir — still open for this provider alone, [#467](https://github.com/qorpe/mockifyr/issues/467); the
-  database backends reload every tenant since #466, see "Startup reload covers every tenant" below); WireMock's `persistent:false` opt-out (all admin mutations persist when a root-dir is
+- **Deferred (explicitly tracked — not a silent gap):** multi-tenant persistence *reload* closed for this
+  provider in [#467](https://github.com/qorpe/mockifyr/issues/467) (non-default tenants are written to
+  per-tenant subdirectories and reloaded from them, see "A `--root-dir` host reloads the tenants it wrote"
+  below; the database backends reload every tenant since #466); WireMock's `persistent:false` opt-out (all admin mutations persist when a root-dir is
   set); and the other providers — **LiteDB (G16b), Postgres (G16c), Redis (G16d)** — plus
   **change-feed reload (G16e)**, each behind this same seam.
 - **Regression cases:** `G16aPersistenceTests.CreatedStub_SurvivesRestart_AndMatchesOracle`,
@@ -174,10 +174,8 @@ the same seam.
 - **One more member of the class.** LiteDB stores `{ Id, Tenant, Json }`, so it spans tenants too, but its
   loader did not implement `IMultiTenantMappingsLoader`: the same defect on the third database backend, and
   a git-sync reconcile on a LiteDB host saw only the default tenant. `LiteDbMappingsLoader` now implements it.
-- **What startup reload covers.** Postgres, Redis and LiteDB: every tenant. `--root-dir`: the default tenant
-  only. A non-default tenant's files under `mappings/<tenant>/` are written and not reloaded, and that stays
-  tracked as [#467](https://github.com/qorpe/mockifyr/issues/467), because reading subdirectories as tenants
-  would change the meaning of a hand-organised mappings tree.
+- **What startup reload covers.** Postgres, Redis and LiteDB: every tenant. `--root-dir`: since #467, the
+  default tenant's flat files and every tenant directory the file provider wrote (next section).
 - **Validation.** For each backend, a host writes stubs for two non-default tenants and the default tenant
   through the admin API (`X-Mockifyr-Tenant`). It is replaced by a fresh host on the same backend, **without**
   `--change-feed`, so only startup can load them. Each tenant then serves its own stub and lists exactly one,
@@ -340,3 +338,35 @@ the same seam.
 - **Regression cases:** `GitSyncTests` (configure/snapshot/restart-resolution/refusals/invalid
   input) and `GitSyncConfigureHostTests` (flag-less host: HTTP configure → push → restart adoption
   serves the synced stub).
+
+## A `--root-dir` host reloads the tenants it wrote (#467)
+
+- **The defect.** `FileSystemStubPersistence` writes a non-default tenant's stubs to `mappings/<tenant>/<id>.json`,
+  and `DirectoryMappingsLoader` read only the flat `mappings/*.json`, into the default tenant. So a tenant's stub
+  created over the admin API on a `--root-dir` host was persisted, and a fresh host never served it.
+- **The decision (owner, 2026-11-25, option (a)).** Reading `mappings/<name>/` as tenant `<name>` changes what a
+  subdirectory of a user's mappings tree means, which until now was "ignored". So a subdirectory is a tenant only
+  when **every** entry in it is a file this provider writes: `<guid>.json` (the canonical `D` form, lower- or
+  upper-case hex, with a lower-case `.json`) holding **one** stub whose `id` is that guid. Anything else is skipped
+  whole, logged once (`mockifyr: mappings/<name>: <reason> — skipped, not read as a tenant.`), and listed in
+  `DirectoryMappingsLoader.SkippedDirectories`. That covers notes beside the stubs, a stub under any other name, a
+  stub whose id is not its file name or that carries none, a bundle, a file that does not parse, a nested directory,
+  an OS file such as `.DS_Store`, and a directory named like the default tenant. It is an allow-list of what the
+  provider writes, so a hand-made layout nobody has named yet is skipped too. A directory is all or nothing: one
+  foreign file and none of its stubs load. No ADR, because no layout changed: the provider has written this layout
+  since G16a, and only the reading is new.
+- **Where it applies.** `DirectoryMappingsLoader` implements `IMultiTenantMappingsLoader`, so startup
+  (`ApplyStartupMappings`) and git sync's reload after a pull both read the tenants. The second is also a fix: a
+  pull reconciled only the default tenant from disk, so a non-default tenant held in memory was pruned on every
+  pull. `Load(tenant)`, the single-tenant seam, is unchanged.
+- **Validation.** No oracle: tenancy is Mockifyr's own.
+  - `DirectoryMappingsTenantsTests` covers the provider's own tenants reloaded with their ids, the ten skipped
+    shapes above (each beside a valid file that must not load either), a skip listed once across reloads, and an
+    empty or missing directory.
+  - `G16aPersistenceTests.A_tenants_stub_survives_a_restart_and_a_handmade_directory_does_not_become_a_tenant` runs
+    a real host. A tenant's stub is created over the admin API, and a fresh host serves it to that tenant only,
+    while a hand-made directory beside it is no tenant.
+  - `GitSyncTests.PushThenPull_CarriesANonDefaultTenantsStub_AndThePullKeepsIt` covers git sync.
+  - With the interface removed (`main`'s behaviour), the wire fact and the git fact are red. With the allow-list
+    loosened, five of the skipped shapes load as tenants.
+
