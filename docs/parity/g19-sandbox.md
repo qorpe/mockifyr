@@ -1160,3 +1160,23 @@ spellings and three accepted ones are wire cases, and the prefix test turns thre
 
 Scopes are carried, not enforced. A requested scope is echoed into the token and the response, and no
 stub or route reads it.
+
+## Why a call did not match, told to the caller (#457)
+
+The first hour of every integration goes on a wrong path, a missing header or a wrong content type, and
+until now the partner surface answered only `wasMatched: false`. `GET /__sandbox/requests/{id}/near-misses`
+explains the caller's own journaled request — the closest stubs, how close, and per attribute whether it
+agreed, with the value the request carried — reached with the key the partner already holds. Another
+tenant's request id is a 404, because the lookup is the key's tenant: it is not a check that could be
+wrong.
+
+What the operator sees and the partner does not: the stub's id and its `expected` request block. A
+matcher can hold a credential, and the consumer whose request missed it is the last person who should
+read it back.
+
+`--explain-unmatched <tenant>` (repeatable, off by default) also puts that summary into the unmatched 404
+itself, as an RFC 9457 problem document with `requestId`, a `nearMisses` link to the route above and the
+`closest` list. Per tenant, because a sandbox rehearsing production often wants the bare 404 a real API
+gives, and because the bare 404 is what the differential suite pins for every tenant left unnamed
+(`docs/parity/g6-verify.md`). Not on the dashboard yet; not on the documentation website from this
+change (see the pull request).

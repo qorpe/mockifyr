@@ -112,6 +112,7 @@ public sealed class SandboxSelfServiceTests : IAsyncLifetime
     [InlineData("/__sandbox/messages")]
     [InlineData("/__sandbox/resources")]
     [InlineData("/__sandbox/environments")]
+    [InlineData("/__sandbox/requests/00000000-0000-0000-0000-000000000000/near-misses")]
     public async Task No_key_is_a_401_on_every_route(string path)
     {
         using var response = await _client!.GetAsync(path);

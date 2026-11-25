@@ -34,6 +34,43 @@ public static class MockServingEndpoints
         return endpoints;
     }
 
+    /// <summary>
+    /// The explanatory 404 (#457): a problem document naming how close the nearest stubs came and which of
+    /// their attributes disagreed, in the consumer's shape (<see cref="ConsumerNearMiss"/> — never a stub's
+    /// id or its expected values), with the journal entry the partner surface explains in full.
+    /// </summary>
+    /// <remarks>
+    /// Computed from the JOURNALED request when there is one, so journal masking (#227) holds here too: a
+    /// header the operator keeps out of storage is not echoed back either. With the journal disabled
+    /// there is no entry to point at, so the link is left out and the live request is explained.
+    /// </remarks>
+    private static async Task WriteUnmatchedExplanationAsync(
+        HttpContext context, StubEngine engine, TenantId tenant, CanonicalRequest request, Guid serveEventId)
+    {
+        var journaled = engine.GetServeEvents(tenant, new ServeEventQuery { Id = serveEventId }).FirstOrDefault();
+        var nearMisses = ConsumerNearMiss.From(engine.FindNearMisses(tenant, journaled?.Request ?? request, detailed: true));
+        context.Response.ContentType = "application/problem+json";
+        await System.Text.Json.JsonSerializer.SerializeAsync(context.Response.Body, new UnmatchedProblem(
+            Title: "No stub matched this request",
+            Status: StatusCodes.Status404NotFound,
+            Detail: nearMisses.Count == 0
+                ? "This sandbox models no operation this request comes close to."
+                : "The closest operations this sandbox models are listed with the attributes your request did not satisfy.",
+            RequestId: journaled?.Id,
+            NearMisses: journaled is null ? null : $"/__sandbox/requests/{journaled.Id}/near-misses",
+            Closest: nearMisses),
+            UnmatchedProblemJson, context.RequestAborted);
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions UnmatchedProblemJson = new(System.Text.Json.JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    /// <summary>The explanatory 404's body: an RFC 9457 problem document with three extension members.</summary>
+    private sealed record UnmatchedProblem(
+        string Title, int Status, string Detail, Guid? RequestId, string? NearMisses, IReadOnlyList<ConsumerNearMiss> Closest);
+
     /// <summary>The presented sandbox credential: <c>X-Api-Key</c> (any casing) or a Bearer token.</summary>
     private static string? PresentedApiKey(HttpContext context)
     {
@@ -312,6 +349,14 @@ public static class MockServingEndpoints
         if (resolution.Response is not { } response)
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
+
+            // An explanation only for a tenant the host names (#457); every other tenant keeps the bare
+            // 404 the differential suite pins (#288).
+            if (context.RequestServices.GetService<UnmatchedExplanation>() is { } explanation && explanation.For(tenant))
+            {
+                await WriteUnmatchedExplanationAsync(context, engine, tenant, request, resolution.ServeEventId);
+            }
+
             return tenant;
         }
 

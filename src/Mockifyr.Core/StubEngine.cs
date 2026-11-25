@@ -41,6 +41,25 @@ public sealed record StubResolution
 
     /// <summary>The closest non-matching stubs, when not matched.</summary>
     public required IReadOnlyList<NearMiss> NearMisses { get; init; }
+
+    /// <summary>The id of the serve event this request was journaled under (#457), so a response can point at it.</summary>
+    public Guid ServeEventId { get; init; }
+}
+
+/// <summary>
+/// One near miss as the CONSUMER of a sandbox may see it (#457): how close the stub came and which of its
+/// attributes agreed, with the value the consumer's own request carried. Unlike the admin shape it never
+/// carries the stub's id or its request block — an operator may have written a credential into a matcher
+/// (<c>equalTo</c> on an API key, <c>basicAuth</c>), and the person whose request did not match is exactly
+/// the person who must not be told it.
+/// </summary>
+/// <param name="Distance">The distance the ranking computed; lower is closer.</param>
+/// <param name="Attributes">Each attribute of the stub's request pattern, in pattern order.</param>
+public sealed record ConsumerNearMiss(double Distance, IReadOnlyList<MatchAttribute> Attributes)
+{
+    /// <summary>Projects detailed near misses (<see cref="StubEngine.FindNearMisses(TenantId, CanonicalRequest, bool)"/>) to the consumer's shape.</summary>
+    public static IReadOnlyList<ConsumerNearMiss> From(IEnumerable<NearMiss> nearMisses) =>
+        [.. nearMisses.Select(near => new ConsumerNearMiss(near.Distance, near.Attributes))];
 }
 
 /// <summary>
@@ -119,9 +138,9 @@ public sealed class StubEngine
             response = _signing.For(response, winner.Response.Sign);
 
             ApplyTransition(tenant, winner);
-            DispatchServeEvent(tenant, request, winner, response);
+            var matchedId = DispatchServeEvent(tenant, request, winner, response);
 
-            return new StubResolution { Matched = true, Response = response, MatchedStub = winner, NearMisses = [] };
+            return new StubResolution { Matched = true, Response = response, MatchedStub = winner, NearMisses = [], ServeEventId = matchedId };
         }
 
         // Nothing matched, so this is the diagnostic path — and the near-miss answer must be the
@@ -131,9 +150,9 @@ public sealed class StubEngine
         // cost; it just no longer happens on the path that succeeds.
         var nearMisses = FindNearMisses(tenant, request);
 
-        DispatchServeEvent(tenant, request, matchedStub: null, response: null);
+        var unmatchedId = DispatchServeEvent(tenant, request, matchedStub: null, response: null);
 
-        return new StubResolution { Matched = false, NearMisses = nearMisses };
+        return new StubResolution { Matched = false, NearMisses = nearMisses, ServeEventId = unmatchedId };
     }
 
     /// <summary>
@@ -215,7 +234,7 @@ public sealed class StubEngine
         }
     }
 
-    private void DispatchServeEvent(TenantId tenant, CanonicalRequest request, StubMapping? matchedStub, CanonicalResponse? response)
+    private Guid DispatchServeEvent(TenantId tenant, CanonicalRequest request, StubMapping? matchedStub, CanonicalResponse? response)
     {
         var serveEvent = new ServeEvent
         {
@@ -235,6 +254,8 @@ public sealed class StubEngine
             // correlation and error handling arrive at G3.
             _ = listener.OnServeEventAsync(serveEvent, CancellationToken.None);
         }
+
+        return serveEvent.Id;
     }
 
     // --- Verification / diagnostics (G6): read-only queries over the journal, reusing matching. ---
