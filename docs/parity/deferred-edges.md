@@ -37,6 +37,7 @@ Each of these was driven through the oracle. It rejects them, so building them w
 | A per-tenant OAuth-only mode: static `mfk_` keys refused for a tenant configured for tokens | [#450](https://github.com/qorpe/mockifyr/issues/450) | With `--sandbox-oauth` a tenant's mocks accept both a token and the static key; the grant is host-wide (ADR 0016) |
 | `private_key_jwt` client authentication on the token endpoint | [#450](https://github.com/qorpe/mockifyr/issues/450) | `client_secret_basic` and `client_secret_post` only |
 | Access tokens on the partner surface `/__sandbox/*` | [#450](https://github.com/qorpe/mockifyr/issues/450) | The surface takes the static key; a token there is refused as an unknown key |
+| The docs website's guide page for the client-credentials grant (CLAUDE.md §3b) | [#450](https://github.com/qorpe/mockifyr/issues/450) | README's flag rows, ADR 0016 and `g19-sandbox.md` document it; `mockifyr.qorpe.com` does not yet |
 | Startup reload of a non-default tenant's stubs on `--root-dir` | [#467](https://github.com/qorpe/mockifyr/issues/467) | The file provider writes them to `mappings/<tenant>/`, and the directory loader reads only the flat `mappings/`. Postgres, Redis and LiteDB reload every tenant since [#466](https://github.com/qorpe/mockifyr/issues/466). Reading subdirectories as tenants would change what a hand-organised mappings tree means, so it waits for a decision |
 
 Three entries left this section by shipping: **resource embedding**
