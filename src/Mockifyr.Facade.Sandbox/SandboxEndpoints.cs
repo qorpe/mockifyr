@@ -79,6 +79,27 @@ public static class SandboxEndpoints
             });
         });
 
+        // Why one of my requests did not match (#457): the consumer is the one who needs the reason. The
+        // same ranking and attribution the operator's /__admin/requests/{id}/near-misses gives, in the
+        // consumer's shape — how close, and which attribute disagreed with the value the request carried —
+        // without the stub's id or its expected values, which may hold a credential the operator wrote
+        // into a matcher. Another tenant's request id is simply not found: the lookup is the key's tenant.
+        sandbox.MapGet("/requests/{id}/near-misses", async (string id, HttpContext context, ISender sender) =>
+        {
+            if (Tenant(context) is not { } tenant) return Refused(context);
+            if (!Guid.TryParse(id, out var eventId)) return Results.NotFound();
+
+            var found = await sender.Send(new GetServeEventQuery(eventId, tenant));
+            if (found.Value is not { } serveEvent) return Results.NotFound();
+
+            var misses = await sender.Send(new FindNearMissesQuery(serveEvent.Request, tenant));
+            return Results.Json(new
+            {
+                wasMatched = serveEvent.MatchedStub is not null,
+                nearMisses = ConsumerNearMiss.From(misses.Value),
+            });
+        });
+
         sandbox.MapGet("/messages", async (HttpContext context, ISender sender) =>
         {
             if (Tenant(context) is not { } tenant) return Refused(context);

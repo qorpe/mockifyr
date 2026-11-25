@@ -580,6 +580,17 @@ public static class MockifyrHost
                 + " — webhooks and proxy stubs naming anything else are refused, and the refusal is journaled.");
         }
 
+        // The explanatory 404 (#457): --explain-unmatched <tenant>, repeatable, read from argv for the same
+        // reason the allowlist is. Absent, no tenant is explained and every unmatched request keeps the bare
+        // 404 the differential suite pins.
+        var unmatchedExplanation = UnmatchedExplanation.From(ReadRepeated(args, "--explain-unmatched"));
+        if (unmatchedExplanation.IsConfigured)
+        {
+            builder.Services.AddSingleton(unmatchedExplanation);
+            Console.WriteLine("mockifyr: an unmatched request of " + string.Join(", ", unmatchedExplanation.Tenants)
+                + " is answered 404 with the closest stubs and what differed (never a stub's id or expected values).");
+        }
+
         // Browser origins (#349). Off by default and absent entirely until configured: a host with no
         // origins emits no CORS headers at all and behaves exactly as it always has.
         var corsOrigins = CorsOrigins.From(
