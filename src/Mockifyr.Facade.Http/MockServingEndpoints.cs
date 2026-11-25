@@ -113,7 +113,41 @@ public static class MockServingEndpoints
         if (sandbox.Enabled && PresentedApiKey(context) is { } presented)
         {
             var keys = context.RequestServices.GetRequiredService<IApiKeyStore>();
-            var key = keys.GetAll().FirstOrDefault(k => ApiKeyMaterial.Verify(presented, k.Salt, k.Hash));
+            ApiKey? key;
+
+            // An access token from the client-credentials grant (#450, ADR 0016) stands in for the key it
+            // was issued to: once its signature and its tenant's clock pass, the request is that key's,
+            // so expiry, revocation, read-only and the quota below hold for a token exactly as for the
+            // key. A dot cannot occur in a key, so the two are never confused.
+            if (context.RequestServices.GetService<SandboxTokenSigner>() is { } signer
+                && SandboxTokenSigner.LooksLikeToken(presented))
+            {
+                var verdict = signer.Validate(
+                    presented,
+                    context.RequestServices.GetRequiredService<IClockResolver>().UtcNow,
+                    context.RequestServices.GetRequiredService<SandboxOAuthOptions>());
+                key = verdict.KeyId is { } keyId ? keys.Get(keyId) : null;
+                if (verdict.Status is not SandboxTokenStatus.Valid || key is null || key.Tenant != verdict.Tenant)
+                {
+                    // RFC 6750 §3: the error travels in WWW-Authenticate and the body. "Expired" is said
+                    // only of a token this host signed, so it tells a stranger nothing.
+                    var description = verdict.Status == SandboxTokenStatus.Expired && key is not null && key.Tenant == verdict.Tenant
+                        ? "The access token has expired."
+                        : "The access token is not valid.";
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    context.Response.Headers.WWWAuthenticate =
+                        $"Bearer error=\"invalid_token\", error_description=\"{description}\"";
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync(
+                        $$"""{"error":"invalid_token","error_description":"{{description}}"}""");
+                    return TenantId.Default;
+                }
+            }
+            else
+            {
+                key = keys.GetAll().FirstOrDefault(k => ApiKeyMaterial.Verify(presented, k.Salt, k.Hash));
+            }
+
             if (key is null)
             {
                 // An unknown token is told nothing: anything more would answer whether a guess was a

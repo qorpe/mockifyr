@@ -8,6 +8,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- **A sandbox key can obtain an OAuth 2.0 access token by client credentials (#450, ADR 0016).** With
+  `--sandbox-oauth` beside `--sandbox-auth`, `POST /oauth/token` takes a key's id and token as `client_id`
+  and `client_secret` (HTTP Basic or the body) and returns an RS256 bearer token. On mock calls the token
+  selects the key's tenant and acts as the key, so revocation, read-only and the quota still apply. It
+  expires on the tenant's clock, and its errors are RFC 6749's and RFC 6750's. The key set is at
+  `/.well-known/jwks.json`. `--oauth-signing-key-file` shares one signing key across replicas. Also new:
+  `--oauth-token-path`, `--oauth-token-lifetime` and `--oauth-issuer`. Off by default. Not an authorization
+  server: client credentials is the only grant.
+
 ### Fixed
 
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
