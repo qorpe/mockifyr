@@ -141,6 +141,14 @@ public static class SandboxTokenEndpoints
                 : "This sandbox key has been revoked.");
         }
 
+        // A key of a suspended tenant (#357) would be refused on its first use, so it is refused here,
+        // where it is asked: a partner's token client should meet the refusal at the token endpoint,
+        // as it would in production, not one call later on a token that never worked.
+        if (context.RequestServices.GetService<ITenantStore>()?.Get(key.Tenant) is { Status: TenantStatus.Suspended })
+        {
+            return InvalidClient("This sandbox tenant is suspended. Contact the operator.");
+        }
+
         var now = context.RequestServices.GetRequiredService<IClockResolver>().UtcNow(key.Tenant);
         var token = signer.Mint(key, scope, now, options);
         var body = new Dictionary<string, object>

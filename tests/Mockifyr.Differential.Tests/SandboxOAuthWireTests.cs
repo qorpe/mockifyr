@@ -245,6 +245,46 @@ public sealed class SandboxOAuthWireTests
     }
 
     [Fact]
+    public async Task A_key_of_a_suspended_tenant_is_refused_at_the_token_endpoint_and_served_again_on_resume()
+    {
+        await using var host = await StartWithOAuthAsync();
+        using var client = Client(host);
+        using (var declared = await AdminAsync(client, HttpMethod.Post, "/__admin/tenants", "acme", """{"id":"acme","displayName":"Acme"}"""))
+        {
+            Assert.True(declared.IsSuccessStatusCode, $"declare: {(int)declared.StatusCode}");
+        }
+
+        await SeedStubAsync(client, "acme", "GET", "/whoami", "acme-answer");
+        var (id, secret) = await IssueKeyAsync(client, "acme");
+        using (var suspended = await AdminAsync(client, HttpMethod.Post, "/__admin/tenants/acme/suspend", "acme"))
+        {
+            Assert.Equal(HttpStatusCode.OK, suspended.StatusCode);
+        }
+
+        using (var refused = await TokenAsync(client, BasicOf(id, secret), [P("grant_type", "client_credentials")]))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+            var error = await ErrorOf(refused);
+            Assert.Equal("invalid_client", error.GetProperty("error").GetString());
+            Assert.Equal("This sandbox tenant is suspended. Contact the operator.", error.GetProperty("error_description").GetString());
+        }
+
+        // Possession was not proved, so a wrong secret still says nothing about the tenant.
+        using (var wrong = await TokenAsync(client, BasicOf(id, "not-the-secret"), [P("grant_type", "client_credentials")]))
+        {
+            Assert.Equal("Client authentication failed.", (await ErrorOf(wrong)).GetProperty("error_description").GetString());
+        }
+
+        using (var resumed = await AdminAsync(client, HttpMethod.Post, "/__admin/tenants/acme/resume", "acme"))
+        {
+            Assert.Equal(HttpStatusCode.OK, resumed.StatusCode);
+        }
+
+        var token = await ObtainAsync(client, id, secret);
+        Assert.Equal(HttpStatusCode.OK, (await CallAsync(client, token)).Status);
+    }
+
+    [Fact]
     public async Task A_read_only_keys_token_may_only_read()
     {
         await using var host = await StartWithOAuthAsync();

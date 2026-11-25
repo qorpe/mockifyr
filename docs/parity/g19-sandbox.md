@@ -1067,7 +1067,15 @@ is Part 1 of #450.
 **The client is the key.** The key's id is the `client_id`, and the `mfk_` token shown at issue is the
 `client_secret`. Nothing new is stored. The serve path looks the key up again on every call, so a token
 is refused once its key is revoked or expires, a read-only key's token may only read, and its calls count
-against the key's quota. The token carries only the key's id and its tenant.
+against the key's quota. The token carries only the key's id and its tenant. It is accepted wherever the
+key itself is, so `X-Api-Key: <token>` serves exactly as `Authorization: Bearer <token>` does: the token
+stands in for the key, and refusing one carrier would only make a partner's client fail on a header that
+works with the key.
+
+**A key of a suspended tenant (#357) gets no token.** The serve path would refuse the token on its first
+use, so the token endpoint refuses at issue, once the secret has proved possession, with `invalid_client`
+and "This sandbox tenant is suspended. Contact the operator." A wrong secret still says only that
+authentication failed. Resuming the tenant lets the same key obtain a token again.
 
 **Errors are RFC 6749 §5.2's.** The goal is that a client library meets here what it will meet in
 production:

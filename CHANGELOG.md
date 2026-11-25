@@ -17,7 +17,16 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   expires on the tenant's clock, and its errors are RFC 6749's and RFC 6750's. The key set is at
   `/.well-known/jwks.json`. `--oauth-signing-key-file` shares one signing key across replicas. Also new:
   `--oauth-token-path`, `--oauth-token-lifetime` and `--oauth-issuer`. Off by default. Not an authorization
-  server: client credentials is the only grant.
+  server: client credentials is the only grant. A key of a suspended tenant gets no token: the token
+  endpoint refuses it with `invalid_client`, once the secret has proved possession.
+
+### Changed
+
+- **`docs-guard.sh` refuses fused XML doc blocks.** A run of `///` lines that opens `<summary>` or
+  `<remarks>` twice before any declaration means a member was inserted between another member's doc and
+  its declaration. The gate scans every `.cs` file and proves its detector against fixtures first. Nine
+  such blocks already in the repository are fixed: each doc is back on the member it describes, and one
+  orphan whose member no longer exists is removed.
 
 ### Fixed
 

@@ -184,9 +184,6 @@ public static class MockifyrHost
                 : TenantId.Default;
     }
 
-    /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
-
-
     /// <summary>
     /// The admin routes that make this host act on the network rather than on one tenant's data:
     /// recording (a forward proxy to any target), outbound certificate trust, and Git sync.
@@ -1580,11 +1577,6 @@ public static class MockifyrHost
     }
 
     /// <summary>
-    /// Restores persisted environment keys (G17). Unlike mappings — which load only the default tenant
-    /// at startup — this restores <b>every</b> tenant, because a key that failed to come back would not
-    /// fail loudly: the stub referencing it would serve the literal <c>{{key}}</c> instead.
-    /// </summary>
-    /// <summary>
     /// The simulated client-credentials grant (#450, ADR 0016): <c>--sandbox-oauth</c>, with its
     /// path, lifetime, issuer and signing key.
     /// </summary>
@@ -1673,6 +1665,11 @@ public static class MockifyrHost
             + $"(lifetime {(int)lifetime.TotalSeconds}s, key set at {SandboxOAuthOptions.JwksPath}).");
     }
 
+    /// <summary>
+    /// Restores persisted environment keys (G17). Unlike mappings — which load only the default tenant
+    /// at startup — this restores <b>every</b> tenant, because a key that failed to come back would not
+    /// fail loudly: the stub referencing it would serve the literal <c>{{key}}</c> instead.
+    /// </summary>
     private static void ApplyStartupEnvironments(WebApplication app)
     {
         var store = app.Services.GetRequiredService<IEnvironmentStore>();
@@ -1711,7 +1708,6 @@ public static class MockifyrHost
         }
     }
 
-    /// <summary>Rehydrates persisted API keys (G19d) — issued credentials survive restarts.</summary>
     /// <summary>
     /// Loads declared tenants from the configured backend (#357): a suspension that forgot itself on
     /// restart would be a suspension in name only.
@@ -1725,6 +1721,7 @@ public static class MockifyrHost
         }
     }
 
+    /// <summary>Rehydrates persisted API keys (G19d) — issued credentials survive restarts.</summary>
     private static void ApplyStartupApiKeys(WebApplication app)
     {
         var store = app.Services.GetRequiredService<IApiKeyStore>();

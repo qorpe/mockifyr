@@ -30,7 +30,6 @@ public static partial class OpenApiStubGenerator
     [GeneratedRegex("""\$ref["']?\s*:\s*["']?(?<target>[^"'\s,}]+)""")]
     private static partial Regex RefPattern();
 
-    /// <summary>Generates one mapping JSON per operation, or throws a typed <see cref="OpenApiImportException"/>.</summary>
     /// <summary>
     /// The size and external-<c>$ref</c> guards every path that accepts a specification must apply
     /// (G19c). Shared with conformance verification (#287): a document handed to a verify run comes
@@ -74,6 +73,7 @@ public static partial class OpenApiStubGenerator
     public static IReadOnlyList<string> Generate(string specText, bool stateful = false) =>
         GenerateWithRelations(specText, stateful).Mappings;
 
+    /// <summary>Generates one mapping JSON per operation, or throws a typed <see cref="OpenApiImportException"/>.</summary>
     public static OpenApiImport GenerateWithRelations(string specText, bool stateful = false)
     {
         GuardSpec(specText);

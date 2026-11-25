@@ -40,18 +40,6 @@ public static class AdminEndpoints
     /// <summary>Decodes a body for display; bodies in the journal are already materialised in memory.</summary>
     private static string Utf8(byte[] body) => System.Text.Encoding.UTF8.GetString(body);
 
-    /// <summary>
-    /// Projects a serve event's callbacks for the journal detail. Deliveries recorded as sub-events
-    /// (WEBHOOK_REQUEST + the paired WEBHOOK_RESPONSE / ERROR, in append order — the listener sends the
-    /// stub's webhooks sequentially) win over the configured definitions; a definition beyond the
-    /// recorded deliveries (still in flight or delayed) is shown as-configured with <c>delivered: false</c>.
-    /// </summary>
-    /// <summary>
-    /// The broker messages this request published, and any that failed (ADR 0013). Beside the webhooks
-    /// rather than mixed into them: a reader debugging "did the event go out?" is asking about a
-    /// different system than "did the callback land?", and one list of two kinds would answer neither
-    /// question quickly.
-    /// </summary>
     /// <summary>Whether this host can actually publish, which decides whether a `publish` action is a gap.</summary>
     /// <remarks>
     /// Asked of the container rather than of configuration: the publisher is what does the work, so its
@@ -60,6 +48,12 @@ public static class AdminEndpoints
     private static bool BrokerConfigured(IServiceProvider services) =>
         services.GetService<Facade.Broker.IBrokerPublisher>() is not null;
 
+    /// <summary>
+    /// The broker messages this request published, and any that failed (ADR 0013). Beside the webhooks
+    /// rather than mixed into them: a reader debugging "did the event go out?" is asking about a
+    /// different system than "did the callback land?", and one list of two kinds would answer neither
+    /// question quickly.
+    /// </summary>
     private static IReadOnlyList<object> JournalPublishes(ServeEvent e) =>
     [
         .. e.SubEvents
@@ -90,6 +84,12 @@ public static class AdminEndpoints
             }),
     ];
 
+    /// <summary>
+    /// Projects a serve event's callbacks for the journal detail. Deliveries recorded as sub-events
+    /// (WEBHOOK_REQUEST + the paired WEBHOOK_RESPONSE / ERROR, in append order — the listener sends the
+    /// stub's webhooks sequentially) win over the configured definitions; a definition beyond the
+    /// recorded deliveries (still in flight or delayed) is shown as-configured with <c>delivered: false</c>.
+    /// </summary>
     private static IReadOnlyList<object> JournalWebhooks(ServeEvent e)
     {
         var definitions = e.MatchedStub?.Webhooks ?? [];

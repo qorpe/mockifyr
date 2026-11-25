@@ -31,7 +31,9 @@ What the grant is:
 - **The client is an existing sandbox key.** The key's id is the `client_id`, and the token shown once
   at issue is the `client_secret`. There is no new credential, store or lifecycle. Revoking a key,
   letting it expire or making it read-only applies to its tokens as well, because the serve path checks
-  the key on every call.
+  the key on every call. The token is accepted wherever the key is, in `Authorization: Bearer` and in
+  `X-Api-Key` alike. A key of a suspended tenant (#357) is refused at the token endpoint, not one call
+  later.
 - **One grant.** `POST /oauth/token` (`--oauth-token-path`) accepts only `client_credentials`, with HTTP
   Basic or body client authentication, exactly one of the two per request. Errors are RFC 6749 §5.2's.
 - **The token is an RS256 JWT in the RFC 9068 shape.** It is signed by a host key and published at
