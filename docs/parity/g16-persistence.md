@@ -384,22 +384,44 @@ the same seam.
     never touched.
     - On a git-synced root the rename is a change in the working tree like any other, and the next push carries it,
       so a remote written by an earlier release converges on this release's names.
-    - The raw-name reading accepts one segment only (not empty, `.`, `..`, a separator or a rooted name).
-    - The `SafeName` reading accepts a name only when it reads as printable ASCII and writing that value with the old
-      escape gives the same name back. The old escape is not reversible above `0xFF` (`İ`, U+0130, was `%130`, which
-      also reads as U+0013 and `0`), so such a directory is skipped, not guessed, and the line names it.
+    - **Which rule reads a directory is decided by a marker, not by trying both (verifier, PR #483, third round).**
+      Every tenant directory this release writes carries `.mockifyr-tenant` (`TenantPathSegment.CreateTenantDirectory`,
+      called by the stub, environment and resources providers). A marked directory is read by this release's rule only;
+      an unmarked one by the earlier writer's rule only, then renamed if its name differs and marked. Before the marker,
+      this release's rule ran first and won, and the third round showed what that cost: the old `SafeName` wrote `İ`
+      (U+0130) as `%130`, which this release's decoder accepts as the tenant U+0013 `0`, so the directory was read in
+      place under a tenant nobody can address, with no line. The class is "a directory name two writers could have
+      produced for two different tenants"; its other members were an earlier environment or stub tenant literally named
+      `%C4%B0` (read as `İ`) and old resource names such as `%3A3` (`Σ`, read as `:3`). The marker covers every member
+      between the two releases, named or not, because the two rules are never both consulted. A marked directory renamed
+      by hand to a name this release would not write is skipped with its own line. On a git-synced root the marker is a
+      file in the working tree like the stubs, and a stub directory counts it among the provider's own files.
+    - The raw-name reading accepts one segment only (not empty, `.`, `..`, a separator or a rooted name). Unmarked, an
+      earlier directory `%C4%B0` is the tenant `%C4%B0` and is renamed to `%25C4%25B0`.
+    - The `SafeName` reading accepts a name only when it reads as printable ASCII, no escape other than `%20` is followed
+      by a digit or `A`–`F`, and writing that value with the old escape gives the same name back. The old escape used at
+      least two hex digits, so a code unit above `0xFF` took three or four, and its output is ambiguous wherever an escape
+      is followed by a hex digit. Measured with the old `SafeName` (`TenantPathSegmentTests`):
+      - **skipped, with the line:** `ı` `%131`, `İstanbul` `%130stanbul`, `Ş` `%15E`, `ğ` `%11F` (U+0100–U+01FF and
+        U+1000–U+1FFF read as a control character); `Ƞ` `%220`, `Σ` `%3A3`, `π` `%3C0` (an escaped punctuation character
+        followed by a hex digit); `ẞ` `%1E9E`, U+7F00 `%7F00`; `é` `%E9` (a Latin-1 code unit is not printable ASCII);
+        an emoji `%D83D%DE00` (surrogates, the same).
+      - **read, not skipped: the space.** `Acme%20Corp` is `Acme Corp`, the name this reading exists for; refusing every
+        space before a digit or `A`–`F` would skip it. The cost, stated and pinned
+        (`The_accepted_ambiguity_after_a_space_reads_as_the_space`): an earlier resources tenant holding U+0200–U+020F or
+        U+2000–U+20FF (`€` was `%20AC`) is read as a space followed by hex digits.
+      - The line for a skipped directory names it and says how to keep it: rename it to its tenant's name as this
+        release writes it and put an empty `.mockifyr-tenant` in it.
     - When the tenant already has a directory under this release's name, the earlier one is skipped, not merged, and
       the line says to move its contents. Merging silently could bring back what one of the two had deleted.
-    - **Residual ambiguity, stated:** a name that both writers could have produced for two different tenants is read
-      by this release's rule. That needs a tenant whose raw name contains an upper-case `%XX` escape (an earlier
-      environment directory `a%2Ab` is now tenant `a*b`, not `a%2Ab`), or a resources tenant made of Latin-1 code units
-      that happen to be another name's UTF-8 bytes. The tenant header is ASCII-only, so the second needs a credential
-      scope or OIDC claim.
+    - A root that cannot be written: an unmarked directory whose name is the same in both releases is still read in
+      place, and resolved the same way on the next load; one that needs a rename is skipped with the line saying so.
   - **Not covered: letter case.** Two tenants that differ only in case (`Acme`, `acme`) share one directory on a
     case-insensitive file system (macOS, Windows). Escaping upper-case letters would move every existing directory, so
     it is stated rather than changed; on Linux, the image's platform, they are two directories.
-  - `TenantPathSegmentTests` holds 22 hostile names (`a/b`, `a\b`, `.`, `..`, `../x`, `/tmp/x`, `C:\x`, a space,
-    `İstanbul`, `%`, a trailing dot or space, a NUL, an emoji, …) round-tripping through the encoder, the stub provider
+  - `TenantPathSegmentTests` holds 25 hostile names (`a/b`, `a\b`, `.`, `..`, `../x`, `/tmp/x`, `C:\x`, a space,
+    `İstanbul`, `%`, a trailing dot or space, a NUL, an emoji, and since the third round U+0013 `0`, `:3` and `%C4%B0`,
+    which this release writes as an earlier writer's spelling of another tenant, …) round-tripping through the encoder, the stub provider
     and its loader, the environments provider (whose `Clear("..")` deletes only its own directory) and the tenant
     declarations, plus ten directory names the decoder refuses. `RootDirTenantRestartTests` drives a real host through a
     restart for seven of them. With the providers as they were, seven of these facts are red. Stryker scores the encoder

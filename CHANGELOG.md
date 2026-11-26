@@ -29,9 +29,14 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   **Upgrade note:** a tenant directory an earlier release wrote under a name this release writes differently (an
   environment or stub directory under the raw tenant value, such as `a*b`; a resources directory under the old escape,
   such as `Acme%20Corp`) is read as its tenant and renamed once, at startup, to this release's name, with a line saying
-  so, so that a later delete or reset reaches it. A resources directory whose old name cannot be read back unambiguously
-  (a tenant holding a non-ASCII letter), or one whose tenant already has a directory under the new name, is left in
-  place and skipped with a line naming it and how to recover it. Two tenants differing only in case still share a
+  so, so that a later delete or reset reaches it. Every tenant directory this release writes carries a
+  `.mockifyr-tenant` file, and only a directory without one is read by the earlier release's rule, so a name both
+  releases could have written for two different tenants is never decided by guessing. A resources directory whose old
+  name could mean more than one tenant (every letter above U+00FF that the old escape spelled with three or four digits,
+  among them `ı İ ş Ş ğ Ğ`, Greek and Cyrillic; a single Latin-1 letter such as `é`; an emoji), or one whose tenant
+  already has a directory under the new name, is left in place and skipped with a line naming it and how to recover it.
+  The one ambiguity read rather than skipped is a space before a digit or `A`–`F` (`Acme%20Corp` is `Acme Corp`), which
+  reads U+0200–U+020F and U+2000–U+20FF as a space and hex digits. Two tenants differing only in case still share a
   directory on a case-insensitive file system.
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new

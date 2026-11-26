@@ -95,6 +95,7 @@ public sealed class FileSystemResourcePersistence(string resourcesDirectory) : I
     /// <inheritdoc />
     public void Save(TenantId tenant, ResourceDocument document)
     {
+        TenantPathSegment.CreateTenantDirectory(Path.Combine(resourcesDirectory, TenantPathSegment.Encode(tenant)));
         var directory = DirectoryFor(tenant, document.Collection);
         Directory.CreateDirectory(directory);
         File.WriteAllText(FileFor(directory, document.Id), ResourceJson.Serialize(document));

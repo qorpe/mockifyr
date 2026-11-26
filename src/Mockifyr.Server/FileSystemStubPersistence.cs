@@ -19,7 +19,15 @@ public sealed class FileSystemStubPersistence(string mappingsDirectory) : IStubP
     public void Save(StubMapping stub, string mappingJson)
     {
         var directory = DirectoryFor(stub.TenantId);
-        Directory.CreateDirectory(directory);
+        if (stub.TenantId == TenantId.Default)
+        {
+            Directory.CreateDirectory(directory);
+        }
+        else
+        {
+            TenantPathSegment.CreateTenantDirectory(directory);
+        }
+
         File.WriteAllText(FileFor(directory, stub.Id), PersistableJson.WithId(mappingJson, stub.Id));
     }
 

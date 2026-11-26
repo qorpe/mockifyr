@@ -68,7 +68,7 @@ public sealed class FileSystemEnvironmentPersistence(string environmentsDirector
     public void Save(TenantId tenant, EnvironmentKey key)
     {
         var directory = DirectoryFor(tenant);
-        Directory.CreateDirectory(directory);
+        TenantPathSegment.CreateTenantDirectory(directory);
         File.WriteAllText(FileFor(directory, key.Key), EnvironmentJson.Serialize(key));
     }
 

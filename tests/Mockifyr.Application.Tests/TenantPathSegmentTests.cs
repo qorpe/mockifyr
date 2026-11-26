@@ -16,6 +16,7 @@ public sealed class TenantPathSegmentTests : IDisposable
     [
         "a/b", "a\\b", "..", ".", "...", "../x", "..\\x", "/tmp/x", "C:\\x", "C:", "Acme Corp", "\u0130stanbul", "a%b", "%41",
         "trailing.", "trailing ", "nul\u0000byte", "tab\tname", "a*b?c\"d<e>f|g", "\U0001F600", "default-ish", "acme",
+        "\u00130", ":3", "%C4%B0", // names this release writes as an earlier writer's spelling of another tenant (PR #483, round 3)
     ];
 
     public static TheoryData<string> Hostile => [.. Names];
@@ -171,11 +172,55 @@ public sealed class TenantPathSegmentTests : IDisposable
     [InlineData("a b.c", "a%20b.c")]     // and kept a dot anywhere else
     [InlineData("a b-c_d", "a%20b-c_d")] // it kept '-' and '_'
     [InlineData("a~b", "a%7Eb")]         // '~' is the last printable ASCII character
+    [InlineData("plain", "plain")]       // and the names both writers spell alike read as the same tenant
+    [InlineData("a*b", "a%2Ab")]
+    [InlineData("a/b", "a%2Fb")]
+    [InlineData(".", "%2E")]
+    [InlineData("a%b", "a%25b")]
     public void An_earlier_resource_directory_reads_as_its_tenant(string tenant, string earlier)
     {
+        Assert.Equal(earlier, EarlierSafeName(tenant));
         Assert.True(TenantPathSegment.TryDecodeEarlierResourceName(earlier, out var back));
         Assert.Equal(tenant, back.Value);
-        Assert.NotEqual(earlier, TenantPathSegment.Encode(back));
+    }
+
+    /// <summary>
+    /// PR #483, round 3: the earlier resources writer escaped a code unit above <c>0xFF</c> with three or four hexadecimal
+    /// digits, so wherever an escape is followed by a digit or <c>A</c>–<c>F</c> its name could mean more than one tenant.
+    /// Every such name, written here by that writer's own rule, is refused — the Turkish letters, the rest of Latin
+    /// Extended, Greek, four-digit code units — and so is a one-byte code unit outside printable ASCII.
+    /// </summary>
+    [Theory]
+    [InlineData("\u0131")]          // ı  → %131
+    [InlineData("\u0130stanbul")]   // İ  → %130stanbul
+    [InlineData("\u015E")]          // Ş  → %15E
+    [InlineData("\u011F")]          // ğ  → %11F
+    [InlineData("\u0220")]          // Ƞ  → %220, which this release reads as "0
+    [InlineData("\u03A3")]          // Σ  → %3A3, which this release reads as :3
+    [InlineData("\u03C0")]          // π  → %3C0
+    [InlineData("\u1E9E")]          // ẞ  → %1E9E
+    [InlineData("\u7F00")]          // a CJK ideograph → %7F00
+    [InlineData("caf\u00E9")]       // é  → %E9: one byte, not printable ASCII
+    [InlineData("\U0001F600")]      // a surrogate pair → %D83D%DE00
+    public void An_earlier_resource_name_that_could_mean_another_tenant_is_refused(string tenant)
+    {
+        var earlier = EarlierSafeName(tenant);
+        Assert.False(TenantPathSegment.TryDecodeEarlierResourceName(earlier, out _));
+    }
+
+    /// <summary>
+    /// The one ambiguity the earlier resources reading accepts, pinned so the documentation's statement of it stays true:
+    /// after a space, <c>Acme%20Corp</c> is <c>Acme Corp</c>, so U+0200–U+020F and U+2000–U+20FF are read as a space and
+    /// hexadecimal digits.
+    /// </summary>
+    [Theory]
+    [InlineData("\u0200", " 0")]
+    [InlineData("x\u020C", "x C")]
+    [InlineData("\u20AC", " AC")]
+    public void The_accepted_ambiguity_after_a_space_reads_as_the_space(string tenant, string readAs)
+    {
+        Assert.True(TenantPathSegment.TryDecodeEarlierResourceName(EarlierSafeName(tenant), out var back));
+        Assert.Equal(readAs, back.Value);
     }
 
     [Theory]
@@ -186,10 +231,10 @@ public sealed class TenantPathSegmentTests : IDisposable
     [InlineData("a%2")]       // truncated
     [InlineData("a b")]       // an unescaped space: not that writer's output
     [InlineData("%41")]       // "A" escaped: that writer kept letters
-    [InlineData("plain")]     // this release's name for "plain": read by this release's rule, not as an earlier one
-    [InlineData("a%2Ab")]     // the same: this release writes "a*b" this way
-    [InlineData("a%2Fb")]     // the same for "a/b": both writers spelled it alike, so it is one tenant either way
-    [InlineData("%2E")]       // the same for ".": this release escapes a trailing dot exactly as that writer did
+    [InlineData("%2E%2E0")]   // an escape followed by a digit: the second could be U+2E0
+    [InlineData("%3A3")]      // followed by a digit: U+03A3 (Σ) or ":3"
+    [InlineData("%281")]      // U+0281 or "(1"
+    [InlineData("%C4%B0")]    // this release's İ: the earlier writer's Ä° is not printable ASCII
     [InlineData("")]
     public void A_name_the_earlier_resource_writer_did_not_produce_is_refused(string segment) =>
         Assert.False(TenantPathSegment.TryDecodeEarlierResourceName(segment, out _));
@@ -199,6 +244,9 @@ public sealed class TenantPathSegmentTests : IDisposable
     [InlineData("x:y")]
     [InlineData("a%41")]
     [InlineData("caf\u00E9")]
+    [InlineData("plain")]     // the same name in both releases
+    [InlineData("Acme Corp")]
+    [InlineData("%C4%B0")]    // an earlier tenant literally named so: unmarked, it is not this release's İ
     public void An_earlier_raw_directory_reads_as_its_tenant(string segment)
     {
         Assert.True(TenantPathSegment.TryDecodeEarlierRawName(segment, out var back));
@@ -213,8 +261,6 @@ public sealed class TenantPathSegmentTests : IDisposable
     [InlineData("a\\b")]
     [InlineData("/tmp")]
     [InlineData("\\b")]      // a separator first: not rooted on Linux, still not one segment
-    [InlineData("plain")]     // this release's own name wins
-    [InlineData("Acme Corp")]
     public void A_raw_name_that_is_not_one_earlier_directory_is_refused(string segment) =>
         Assert.False(TenantPathSegment.TryDecodeEarlierRawName(segment, out _));
 
@@ -295,7 +341,9 @@ public sealed class TenantPathSegmentTests : IDisposable
         // A name no writer produced: skipped.
         Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a%2fb"), "resources", TenantPathSegment.TryDecodeEarlierResourceName,
             out notice, out tenant, out _));
-        Assert.Equal("resources/a%2fb: its name is not one this provider writes for a tenant — skipped, not read as a tenant.", notice);
+        Assert.Equal("resources/a%2fb: it has no .mockifyr-tenant, so an earlier release wrote it, and its name does not name exactly "
+            + "one tenant by that release's rule — skipped, not guessed; to keep it, rename it to its tenant's name as this release "
+            + "writes it (docs/parity/g16-persistence.md) and put an empty .mockifyr-tenant in it.", notice);
         Assert.Equal(default, tenant);
 
         // A directory that vanished between the listing and the rename (another process removed it): skipped, not thrown.
@@ -304,5 +352,125 @@ public sealed class TenantPathSegmentTests : IDisposable
         Assert.Equal("environments/x:y: written by an earlier release for tenant 'x:y', and renaming it to environments/x%3Ay failed "
             + "(DirectoryNotFoundException) — skipped; rename it by hand to keep it.", notice);
         Assert.Equal(default, tenant);
+    }
+
+    /// <summary>
+    /// PR #483, round 3, on the providers themselves: a resources directory an earlier release wrote for a tenant whose
+    /// old name is ambiguous is skipped with the line that names it — never read in place under a tenant nobody can
+    /// address — and is left where it is. The documents of the same names written by THIS release reload as their own
+    /// tenants, because this release marks what it writes.
+    /// </summary>
+    [Fact]
+    public void An_ambiguous_earlier_resources_directory_is_skipped_and_this_releases_ghost_names_reload()
+    {
+        var resources = Path.Combine(_root, "resources");
+        var earlierTenants = new[] { "\u0131", "\u0130stanbul", "\u015E", "\u011F", "\u0220", "\u03A3", "\u1E9E", "caf\u00E9", "\U0001F600" };
+        var persistence = new FileSystemResourcePersistence(resources);
+        var document = new ResourceDocument("1", "orders", "{}", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 1);
+        persistence.Save(new TenantId("seed"), document);
+        var json = File.ReadAllText(Path.Combine(resources, "seed", "orders", "1.json"));
+        Directory.Delete(Path.Combine(resources, "seed"), recursive: true);
+        foreach (var tenant in earlierTenants)
+        {
+            var directory = Path.Combine(resources, EarlierSafeName(tenant), "orders");
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "1.json"), json);
+        }
+
+        // This release's tenants spelled the way the earlier writer spelled a letter above 0xFF: "\u00135" is %135 (Ĵ then),
+        // ":7" is %3A7 (Χ), "\"9" is %229 (ȩ).
+        var ghosts = new[] { "\u00135", ":7", "\"9" };
+        foreach (var tenant in ghosts)
+        {
+            persistence.Save(new TenantId(tenant), document);
+        }
+
+        var loaded = new FileSystemResourcesLoader(resources).LoadAll();
+
+        Assert.Equal(ghosts.Order(StringComparer.Ordinal), loaded.Keys.Select(t => t.Value).Order(StringComparer.Ordinal));
+        foreach (var tenant in earlierTenants)
+        {
+            Assert.True(Directory.Exists(Path.Combine(resources, EarlierSafeName(tenant))), tenant);
+        }
+    }
+
+    /// <summary>The line an ambiguous earlier directory prints names it and says how to keep it; a marked one is never re-guessed.</summary>
+    [Fact]
+    public void An_unmarked_ambiguous_directory_and_a_marked_foreign_name_each_print_their_line()
+    {
+        var area = Path.Combine(_root, "resources");
+        Directory.CreateDirectory(Path.Combine(area, "%130stanbul"));
+        Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "%130stanbul"), "resources",
+            TenantPathSegment.TryDecodeEarlierResourceName, out var notice, out var tenant, out _));
+        Assert.Equal("resources/%130stanbul: it has no .mockifyr-tenant, so an earlier release wrote it, and its name does not name exactly "
+            + "one tenant by that release's rule — skipped, not guessed; to keep it, rename it to its tenant's name as this release "
+            + "writes it (docs/parity/g16-persistence.md) and put an empty .mockifyr-tenant in it.", notice);
+        Assert.Equal(default, tenant);
+        Assert.True(Directory.Exists(Path.Combine(area, "%130stanbul")));
+
+        // A marked directory renamed by hand to a name this release would not write is not read as a tenant either.
+        TenantPathSegment.CreateTenantDirectory(Path.Combine(area, "a%2fb"));
+        Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a%2fb"), "resources",
+            TenantPathSegment.TryDecodeEarlierResourceName, out notice, out tenant, out _));
+        Assert.Equal("resources/a%2fb: it carries .mockifyr-tenant, but its name is not one this provider writes for a tenant — skipped, "
+            + "not read as a tenant.", notice);
+        Assert.Equal(default, tenant);
+
+        // A marked %130 is this release's tenant U+0013 "0"; an unmarked one with the same name is the ambiguous one above.
+        TenantPathSegment.CreateTenantDirectory(Path.Combine(area, "%130"));
+        Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "%130"), "resources",
+            TenantPathSegment.TryDecodeEarlierResourceName, out notice, out tenant, out _));
+        Assert.Equal(("", "\u00130"), (notice, tenant.Value));
+    }
+
+    /// <summary>
+    /// The same class on the raw-name providers: an earlier tenant literally named <c>%C4%B0</c> is that tenant, renamed to
+    /// this release's <c>%25C4%25B0</c> — not this release's <c>İ</c>, which it would have been read as before the marker.
+    /// </summary>
+    [Fact]
+    public void An_earlier_raw_tenant_spelled_like_an_escape_is_read_as_itself_in_environments_and_mappings()
+    {
+        var environments = Path.Combine(_root, "environments");
+        var persistence = new FileSystemEnvironmentPersistence(environments);
+        persistence.Save(new TenantId("seed"), new EnvironmentKey("token", "main", [new EnvironmentValue("main", "v")]));
+        Directory.Move(Path.Combine(environments, "seed"), Path.Combine(environments, "%C4%B0"));
+        File.Delete(Path.Combine(environments, "%C4%B0", TenantPathSegment.MarkerFileName));
+
+        var loaded = new FileSystemEnvironmentsLoader(environments).LoadAll();
+
+        Assert.Equal("%C4%B0", Assert.Single(loaded).Key.Value);
+        Assert.True(File.Exists(Path.Combine(environments, "%25C4%25B0", TenantPathSegment.MarkerFileName)));
+        Assert.Equal("%C4%B0", Assert.Single(new FileSystemEnvironmentsLoader(environments).LoadAll()).Key.Value);
+
+        var mappings = Path.Combine(_root, "mappings");
+        var id = Guid.NewGuid();
+        const string stubJson = """{"request":{"method":"GET","url":"/x"},"response":{"status":200}}""";
+        Directory.CreateDirectory(Path.Combine(mappings, "%C4%B0"));
+        File.WriteAllText(Path.Combine(mappings, "%C4%B0", $"{id:D}.json"), stubJson.Insert(1, $"\"id\":\"{id:D}\","));
+
+        var loader = new DirectoryMappingsLoader(mappings);
+        Assert.Equal(("%C4%B0", id), Assert.Single(loader.LoadAllTenants()) is var stub ? (stub.TenantId.Value, stub.Id) : default);
+        Assert.Empty(loader.SkippedDirectories);
+        Assert.True(Directory.Exists(Path.Combine(mappings, "%25C4%25B0")));
+    }
+
+    // The resources provider's tenant directory name before #467 (ResourceJson.SafeName as it was on main).
+    private static string EarlierSafeName(string value)
+    {
+        var builder = new System.Text.StringBuilder();
+        foreach (var c in value)
+        {
+            if (char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.')
+            {
+                builder.Append(c);
+            }
+            else
+            {
+                builder.Append('%').Append(((int)c).ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        var safe = builder.ToString();
+        return safe is "." or ".." ? safe.Replace(".", "%2E", StringComparison.Ordinal) : safe;
     }
 }

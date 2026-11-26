@@ -138,6 +138,7 @@ public sealed class RootDirTenantRestartTests
             }
 
             Directory.Move(Path.Combine(root.FullName, area, "standin"), Path.Combine(root.FullName, area, earlierName));
+            File.Delete(Path.Combine(root.FullName, area, earlierName, TenantPathSegment.MarkerFileName)); // an earlier release wrote none
 
             string? stubId = null;
             await using (var second = await StartHostAsync(root.FullName))

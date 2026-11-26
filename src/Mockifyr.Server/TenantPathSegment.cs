@@ -104,17 +104,17 @@ public static class TenantPathSegment
     }
 
     /// <summary>
-    /// The tenant an earlier release's writer meant by a directory <paramref name="segment"/> that <see cref="TryDecode"/>
-    /// refuses: the raw tenant value, which the stub and environment providers joined to the path before #467. Only a
-    /// value that writer could have produced as ONE directory is accepted — not empty, not <c>.</c> or <c>..</c>, no
-    /// separator, not rooted — and only when <see cref="TryDecode"/> refuses it, so a name this release writes is always
-    /// read by this release's rule first.
+    /// The tenant an earlier release's writer meant by a directory <paramref name="segment"/>: the raw tenant value, which
+    /// the stub and environment providers joined to the path before #467. Only a value that writer could have produced as
+    /// ONE directory is accepted — not empty, not <c>.</c> or <c>..</c>, no separator, not rooted. It is consulted only for
+    /// a directory without <see cref="MarkerFileName"/>, so it never competes with this release's reading: a name such as
+    /// <c>%C4%B0</c> is this release's <c>İ</c> when marked and an earlier tenant literally named <c>%C4%B0</c> when not.
     /// </summary>
     public static bool TryDecodeEarlierRawName(string segment, out TenantId tenant)
     {
         tenant = default;
         if (segment.Length == 0 || segment is "." or ".." || segment.IndexOfAny(['/', '\\']) >= 0
-            || Path.IsPathRooted(segment) || TryDecode(segment, out _))
+            || Path.IsPathRooted(segment))
         {
             return false;
         }
@@ -124,17 +124,21 @@ public static class TenantPathSegment
     }
 
     /// <summary>
-    /// The tenant an earlier release's resources provider meant by a directory <paramref name="segment"/> that
-    /// <see cref="TryDecode"/> refuses. That writer escaped every UTF-16 code unit outside <c>[A-Za-z0-9._-]</c> as
-    /// <c>%</c> and its hexadecimal value, which is not reversible for a code unit above <c>0xFF</c> (<c>İ</c>, U+0130,
-    /// became <c>%130</c>, which also reads as U+0013 and <c>0</c>). So a segment is accepted only when it reads as
-    /// printable ASCII and writing that value again gives back exactly <paramref name="segment"/>; anything else is
-    /// refused rather than guessed.
+    /// The tenant an earlier release's resources provider meant by a directory <paramref name="segment"/>, consulted only
+    /// for a directory without <see cref="MarkerFileName"/>. That writer escaped every UTF-16 code unit outside
+    /// <c>[A-Za-z0-9._-]</c> as <c>%</c> and its hexadecimal value with AT LEAST two digits, so a code unit above
+    /// <c>0xFF</c> took three or four (<c>İ</c>, U+0130, became <c>%130</c>; <c>Σ</c>, U+03A3, <c>%3A3</c>) and its
+    /// output is ambiguous wherever an escape is followed by a digit or <c>A</c>–<c>F</c>, which that writer otherwise
+    /// kept as they were. Fail-closed: a segment is accepted only when no escape other than a space (<c>%20</c>) is
+    /// followed by one of those, it reads as printable ASCII, and writing that value again gives back exactly
+    /// <paramref name="segment"/>; anything else is refused rather than guessed. The one accepted ambiguity is the space:
+    /// <c>Acme%20Corp</c> is <c>Acme Corp</c>, not U+020C, because refusing every space before a capital would lose
+    /// the names this reading exists for; it costs U+0200–U+020F and U+2000–U+20FF, read as a space and hex digits.
     /// </summary>
     public static bool TryDecodeEarlierResourceName(string segment, out TenantId tenant)
     {
         tenant = default;
-        if (segment.Length == 0 || TryDecode(segment, out _))
+        if (segment.Length == 0)
         {
             return false;
         }
@@ -149,6 +153,13 @@ public static class TenantPathSegment
             }
 
             if (i + 2 >= segment.Length || !IsUpperHex(segment[i + 1]) || !IsUpperHex(segment[i + 2]))
+            {
+                return false;
+            }
+
+            // A third hexadecimal digit means the earlier writer may have escaped a code unit above 0xFF here: ambiguous,
+            // so refused — except after a space, whose names ("Acme Corp") are the common case (stated in g16-persistence.md).
+            if (i + 3 < segment.Length && IsUpperHex(segment[i + 3]) && segment.AsSpan(i + 1, 2) is not "20")
             {
                 return false;
             }
@@ -176,12 +187,62 @@ public static class TenantPathSegment
     }
 
     /// <summary>
+    /// The file a provider writes into every tenant directory it creates (#467): its presence is what says "this release
+    /// named this directory by <see cref="Encode"/>". Without it a name cannot be told apart from an earlier release's,
+    /// because both writers produced names the other could also have produced for a different tenant.
+    /// </summary>
+    public const string MarkerFileName = ".mockifyr-tenant";
+
+    private const string MarkerText =
+        "This directory's name is its tenant, written by Mockifyr's TenantPathSegment (#467). Keep this file with it.\n";
+
+    /// <summary>
+    /// Creates a tenant directory the way every file provider must (#467): the directory, and the
+    /// <see cref="MarkerFileName"/> that makes the loader read its name by this release's rule.
+    /// </summary>
+    /// <param name="directory">The tenant directory, <c>parent/Encode(tenant)</c>.</param>
+    public static void CreateTenantDirectory(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        var marker = Path.Combine(directory, MarkerFileName);
+        if (!File.Exists(marker))
+        {
+            File.WriteAllText(marker, MarkerText);
+        }
+    }
+
+    /// <summary>
+    /// The tenant a directory names, without touching it: by this release's rule when it carries
+    /// <see cref="MarkerFileName"/>, and otherwise by <paramref name="earlier"/>, the rule of the release that wrote it.
+    /// The two are never both consulted, so a name that both writers could have produced is never decided by which rule
+    /// happened to run first.
+    /// </summary>
+    /// <param name="directory">The tenant directory found under the provider's root.</param>
+    /// <param name="earlier">How an earlier release named a tenant's directory.</param>
+    /// <param name="tenant">The tenant, when the name reads as one.</param>
+    /// <param name="marked">Whether the directory carries this release's marker.</param>
+    public static bool TryReadDirectoryName(string directory, TryDecodeEarlier earlier, out TenantId tenant, out bool marked)
+    {
+        var name = Path.GetFileName(directory);
+        marked = File.Exists(Path.Combine(directory, MarkerFileName));
+        if (marked ? TryDecode(name, out tenant) : earlier(name, out tenant))
+        {
+            return true;
+        }
+
+        tenant = default;
+        return false;
+    }
+
+    /// <summary>
     /// Resolves one tenant directory of a file provider (#467): the tenant it names, and the directory to read it from.
-    /// A directory this release writes is read where it is. A directory an earlier release wrote (as
-    /// <paramref name="earlier"/> reads it) is renamed to the name this release writes, once, so the next write, delete or
-    /// reset for that tenant lands on the same directory the reload read — reading it in place would let a deleted stub
-    /// or a reset environment come back on the next restart. Anything else is skipped. <paramref name="notice"/> carries
-    /// the line the caller prints: what was renamed, or which directory was skipped, why, and how to recover it.
+    /// A directory carrying <see cref="MarkerFileName"/> is this release's and is read where it is. One without it was
+    /// written by an earlier release (as <paramref name="earlier"/> reads it): it is renamed to the name this release
+    /// writes, once, and marked, so the next write, delete or reset for that tenant lands on the same directory the
+    /// reload read — reading it in place would let a deleted stub or a reset environment come back on the next restart.
+    /// Anything else, including an earlier name that could mean more than one tenant, is skipped.
+    /// <paramref name="notice"/> carries the line the caller prints: what was renamed, or which directory was skipped,
+    /// why, and how to recover it.
     /// </summary>
     /// <param name="directory">The tenant directory found under the provider's root.</param>
     /// <param name="area">The provider's directory, as the operator knows it (<c>mappings</c>, <c>environments</c>, …).</param>
@@ -200,22 +261,34 @@ public static class TenantPathSegment
         var name = Path.GetFileName(directory);
         path = directory;
         notice = "";
-        if (TryDecode(name, out tenant))
+        if (!TryReadDirectoryName(directory, earlier, out tenant, out var marked))
+        {
+            notice = marked
+                ? $"{area}/{name}: it carries {MarkerFileName}, but its name is not one this provider writes for a tenant — skipped, not read as a tenant."
+                : $"{area}/{name}: it has no {MarkerFileName}, so an earlier release wrote it, and its name does not name exactly one tenant by "
+                    + $"that release's rule — skipped, not guessed; to keep it, rename it to its tenant's name as this release writes it "
+                    + $"(docs/parity/g16-persistence.md) and put an empty {MarkerFileName} in it.";
+            return false;
+        }
+
+        if (marked)
         {
             return true;
         }
 
-        if (!earlier(name, out tenant))
+        var segment = Encode(tenant);
+        if (string.Equals(segment, name, StringComparison.Ordinal))
         {
-            notice = $"{area}/{name}: its name is not one this provider writes for a tenant — skipped, not read as a tenant.";
-            tenant = default;
-            return false;
+            // The same name in both releases: read in place, marked so the next load reads it by this release's rule. A
+            // root that cannot be written (a read-only mount) is still read; it is resolved the same way next time.
+            TryMark(directory);
+            return true;
         }
 
-        var target = Path.Combine(Path.GetDirectoryName(directory)!, TenantPathSegment.Encode(tenant));
+        var target = Path.Combine(Path.GetDirectoryName(directory)!, segment);
         if (Directory.Exists(target))
         {
-            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', which also has {area}/{Path.GetFileName(target)} — "
+            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', which also has {area}/{segment} — "
                 + "skipped, not merged; move what it holds into the second directory to keep it.";
             tenant = default;
             return false;
@@ -227,13 +300,14 @@ public static class TenantPathSegment
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', and renaming it to {area}/{Path.GetFileName(target)} failed "
+            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', and renaming it to {area}/{segment} failed "
                 + $"({exception.GetType().Name}) — skipped; rename it by hand to keep it.";
             tenant = default;
             return false;
         }
 
-        notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}' — renamed to {area}/{Path.GetFileName(target)}.";
+        TryMark(target);
+        notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}' — renamed to {area}/{segment}.";
         path = target;
         return true;
     }
@@ -259,6 +333,18 @@ public static class TenantPathSegment
 
         var safe = builder.ToString();
         return safe is "." or ".." ? safe.Replace(".", "%2E", StringComparison.Ordinal) : safe;
+    }
+
+    private static void TryMark(string directory)
+    {
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, MarkerFileName), MarkerText);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Unmarked, the directory is resolved by the earlier rule again on the next load, to the same tenant.
+        }
     }
 
     private static bool IsUpperHex(char c) => char.IsAsciiDigit(c) || c is >= 'A' and <= 'F';

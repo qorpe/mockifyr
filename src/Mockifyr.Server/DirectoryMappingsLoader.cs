@@ -15,7 +15,8 @@ namespace Mockifyr.Server;
 /// <remarks>
 /// <see cref="LoadAllTenants"/> also reads the tenants <see cref="FileSystemStubPersistence"/> wrote (#467): a
 /// subdirectory <c>mappings/&lt;tenant&gt;/</c> is read as that tenant only when EVERY entry in it is a file this
-/// provider writes — <c>&lt;guid&gt;.json</c> holding one stub whose <c>id</c> is that guid. Any other subdirectory (a
+/// provider writes — <c>&lt;guid&gt;.json</c> holding one stub whose <c>id</c> is that guid, and the
+/// <see cref="TenantPathSegment.MarkerFileName"/> that says which release named the directory. Any other subdirectory (a
 /// hand-organised tree, notes beside the stubs, a bundle, a file that does not parse, a nested directory, one named
 /// like the default tenant) is skipped whole, logged once, and listed in <see cref="SkippedDirectories"/>, so a
 /// user's own layout can never start creating tenants. The flat files stay the default tenant's, read as before.
@@ -109,7 +110,7 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
             return null;
         }
 
-        if (!TenantPathSegment.TryDecode(name, out var tenant) && !TenantPathSegment.TryDecodeEarlierRawName(name, out tenant))
+        if (!TenantPathSegment.TryReadDirectoryName(directory, TenantPathSegment.TryDecodeEarlierRawName, out var tenant, out _))
         {
             reason = "its name is not one this provider writes for a tenant (see TenantPathSegment)";
             return null;
@@ -119,6 +120,11 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
         foreach (var file in Directory.EnumerateFiles(directory).OrderBy(path => path, StringComparer.Ordinal))
         {
             var fileName = Path.GetFileName(file);
+            if (string.Equals(fileName, TenantPathSegment.MarkerFileName, StringComparison.Ordinal))
+            {
+                continue; // the provider writes this beside its stubs, so it is one of its files
+            }
+
             if (!fileName.EndsWith(".json", StringComparison.Ordinal)
                 || !Guid.TryParseExact(Path.GetFileNameWithoutExtension(fileName), "D", out var id))
             {
