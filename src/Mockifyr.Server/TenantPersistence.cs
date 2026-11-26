@@ -80,9 +80,8 @@ public sealed class FileSystemTenantPersistence(string directory) : ITenantPersi
                 .Where(tenant => tenant is not null)
                 .Select(tenant => tenant!)];
 
-    // A tenant id is validated as identifier-shaped before it is ever declared, so it is a safe file
-    // name — the same argument the API key store makes about a GUID.
-    private string FileFor(TenantId id) => Path.Combine(directory, id.Value + ".json");
+    // One segment, never a path (#467), whatever validated the id upstream: the file name is not where that is trusted.
+    private string FileFor(TenantId id) => Path.Combine(directory, TenantPathSegment.Encode(id) + ".json");
 }
 
 /// <summary>A persisted tenant declaration in LiteDB.</summary>

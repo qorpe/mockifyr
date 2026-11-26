@@ -68,7 +68,7 @@ public sealed class FileSystemEnvironmentPersistence(string environmentsDirector
     public void Save(TenantId tenant, EnvironmentKey key)
     {
         var directory = DirectoryFor(tenant);
-        Directory.CreateDirectory(directory);
+        TenantPathSegment.CreateTenantDirectory(directory);
         File.WriteAllText(FileFor(directory, key.Key), EnvironmentJson.Serialize(key));
     }
 
@@ -92,7 +92,8 @@ public sealed class FileSystemEnvironmentPersistence(string environmentsDirector
         }
     }
 
-    internal string DirectoryFor(TenantId tenant) => Path.Combine(environmentsDirectory, tenant.Value);
+    // One segment, never a path (#467): a tenant named "../" would otherwise make Clear delete the root directory.
+    internal string DirectoryFor(TenantId tenant) => Path.Combine(environmentsDirectory, TenantPathSegment.Encode(tenant));
 
     // The key is already constrained to [A-Za-z0-9_-] by ReservedEnvironmentKeys.IsWellFormed, so it
     // is a safe file name — no traversal component can reach here.
@@ -111,10 +112,23 @@ public sealed class FileSystemEnvironmentsLoader(string environmentsDirectory) :
         }
 
         var rows = new List<(TenantId, EnvironmentKey)>();
-        foreach (var tenantDirectory in Directory.EnumerateDirectories(environmentsDirectory))
+        foreach (var tenantDirectory in Directory.EnumerateDirectories(environmentsDirectory).ToList())
         {
-            var tenant = new TenantId(Path.GetFileName(tenantDirectory));
-            foreach (var file in Directory.EnumerateFiles(tenantDirectory, "*.json"))
+            // A directory this provider names for a tenant is read as that tenant; one an earlier release named by the raw
+            // tenant value is renamed once to this one's, so Clear and the next save reach it (#467); any other is skipped.
+            var resolved = TenantPathSegment.TryResolveDirectory(
+                tenantDirectory, "environments", TenantPathSegment.TryDecodeEarlierRawName, out var notice, out var tenant, out var path);
+            if (notice.Length > 0)
+            {
+                Console.WriteLine($"mockifyr: {notice}");
+            }
+
+            if (!resolved)
+            {
+                continue;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(path, "*.json"))
             {
                 if (EnvironmentJson.Deserialize(File.ReadAllText(file)) is { } key)
                 {

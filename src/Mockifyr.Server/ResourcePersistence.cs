@@ -56,7 +56,8 @@ internal static class ResourceJson
             .ToDictionary(group => group.Key, group => (IReadOnlyList<ResourceDocument>)[.. group.Select(row => row.Document)]);
 
     /// <summary>
-    /// A file-system-safe name for a collection or document id.
+    /// A file-system-safe name for a collection or document id — never for a tenant, which is
+    /// <see cref="TenantPathSegment"/>'s (#467).
     /// </summary>
     /// <remarks>
     /// Ids are caller-supplied — a partner seeding a sandbox chooses them — so they cannot be trusted
@@ -94,6 +95,7 @@ public sealed class FileSystemResourcePersistence(string resourcesDirectory) : I
     /// <inheritdoc />
     public void Save(TenantId tenant, ResourceDocument document)
     {
+        TenantPathSegment.CreateTenantDirectory(Path.Combine(resourcesDirectory, TenantPathSegment.Encode(tenant)));
         var directory = DirectoryFor(tenant, document.Collection);
         Directory.CreateDirectory(directory);
         File.WriteAllText(FileFor(directory, document.Id), ResourceJson.Serialize(document));
@@ -113,7 +115,7 @@ public sealed class FileSystemResourcePersistence(string resourcesDirectory) : I
     public void Clear(TenantId tenant, string? collection)
     {
         var directory = collection is null
-            ? Path.Combine(resourcesDirectory, ResourceJson.SafeName(tenant.Value))
+            ? Path.Combine(resourcesDirectory, TenantPathSegment.Encode(tenant))
             : DirectoryFor(tenant, collection);
         if (Directory.Exists(directory))
         {
@@ -121,8 +123,10 @@ public sealed class FileSystemResourcePersistence(string resourcesDirectory) : I
         }
     }
 
+    // The tenant is one segment by the one encoder every file provider shares (#467), so the loader can read it back;
+    // the collection and id are not tenants, and the loader takes them from the stored document.
     private string DirectoryFor(TenantId tenant, string collection) =>
-        Path.Combine(resourcesDirectory, ResourceJson.SafeName(tenant.Value), ResourceJson.SafeName(collection));
+        Path.Combine(resourcesDirectory, TenantPathSegment.Encode(tenant), ResourceJson.SafeName(collection));
 
     private static string FileFor(string directory, string id) =>
         Path.Combine(directory, ResourceJson.SafeName(id) + ".json");
@@ -140,16 +144,28 @@ public sealed class FileSystemResourcesLoader(string resourcesDirectory) : IReso
         }
 
         var rows = new List<(TenantId, ResourceDocument)>();
-        foreach (var tenantDirectory in Directory.EnumerateDirectories(resourcesDirectory))
+        foreach (var tenantDirectory in Directory.EnumerateDirectories(resourcesDirectory).ToList())
         {
-            // The tenant and collection come from the stored document, not from the directory names:
-            // those were escaped on the way out, and un-escaping them would be a second encoding to
-            // keep in step with the first.
-            foreach (var file in Directory.EnumerateFiles(tenantDirectory, "*.json", SearchOption.AllDirectories))
+            // The tenant comes from the directory's name, by the encoder the writer used (#467); a directory an earlier
+            // release named by its own escape is renamed once to this one's. The collection and id come from the stored
+            // document, not from the directory names.
+            var resolved = TenantPathSegment.TryResolveDirectory(
+                tenantDirectory, "resources", TenantPathSegment.TryDecodeEarlierResourceName, out var notice, out var tenant, out var path);
+            if (notice.Length > 0)
+            {
+                Console.WriteLine($"mockifyr: {notice}");
+            }
+
+            if (!resolved)
+            {
+                continue;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(path, "*.json", SearchOption.AllDirectories))
             {
                 if (ResourceJson.Deserialize(File.ReadAllText(file)) is { } document)
                 {
-                    rows.Add((new TenantId(Path.GetFileName(tenantDirectory)), document));
+                    rows.Add((tenant, document));
                 }
             }
         }

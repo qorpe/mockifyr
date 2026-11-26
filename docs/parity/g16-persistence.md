@@ -28,10 +28,10 @@ the same seam.
   the file was written, start a **fresh** host on the same dir, and serve the reloaded stub — its
   response matches the oracle's for the same mapping. Delete + reset are confirmed to stay gone after a
   restart.
-- **Deferred (explicitly tracked — not a silent gap):** multi-tenant persistence *reload* (non-default
-  tenants are written to per-tenant subdirectories, but startup only reloads the default tenant's
-  flat dir — still open for this provider alone, [#467](https://github.com/qorpe/mockifyr/issues/467); the
-  database backends reload every tenant since #466, see "Startup reload covers every tenant" below); WireMock's `persistent:false` opt-out (all admin mutations persist when a root-dir is
+- **Deferred (explicitly tracked — not a silent gap):** multi-tenant persistence *reload* closed for this
+  provider in [#467](https://github.com/qorpe/mockifyr/issues/467) (non-default tenants are written to
+  per-tenant subdirectories and reloaded from them, see "A `--root-dir` host reloads the tenants it wrote"
+  below; the database backends reload every tenant since #466); WireMock's `persistent:false` opt-out (all admin mutations persist when a root-dir is
   set); and the other providers — **LiteDB (G16b), Postgres (G16c), Redis (G16d)** — plus
   **change-feed reload (G16e)**, each behind this same seam.
 - **Regression cases:** `G16aPersistenceTests.CreatedStub_SurvivesRestart_AndMatchesOracle`,
@@ -174,10 +174,8 @@ the same seam.
 - **One more member of the class.** LiteDB stores `{ Id, Tenant, Json }`, so it spans tenants too, but its
   loader did not implement `IMultiTenantMappingsLoader`: the same defect on the third database backend, and
   a git-sync reconcile on a LiteDB host saw only the default tenant. `LiteDbMappingsLoader` now implements it.
-- **What startup reload covers.** Postgres, Redis and LiteDB: every tenant. `--root-dir`: the default tenant
-  only. A non-default tenant's files under `mappings/<tenant>/` are written and not reloaded, and that stays
-  tracked as [#467](https://github.com/qorpe/mockifyr/issues/467), because reading subdirectories as tenants
-  would change the meaning of a hand-organised mappings tree.
+- **What startup reload covers.** Postgres, Redis and LiteDB: every tenant. `--root-dir`: since #467, the
+  default tenant's flat files and every tenant directory the file provider wrote (next section).
 - **Validation.** For each backend, a host writes stubs for two non-default tenants and the default tenant
   through the admin API (`X-Mockifyr-Tenant`). It is replaced by a fresh host on the same backend, **without**
   `--change-feed`, so only startup can load them. Each tenant then serves its own stub and lists exactly one,
@@ -340,3 +338,122 @@ the same seam.
 - **Regression cases:** `GitSyncTests` (configure/snapshot/restart-resolution/refusals/invalid
   input) and `GitSyncConfigureHostTests` (flag-less host: HTTP configure → push → restart adoption
   serves the synced stub).
+
+## A `--root-dir` host reloads the tenants it wrote (#467)
+
+- **The defect.** `FileSystemStubPersistence` writes a non-default tenant's stubs to `mappings/<tenant>/<id>.json`,
+  and `DirectoryMappingsLoader` read only the flat `mappings/*.json`, into the default tenant. So a tenant's stub
+  created over the admin API on a `--root-dir` host was persisted, and a fresh host never served it.
+- **The decision (owner, 2026-11-25, option (a)).** Reading `mappings/<name>/` as tenant `<name>` changes what a
+  subdirectory of a user's mappings tree means, which until now was "ignored". So a subdirectory is a tenant only
+  when **every** entry in it is a file this provider writes: `<guid>.json` (the canonical `D` form, lower- or
+  upper-case hex, with a lower-case `.json`) holding **one** stub whose `id` is that guid. Anything else is skipped
+  whole, logged once (`mockifyr: mappings/<name>: <reason> — skipped, not read as a tenant.`), and listed in
+  `DirectoryMappingsLoader.SkippedDirectories`. That covers notes beside the stubs, a stub under any other name, a
+  stub whose id is not its file name or that carries none, a bundle, a file that does not parse, a nested directory,
+  an OS file such as `.DS_Store`, and a directory named like the default tenant. It is an allow-list of what the
+  provider writes, so a hand-made layout nobody has named yet is skipped too. A directory is all or nothing: one
+  foreign file and none of its stubs load. No ADR, because no layout changed: the provider has written this layout
+  since G16a, and only the reading is new.
+- **A tenant is one path segment, never a path (verifier, PR #483).** The tenant came straight from the tenant header
+  into `Path.Combine`, so `a/b` was written nested (and lost on restart, the loader refusing a directory that holds one),
+  `../escape` was written outside `mappings/`, and a rooted name such as `/tmp/x` replaced the base altogether. The
+  environments provider joined the tenant the same way, and its `Clear` deletes recursively, so `..` would have deleted
+  the whole root directory; the tenant declarations joined it into a file name. All three now go through
+  `TenantPathSegment`: printable ASCII that is a portable file-name character stays as it is (so every directory an
+  earlier host wrote for a plain name is the same directory), and every other character — `/`, `\`, `%`, the
+  characters Windows refuses, control characters, anything non-ASCII — is written as its UTF-8 bytes in upper-case
+  `%XX`. A name of dots only, and a trailing dot or space, are escaped too; an empty or ill-formed name has no segment.
+  On the way back a directory is a tenant only when the encoder would have written exactly its name, so `a%2fb`,
+  `%41` or an unescaped `a:b` is skipped (listed, for stubs), never read as a tenant it resembles.
+  - **The resources provider was the last member (verifier, PR #483, second round).** It escaped the tenant directory
+    with its own encoder (`ResourceJson.SafeName`, which escapes everything outside `[A-Za-z0-9._-]`) and its loader
+    read the escaped name back as the tenant, so `Acme Corp` was written as `Acme%20Corp/` and reloaded as tenant
+    `Acme%20Corp`: the documents answered 404 after a restart. The tenant directory now goes through `TenantPathSegment`
+    too; `SafeName` stays for the collection and document id, which the loader takes from the stored document. A
+    source sweep (`No_path_in_the_source_is_built_from_a_tenant_but_through_the_one_encoder`) fails on any
+    `Path.Combine`/`Path.Join` in `src/` that takes a tenant other than through the encoder, so a fifth provider with an
+    encoder of its own is caught by the build rather than by the next review.
+  - **Upgrade: a directory an earlier release wrote.** Before #467 the stub and environment providers named a tenant's
+    directory by its raw value, and the resources provider by `SafeName`. On load, a directory this release wrote (it
+    carries the marker below) is read by this release's rule. One without the marker is read as the tenant the EARLIER
+    writer meant, when that writer could have produced exactly that name for exactly one tenant, and is then **renamed
+    once** to this release's name (and marked), with a line saying so. The rename is what makes a delete or reset after the upgrade hold: read in place, the next write would
+    land in the new directory and a deleted document would come back from the old one on the next restart. A stub
+    directory is renamed only after every file in it has been proven the provider's, so a hand-made directory is still
+    never touched.
+    - On a git-synced root the rename is a change in the working tree like any other, and the next push carries it,
+      so a remote written by an earlier release converges on this release's names.
+    - **Which rule reads a directory is decided by a marker, not by trying both (verifier, PR #483, third round).**
+      Every tenant directory this release writes carries `.mockifyr-tenant` (`TenantPathSegment.CreateTenantDirectory`,
+      called by the stub, environment and resources providers). A marked directory is read by this release's rule only;
+      an unmarked one by the earlier writer's rule only, then renamed if its name differs and marked. Before the marker,
+      this release's rule ran first and won, and the third round showed what that cost: the old `SafeName` wrote `İ`
+      (U+0130) as `%130`, which this release's decoder accepts as the tenant U+0013 `0`, so the directory was read in
+      place under a tenant nobody can address, with no line. The class is "a directory name two writers could have
+      produced for two different tenants"; its other members were an earlier environment or stub tenant literally named
+      `%C4%B0` (read as `İ`) and old resource names such as `%3A3` (`Σ`, read as `:3`). The marker covers every member
+      between the two releases, named or not, because the two rules are never both consulted. A marked directory renamed
+      by hand to a name this release would not write is skipped with its own line. On a git-synced root the marker is a
+      file in the working tree like the stubs, and a stub directory counts it among the provider's own files.
+    - The raw-name reading accepts one segment only (not empty, `.`, `..`, a separator or a rooted name). Unmarked, an
+      earlier directory `%C4%B0` is the tenant `%C4%B0` and is renamed to `%25C4%25B0`.
+    - The `SafeName` reading accepts a name only when it reads as printable ASCII, no escape other than `%20` is followed
+      by a digit or `A`–`F`, and writing that value with the old escape gives the same name back. The old escape used at
+      least two hex digits, so a code unit above `0xFF` took three or four, and its output is ambiguous wherever an escape
+      is followed by a hex digit. Measured with the old `SafeName` (`TenantPathSegmentTests`):
+      - **skipped, with the line:** `ı` `%131`, `İstanbul` `%130stanbul`, `Ş` `%15E`, `ğ` `%11F` (U+0100–U+01FF and
+        U+1000–U+1FFF read as a control character); `Ƞ` `%220`, `Σ` `%3A3`, `π` `%3C0` (an escaped punctuation character
+        followed by a hex digit); `ẞ` `%1E9E`, U+7F00 `%7F00`; `é` `%E9` (a Latin-1 code unit is not printable ASCII);
+        an emoji `%D83D%DE00` (surrogates, the same).
+      - **read, not skipped: the space.** `Acme%20Corp` is `Acme Corp`, the name this reading exists for; refusing every
+        space before a digit or `A`–`F` would skip it. The cost, stated and pinned
+        (`The_accepted_ambiguity_after_a_space_reads_as_the_space`): an earlier resources tenant holding U+0200–U+020F or
+        U+2000–U+20FF (`€` was `%20AC`) is read as a space followed by hex digits.
+      - The line for a skipped directory names it and says how to keep it: rename it to its tenant's name as this
+        release writes it and put an empty `.mockifyr-tenant` in it.
+    - When the tenant already has a directory under this release's name, the earlier one is skipped, not merged, and
+      the line says to move its contents. Merging silently could bring back what one of the two had deleted.
+    - A root that cannot be written: an unmarked directory whose name is the same in both releases is still read in
+      place, and resolved the same way on the next load; one that needs a rename is skipped with the line saying so.
+  - **Not covered: letter case.** Two tenants that differ only in case (`Acme`, `acme`) share one directory on a
+    case-insensitive file system (macOS, Windows). Escaping upper-case letters would move every existing directory, so
+    it is stated rather than changed; on Linux, the image's platform, they are two directories.
+  - `TenantPathSegmentTests` holds 25 hostile names (`a/b`, `a\b`, `.`, `..`, `../x`, `/tmp/x`, `C:\x`, a space,
+    `İstanbul`, `%`, a trailing dot or space, a NUL, an emoji, and since the third round U+0013 `0`, `:3` and `%C4%B0`,
+    which this release writes as an earlier writer's spelling of another tenant, …) round-tripping through the encoder, the stub provider
+    and its loader, the environments provider (whose `Clear("..")` deletes only its own directory) and the tenant
+    declarations, plus ten directory names the decoder refuses. `RootDirTenantRestartTests` drives a real host through a
+    restart for seven of them. With the providers as they were, seven of these facts are red. Stryker scores the encoder
+    100 % (its first run, 83 %, found the dots-only rule and the strict decoder unreachable, so they were removed: the
+    one canonical re-encoding check refuses everything they did).
+- **Validation of the resources member and the upgrade.** `RootDirTenantRestartTests` drives a real host: a resource
+  under seven tenant names survives a restart, and seven directories in an earlier release's layout (resources under
+  the old escape, environments and stubs under the raw name) are read as their tenant, renamed, and a delete after the
+  upgrade holds across the next restart. With the loaders as they were, 14 of these facts and the not-merged fact are
+  red; the `plain` rows stay green. `TenantPathSegmentTests` holds the two earlier-name readings' accepted and refused
+  names, and every outcome of resolving a directory (read in place, renamed, not merged, never written, vanished before
+  the rename) with the line it prints. Stryker on `TenantPathSegment.cs` (run 2026-11-26, the three suites above):
+  first 88.49 %, which found the printed lines unasserted and the `~`, DEL, `-`, `_`, mid-name dot and leading-separator
+  boundaries unexercised; then 99.26 %, 133 mutants. Third round, with the marker (run 2026-11-26, same scope): first
+  98.77 %, which found that nothing asserted an unmarked directory read in place is then marked, and that a marker
+  which cannot be written was never exercised; then **99.39 %**, 163 mutants (159 killed, 3 timeouts, 1 survivor). The
+  survivor is equivalent: removing `CreateTenantDirectory`'s early return when the marker exists only rewrites the
+  same marker text. Round 2's equivalent survivor (the old writer's `"."` case) is killed now, since an unmarked `%2E`
+  is read by the earlier rule. With the decision order and the escape rule put back as they were, 8 facts are red
+  (`ı`… rows, the ambiguous-name rows, the marked-ghost reload, the raw `%C4%B0` fact and the two line facts).
+- **Where it applies.** `DirectoryMappingsLoader` implements `IMultiTenantMappingsLoader`, so startup
+  (`ApplyStartupMappings`) and git sync's reload after a pull both read the tenants. The second is also a fix: a
+  pull reconciled only the default tenant from disk, so a non-default tenant held in memory was pruned on every
+  pull. `Load(tenant)`, the single-tenant seam, is unchanged.
+- **Validation.** No oracle: tenancy is Mockifyr's own.
+  - `DirectoryMappingsTenantsTests` covers the provider's own tenants reloaded with their ids, the ten skipped
+    shapes above (each beside a valid file that must not load either), a skip listed once across reloads, and an
+    empty or missing directory.
+  - `G16aPersistenceTests.A_tenants_stub_survives_a_restart_and_a_handmade_directory_does_not_become_a_tenant` runs
+    a real host. A tenant's stub is created over the admin API, and a fresh host serves it to that tenant only,
+    while a hand-made directory beside it is no tenant.
+  - `GitSyncTests.PushThenPull_CarriesANonDefaultTenantsStub_AndThePullKeepsIt` covers git sync.
+  - With the interface removed (`main`'s behaviour), the wire fact and the git fact are red. With the allow-list
+    loosened, five of the skipped shapes load as tenants.
+

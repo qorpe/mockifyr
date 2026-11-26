@@ -104,6 +104,55 @@ public sealed class G16aPersistenceTests : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// #467 on a real host: a non-default tenant's stub created over the admin API is written to
+    /// <c>mappings/&lt;tenant&gt;/</c> and a FRESH host serves it — to that tenant only — while a directory a person
+    /// made beside it does not become a tenant. A self-test (no oracle: tenancy is Mockifyr's own).
+    /// </summary>
+    [Fact]
+    public async Task A_tenants_stub_survives_a_restart_and_a_handmade_directory_does_not_become_a_tenant()
+    {
+        var root = Directory.CreateTempSubdirectory("mockifyr-persist-tenant-");
+        try
+        {
+            await using (var hostA = await StartHostAsync(root.FullName))
+            {
+                using var client = Client(hostA);
+                using var create = new HttpRequestMessage(HttpMethod.Post, "/__admin/mappings")
+                {
+                    Content = new StringContent(StubJson, Encoding.UTF8, "application/json"),
+                };
+                create.Headers.Add("X-Mockifyr-Tenant", "acme");
+                Assert.Equal(HttpStatusCode.Created, (await client.SendAsync(create)).StatusCode);
+            }
+
+            Assert.Single(Directory.GetFiles(Path.Combine(root.FullName, "mappings", "acme"), "*.json"));
+            var handmade = Directory.CreateDirectory(Path.Combine(root.FullName, "mappings", "handmade"));
+            File.WriteAllText(Path.Combine(handmade.FullName, "orders.json"), StubJson);
+
+            await using var hostB = await StartHostAsync(root.FullName);
+            using var clientB = Client(hostB);
+
+            using var asAcme = new HttpRequestMessage(HttpMethod.Get, "/persisted");
+            asAcme.Headers.Add("X-Mockifyr-Tenant", "acme");
+            using var served = await clientB.SendAsync(asAcme);
+            Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+            Assert.Equal("durable", await served.Content.ReadAsStringAsync());
+
+            using var asDefault = await clientB.GetAsync("/persisted");   // the default tenant never had it
+            Assert.Equal(HttpStatusCode.NotFound, asDefault.StatusCode);
+
+            using var asHandmade = new HttpRequestMessage(HttpMethod.Get, "/persisted");
+            asHandmade.Headers.Add("X-Mockifyr-Tenant", "handmade");
+            using var notATenant = await clientB.SendAsync(asHandmade);
+            Assert.Equal(HttpStatusCode.NotFound, notATenant.StatusCode);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
     private static async Task<WebApplication> StartHostAsync(string root)
     {
         var app = MockifyrHost.Build(["--port", "0", "--root-dir", root]);
