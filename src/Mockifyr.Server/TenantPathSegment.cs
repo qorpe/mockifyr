@@ -205,9 +205,18 @@ public static class TenantPathSegment
     {
         Directory.CreateDirectory(directory);
         var marker = Path.Combine(directory, MarkerFileName);
-        if (!File.Exists(marker))
+        if (File.Exists(marker))
+        {
+            return;
+        }
+
+        try
         {
             File.WriteAllText(marker, MarkerText);
+        }
+        catch (IOException) when (File.Exists(marker))
+        {
+            // Two saves for one tenant raced to mark its new directory; one of them did, which is all that is needed.
         }
     }
 

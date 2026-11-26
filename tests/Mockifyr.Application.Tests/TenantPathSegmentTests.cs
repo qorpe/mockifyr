@@ -322,6 +322,13 @@ public sealed class TenantPathSegmentTests : IDisposable
         Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "plain"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
             out var notice, out var tenant, out var path));
         Assert.Equal(("", "plain", Path.Combine(area, "plain")), (notice, tenant.Value, path));
+        Assert.True(File.Exists(Path.Combine(area, "plain", TenantPathSegment.MarkerFileName))); // read once by the earlier rule, then marked
+
+        // A marker that cannot be written (here its path is taken by a directory): still read in place, not thrown.
+        Directory.CreateDirectory(Path.Combine(area, "locked", TenantPathSegment.MarkerFileName));
+        Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "locked"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
+            out notice, out tenant, out path));
+        Assert.Equal(("", "locked", Path.Combine(area, "locked")), (notice, tenant.Value, path));
 
         Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a*b"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
             out notice, out tenant, out path));
@@ -452,6 +459,19 @@ public sealed class TenantPathSegmentTests : IDisposable
         Assert.Equal(("%C4%B0", id), Assert.Single(loader.LoadAllTenants()) is var stub ? (stub.TenantId.Value, stub.Id) : default);
         Assert.Empty(loader.SkippedDirectories);
         Assert.True(Directory.Exists(Path.Combine(mappings, "%25C4%25B0")));
+    }
+
+    /// <summary>Many first saves for one new tenant, at once: none fails over the marker, and the directory is marked.</summary>
+    [Fact]
+    public void Concurrent_first_saves_of_one_tenant_all_succeed_and_mark_its_directory()
+    {
+        var environments = Path.Combine(_root, "environments");
+        var persistence = new FileSystemEnvironmentPersistence(environments);
+        Parallel.For(0, 64, i => persistence.Save(new TenantId("\u0130stanbul"),
+            new EnvironmentKey($"k{i}", "main", [new EnvironmentValue("main", "v")])));
+
+        Assert.True(File.Exists(Path.Combine(environments, "%C4%B0stanbul", TenantPathSegment.MarkerFileName)));
+        Assert.Equal(64, Assert.Single(new FileSystemEnvironmentsLoader(environments).LoadAll()).Value.Count);
     }
 
     // The resources provider's tenant directory name before #467 (ResourceJson.SafeName as it was on main).

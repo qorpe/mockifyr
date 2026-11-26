@@ -375,10 +375,10 @@ the same seam.
     `Path.Combine`/`Path.Join` in `src/` that takes a tenant other than through the encoder, so a fifth provider with an
     encoder of its own is caught by the build rather than by the next review.
   - **Upgrade: a directory an earlier release wrote.** Before #467 the stub and environment providers named a tenant's
-    directory by its raw value, and the resources provider by `SafeName`. On load, a directory this release would have
-    written is read as before. One it would not have written is read as the tenant the EARLIER writer meant, when that
-    writer could have produced exactly that name, and is then **renamed once** to this release's name, with a line
-    saying so. The rename is what makes a delete or reset after the upgrade hold: read in place, the next write would
+    directory by its raw value, and the resources provider by `SafeName`. On load, a directory this release wrote (it
+    carries the marker below) is read by this release's rule. One without the marker is read as the tenant the EARLIER
+    writer meant, when that writer could have produced exactly that name for exactly one tenant, and is then **renamed
+    once** to this release's name (and marked), with a line saying so. The rename is what makes a delete or reset after the upgrade hold: read in place, the next write would
     land in the new directory and a deleted document would come back from the old one on the next restart. A stub
     directory is renamed only after every file in it has been proven the provider's, so a hand-made directory is still
     never touched.
@@ -435,9 +435,13 @@ the same seam.
   names, and every outcome of resolving a directory (read in place, renamed, not merged, never written, vanished before
   the rename) with the line it prints. Stryker on `TenantPathSegment.cs` (run 2026-11-26, the three suites above):
   first 88.49 %, which found the printed lines unasserted and the `~`, DEL, `-`, `_`, mid-name dot and leading-separator
-  boundaries unexercised; then **99.26 %**, 133 mutants. The one survivor is equivalent: the `"."` case of the old
-  writer's dots-only rule matches only the value `.`, whose old name `%2E` is also this release's name for it, so the
-  canonical reading takes it first and the earlier reading is never asked.
+  boundaries unexercised; then 99.26 %, 133 mutants. Third round, with the marker (run 2026-11-26, same scope): first
+  98.77 %, which found that nothing asserted an unmarked directory read in place is then marked, and that a marker
+  which cannot be written was never exercised; then **99.39 %**, 163 mutants (159 killed, 3 timeouts, 1 survivor). The
+  survivor is equivalent: removing `CreateTenantDirectory`'s early return when the marker exists only rewrites the
+  same marker text. Round 2's equivalent survivor (the old writer's `"."` case) is killed now, since an unmarked `%2E`
+  is read by the earlier rule. With the decision order and the escape rule put back as they were, 8 facts are red
+  (`ı`… rows, the ambiguous-name rows, the marked-ghost reload, the raw `%C4%B0` fact and the two line facts).
 - **Where it applies.** `DirectoryMappingsLoader` implements `IMultiTenantMappingsLoader`, so startup
   (`ApplyStartupMappings`) and git sync's reload after a pull both read the tenants. The second is also a fix: a
   pull reconciled only the default tenant from disk, so a non-default tenant held in memory was pruned on every
