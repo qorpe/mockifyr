@@ -207,7 +207,19 @@ public sealed record DeleteRelationCommand(string Collection, TenantId Tenant) :
 /// resource-shaped path pairs emit a G19b state-wired CRUD set. Transactional: on any refusal
 /// nothing is created (ADR 0011 addendum). Returns how many stubs were imported.
 /// </summary>
-public sealed record ImportOpenApiCommand(string SpecText, bool Stateful, TenantId Tenant) : ICommand<Result<int>>;
+public sealed record ImportOpenApiCommand(string SpecText, bool Stateful, TenantId Tenant) : ICommand<Result<OpenApiImportResult>>
+{
+    /// <summary>Make the document's named examples selectable scenario states (#449). Off by default.</summary>
+    public bool Scenarios { get; init; }
+
+    /// <summary>The scenario the example stubs bind to; the document's <c>info.title</c> when null (#449).</summary>
+    public string? ScenarioName { get; init; }
+}
+
+/// <summary>What an OpenAPI import stored: how many stubs, and what its named examples became when asked (#449).</summary>
+/// <param name="Imported">How many stubs were stored.</param>
+/// <param name="Scenarios">The scenario report; null when scenarios were not asked for.</param>
+public sealed record OpenApiImportResult(int Imported, Mockifyr.Adapters.OpenApi.OpenApiScenarioReport? Scenarios);
 
 // Sandbox access (G19d, ADR 0011): operator-issued API keys that scope traffic to a tenant.
 

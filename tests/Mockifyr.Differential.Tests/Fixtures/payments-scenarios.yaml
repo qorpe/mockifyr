@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info:
+  title: Payments
+  version: 1.0.0
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      responses:
+        "201":
+          description: Accepted
+          content:
+            application/json:
+              examples:
+                approved:
+                  value: { status: APPROVED, id: pay-1 }
+                pending:
+                  value: { status: PENDING, id: pay-2 }
+        "402":
+          description: Declined
+          content:
+            application/json:
+              examples:
+                insufficient-funds:
+                  value: { error: INSUFFICIENT_FUNDS }
+  /balance:
+    get:
+      operationId: getBalance
+      responses:
+        "200":
+          description: Balance
+          content:
+            application/json:
+              example: { amount: 100 }

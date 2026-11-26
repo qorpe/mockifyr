@@ -96,7 +96,8 @@ Testcontainers) are collected at the edges.
   the harness and the admin API; itself under differential test.
 - **`Mockifyr.ServeEvents.Webhook`** — `IServeEventListener` impl (outbound I/O + templating).
 - **`Mockifyr.Adapters.OpenApi`** — OpenAPI 3.x document → stub set import (spec in, working
-  sandbox out; `?stateful=true` wires resource-shaped path pairs to the state directive).
+  sandbox out; `?stateful=true` wires resource-shaped path pairs to the state directive;
+  `?scenarios=true` binds named examples to scenario states, #449).
 - **`Mockifyr.Outbound`** — the outbound HTTP seam every callback/proxy/webhook shares:
   trust policy (allow-listed hosts), TLS options, redaction. Facades call out ONLY through it.
 - **`Mockifyr.Crypto`** — payload decryption, response signing/protection, signature
