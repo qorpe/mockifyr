@@ -23,4 +23,6 @@ consequences.
 | [0015](0015-relational-sandbox-resources.md) | Relations in the sandbox resource model | Proposed |
 | [0017](0017-xml-service-descriptions-out-of-scope.md) | No WSDL import and no ISO 20022 validation, for now; ISO 8583 out of scope | Accepted |
 
+0016 is reserved by the open pull request [#475](https://github.com/qorpe/mockifyr/pull/475), so the table skips it until that merges.
+
 When adding a decision, use the next number and add a row to this table.

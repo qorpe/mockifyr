@@ -14,7 +14,8 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   is mocked as XML, as before, with `matchesXPath` and `equalToXml` on the request and a literal or templated
   envelope as the response. Nothing imports a WSDL or checks a message against its XSD. ISO 8583, a binary card
   protocol that is not carried over HTTP, is out of scope outright. The deferred-edge register lists all three
-  under Accepted. No behaviour changes.
+  under Accepted, and tracks the website limitations page the decision requires until it is published. No behaviour
+  changes.
 
 ### Fixed
 

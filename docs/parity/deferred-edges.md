@@ -34,6 +34,7 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 | Item | Issue | What is reachable today |
 |------|-------|-------------------------|
+| Website limitations page for ADR 0017: no WSDL import and no ISO 20022 validation for now, ISO 8583 out of scope | [#462](https://github.com/qorpe/mockifyr/issues/462) | The owner's decision requires the limitations page on `mockifyr.qorpe.com` to say so plainly; it does not yet. The text it needs is the Decision section of [ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md). The row leaves when the `qorpe/mockifyr.qorpe.com` change that adds it merges |
 | Startup reload of a non-default tenant's stubs on `--root-dir` | [#467](https://github.com/qorpe/mockifyr/issues/467) | The file provider writes them to `mappings/<tenant>/`, and the directory loader reads only the flat `mappings/`. Postgres, Redis and LiteDB reload every tenant since [#466](https://github.com/qorpe/mockifyr/issues/466). Reading subdirectories as tenants would change what a hand-organised mappings tree means, so it waits for a decision |
 
 Three entries left this section by shipping: **resource embedding**

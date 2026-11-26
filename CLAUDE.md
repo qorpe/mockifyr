@@ -322,7 +322,8 @@ and integer division rounded the wrong way for negatives.
 The **deferred-edge register**, `docs/parity/deferred-edges.md`, is the single answer to "is anything
 open?", with a verdict per item (out of scope / tracked / accepted). The per-group parity files still
 hold the narrative, but they record deferrals as of the group that wrote them, so they are not a count.
-Its Tracked section is currently **empty**: the last entry it held — resource embedding (#378) — shipped,
+Its Tracked section holds the startup reload of a non-default tenant's stubs on `--root-dir` (#467) and the
+website limitations page ADR 0017 owes (#462). Before them, resource embedding (#378) shipped,
 and before it change-feed reload for environments and sandbox resources (#279) did in 1.5.0, where testing
 turned up a second defect the analysis had not predicted: a host reloaded on its own announcement and
 could hand an operator their own write back at the previous version, so every announcement now carries

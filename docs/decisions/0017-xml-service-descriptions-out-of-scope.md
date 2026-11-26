@@ -40,7 +40,7 @@ message schemas, or accepting them per tenant, plus a fault shape. Neither has a
 ## Consequences
 
 - The deferred-edge register (`docs/parity/deferred-edges.md`) lists all three under **Accepted**, pointing here.
-  The website's limitations page is to say the same.
+  The website's limitations page is to say the same; until it does, that is a Tracked row of `docs/parity/deferred-edges.md`.
 - The decision is "not now", not "never", for items 1 and 2. They return as one issue, decided again, when a
   deployment brings an XML-first partner channel, with the services and the message set it uses. That issue
   starts from this record. Item 3 does not return.
