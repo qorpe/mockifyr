@@ -117,6 +117,36 @@ public sealed class GitSyncTests : IDisposable
         RunGit(clone, "push", "origin", "HEAD:main");
     }
 
+    /// <summary>
+    /// #467 through git sync, which reloads with the same loader after a pull: a non-default tenant's stub pushed from
+    /// one host is served to that tenant on the host that pulls it. Before, the reload read the flat files only, so the
+    /// pulled tenant had nothing — and a tenant held in memory was pruned by every pull.
+    /// </summary>
+    [Fact]
+    public async Task PushThenPull_CarriesANonDefaultTenantsStub_AndThePullKeepsIt()
+    {
+        var bare = CreateBareRemote();
+        var hostA = Compose(NewDir("host-a"), bare);
+        var acme = new TenantId("acme");
+        var (stub, source) = MappingJsonReader.ReadWithSource(StubJson, acme, hostA.Matchers)[0];
+        hostA.Store.Put(stub);
+        hostA.Persistence.Save(stub, source);
+        Assert.True((await hostA.Git.PushAsync("a tenant's stub", CancellationToken.None)).IsSuccess);
+
+        var hostB = Compose(NewDir("host-b"), bare);
+        var pull = await hostB.Git.PullAsync(CancellationToken.None);
+
+        Assert.True(pull.IsSuccess, pull.IsSuccess ? null : pull.Error.Description);
+        Assert.Equal(stub.Id, Assert.Single(hostB.Store.GetStubs(acme)).Id);
+        Assert.Empty(hostB.Store.GetStubs(TenantId.Default));
+
+        // A later pull with nothing new leaves the tenant's stub in place.
+        AddStub(hostA, StubJson);
+        Assert.True((await hostA.Git.PushAsync("a default stub", CancellationToken.None)).IsSuccess);
+        Assert.True((await hostB.Git.PullAsync(CancellationToken.None)).IsSuccess);
+        Assert.Equal(stub.Id, Assert.Single(hostB.Store.GetStubs(acme)).Id);
+    }
+
     [Fact]
     public async Task PushThenPull_RoundTripsAStub_BetweenTwoHosts()
     {
