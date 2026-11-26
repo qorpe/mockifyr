@@ -366,9 +366,35 @@ the same seam.
   `%XX`. A name of dots only, and a trailing dot or space, are escaped too; an empty or ill-formed name has no segment.
   On the way back a directory is a tenant only when the encoder would have written exactly its name, so `a%2fb`,
   `%41` or an unescaped `a:b` is skipped (listed, for stubs), never read as a tenant it resembles.
-  - **Upgrade note.** A tenant whose name holds a character outside the allow-list (a `:`, a `%`, a non-ASCII letter)
-    was written under its raw name by an earlier host; its directory is now named differently, so its environments are
-    not reloaded until they are saved again. Its stubs were never reloaded before #467.
+  - **The resources provider was the last member (verifier, PR #483, second round).** It escaped the tenant directory
+    with its own encoder (`ResourceJson.SafeName`, which escapes everything outside `[A-Za-z0-9._-]`) and its loader
+    read the escaped name back as the tenant, so `Acme Corp` was written as `Acme%20Corp/` and reloaded as tenant
+    `Acme%20Corp`: the documents answered 404 after a restart. The tenant directory now goes through `TenantPathSegment`
+    too; `SafeName` stays for the collection and document id, which the loader takes from the stored document. A
+    source sweep (`No_path_in_the_source_is_built_from_a_tenant_but_through_the_one_encoder`) fails on any
+    `Path.Combine`/`Path.Join` in `src/` that takes a tenant other than through the encoder, so a fifth provider with an
+    encoder of its own is caught by the build rather than by the next review.
+  - **Upgrade: a directory an earlier release wrote.** Before #467 the stub and environment providers named a tenant's
+    directory by its raw value, and the resources provider by `SafeName`. On load, a directory this release would have
+    written is read as before. One it would not have written is read as the tenant the EARLIER writer meant, when that
+    writer could have produced exactly that name, and is then **renamed once** to this release's name, with a line
+    saying so. The rename is what makes a delete or reset after the upgrade hold: read in place, the next write would
+    land in the new directory and a deleted document would come back from the old one on the next restart. A stub
+    directory is renamed only after every file in it has been proven the provider's, so a hand-made directory is still
+    never touched.
+    - On a git-synced root the rename is a change in the working tree like any other, and the next push carries it,
+      so a remote written by an earlier release converges on this release's names.
+    - The raw-name reading accepts one segment only (not empty, `.`, `..`, a separator or a rooted name).
+    - The `SafeName` reading accepts a name only when it reads as printable ASCII and writing that value with the old
+      escape gives the same name back. The old escape is not reversible above `0xFF` (`İ`, U+0130, was `%130`, which
+      also reads as U+0013 and `0`), so such a directory is skipped, not guessed, and the line names it.
+    - When the tenant already has a directory under this release's name, the earlier one is skipped, not merged, and
+      the line says to move its contents. Merging silently could bring back what one of the two had deleted.
+    - **Residual ambiguity, stated:** a name that both writers could have produced for two different tenants is read
+      by this release's rule. That needs a tenant whose raw name contains an upper-case `%XX` escape (an earlier
+      environment directory `a%2Ab` is now tenant `a*b`, not `a%2Ab`), or a resources tenant made of Latin-1 code units
+      that happen to be another name's UTF-8 bytes. The tenant header is ASCII-only, so the second needs a credential
+      scope or OIDC claim.
   - **Not covered: letter case.** Two tenants that differ only in case (`Acme`, `acme`) share one directory on a
     case-insensitive file system (macOS, Windows). Escaping upper-case letters would move every existing directory, so
     it is stated rather than changed; on Linux, the image's platform, they are two directories.
@@ -379,6 +405,12 @@ the same seam.
     restart for seven of them. With the providers as they were, seven of these facts are red. Stryker scores the encoder
     100 % (its first run, 83 %, found the dots-only rule and the strict decoder unreachable, so they were removed: the
     one canonical re-encoding check refuses everything they did).
+- **Validation of the resources member and the upgrade.** `RootDirTenantRestartTests` drives a real host: a resource
+  under seven tenant names survives a restart, and seven directories in an earlier release's layout (resources under
+  the old escape, environments and stubs under the raw name) are read as their tenant, renamed, and a delete after the
+  upgrade holds across the next restart. With the loaders as they were, 14 of these facts and the not-merged fact are
+  red; the `plain` rows stay green. `TenantPathSegmentTests` holds the two earlier-name readings' accepted and refused
+  names.
 - **Where it applies.** `DirectoryMappingsLoader` implements `IMultiTenantMappingsLoader`, so startup
   (`ApplyStartupMappings`) and git sync's reload after a pull both read the tenants. The second is also a fix: a
   pull reconciled only the default tenant from disk, so a non-default tenant held in memory was pruned on every

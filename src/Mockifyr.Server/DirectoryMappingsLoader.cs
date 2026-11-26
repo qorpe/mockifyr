@@ -66,16 +66,23 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
             return stubs;
         }
 
-        foreach (var directory in Directory.EnumerateDirectories(mappingsDirectory).OrderBy(path => path, StringComparer.Ordinal))
+        foreach (var directory in Directory.EnumerateDirectories(mappingsDirectory).OrderBy(path => path, StringComparer.Ordinal).ToList())
         {
             var name = Path.GetFileName(directory);
-            if (ReadTenant(directory, name, out var reason) is { } tenantStubs)
+            if (ReadTenant(directory, name, out var reason) is not { } tenantStubs)
             {
-                stubs.AddRange(tenantStubs);
+                Skip($"{name}: {reason}");
+            }
+            else if (!TenantPathSegment.TryResolveDirectory(
+                         directory, "mappings", TenantPathSegment.TryDecodeEarlierRawName, out var skipped, out _, out _))
+            {
+                // Only now, with every file proven the provider's: a directory an earlier release named by the raw tenant
+                // value is renamed to this release's name, so the next delete reaches the file the reload read (#467).
+                Skip(skipped["mappings/".Length..], line: skipped);
             }
             else
             {
-                Skip($"{name}: {reason}");
+                stubs.AddRange(tenantStubs);
             }
         }
 
@@ -97,7 +104,7 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
             return null;
         }
 
-        if (!TenantPathSegment.TryDecode(name, out var tenant))
+        if (!TenantPathSegment.TryDecode(name, out var tenant) && !TenantPathSegment.TryDecodeEarlierRawName(name, out tenant))
         {
             reason = "its name is not one this provider writes for a tenant (see TenantPathSegment)";
             return null;
@@ -140,7 +147,7 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
         return stubs;
     }
 
-    private void Skip(string entry)
+    private void Skip(string entry, string? line = null)
     {
         bool first;
         lock (_gate)
@@ -150,7 +157,7 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
 
         if (first)
         {
-            Console.WriteLine($"mockifyr: mappings/{entry} — skipped, not read as a tenant.");
+            Console.WriteLine(line is null ? $"mockifyr: mappings/{entry} — skipped, not read as a tenant." : $"mockifyr: {line}");
         }
     }
 }

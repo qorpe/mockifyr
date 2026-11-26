@@ -112,16 +112,18 @@ public sealed class FileSystemEnvironmentsLoader(string environmentsDirectory) :
         }
 
         var rows = new List<(TenantId, EnvironmentKey)>();
-        foreach (var tenantDirectory in Directory.EnumerateDirectories(environmentsDirectory))
+        foreach (var tenantDirectory in Directory.EnumerateDirectories(environmentsDirectory).ToList())
         {
-            // Only a directory this provider names for a tenant is one; any other is not read as a tenant it resembles.
-            if (!TenantPathSegment.TryDecode(Path.GetFileName(tenantDirectory), out var tenant))
+            // A directory this provider names for a tenant is read as that tenant; one an earlier release named by the raw
+            // tenant value is renamed once to this one's, so Clear and the next save reach it (#467); any other is skipped.
+            if (!TenantPathSegment.TryResolveDirectory(
+                    tenantDirectory, "environments", TenantPathSegment.TryDecodeEarlierRawName, out var skipped, out var tenant, out var path))
             {
-                Console.WriteLine($"mockifyr: environments/{Path.GetFileName(tenantDirectory)}: its name is not one this provider writes for a tenant — skipped, not read as a tenant.");
+                Console.WriteLine($"mockifyr: {skipped}");
                 continue;
             }
 
-            foreach (var file in Directory.EnumerateFiles(tenantDirectory, "*.json"))
+            foreach (var file in Directory.EnumerateFiles(path, "*.json"))
             {
                 if (EnvironmentJson.Deserialize(File.ReadAllText(file)) is { } key)
                 {

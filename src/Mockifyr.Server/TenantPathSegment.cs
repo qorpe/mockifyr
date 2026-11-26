@@ -103,5 +103,163 @@ public static class TenantPathSegment
         return true;
     }
 
+    /// <summary>
+    /// The tenant an earlier release's writer meant by a directory <paramref name="segment"/> that <see cref="TryDecode"/>
+    /// refuses: the raw tenant value, which the stub and environment providers joined to the path before #467. Only a
+    /// value that writer could have produced as ONE directory is accepted — not empty, not <c>.</c> or <c>..</c>, no
+    /// separator, not rooted — and only when <see cref="TryDecode"/> refuses it, so a name this release writes is always
+    /// read by this release's rule first.
+    /// </summary>
+    public static bool TryDecodeEarlierRawName(string segment, out TenantId tenant)
+    {
+        tenant = default;
+        if (segment.Length == 0 || segment is "." or ".." || segment.IndexOfAny(['/', '\\']) >= 0
+            || Path.IsPathRooted(segment) || TryDecode(segment, out _))
+        {
+            return false;
+        }
+
+        tenant = new TenantId(segment);
+        return true;
+    }
+
+    /// <summary>
+    /// The tenant an earlier release's resources provider meant by a directory <paramref name="segment"/> that
+    /// <see cref="TryDecode"/> refuses. That writer escaped every UTF-16 code unit outside <c>[A-Za-z0-9._-]</c> as
+    /// <c>%</c> and its hexadecimal value, which is not reversible for a code unit above <c>0xFF</c> (<c>İ</c>, U+0130,
+    /// became <c>%130</c>, which also reads as U+0013 and <c>0</c>). So a segment is accepted only when it reads as
+    /// printable ASCII and writing that value again gives back exactly <paramref name="segment"/>; anything else is
+    /// refused rather than guessed.
+    /// </summary>
+    public static bool TryDecodeEarlierResourceName(string segment, out TenantId tenant)
+    {
+        tenant = default;
+        if (segment.Length == 0 || TryDecode(segment, out _))
+        {
+            return false;
+        }
+
+        var builder = new StringBuilder(segment.Length);
+        for (var i = 0; i < segment.Length; i++)
+        {
+            if (segment[i] != '%')
+            {
+                builder.Append(segment[i]);
+                continue;
+            }
+
+            if (i + 2 >= segment.Length || !IsUpperHex(segment[i + 1]) || !IsUpperHex(segment[i + 2]))
+            {
+                return false;
+            }
+
+            builder.Append((char)byte.Parse(segment.AsSpan(i + 1, 2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture));
+            i += 2;
+        }
+
+        var value = builder.ToString();
+        foreach (var c in value)
+        {
+            if (c is < ' ' or > '~')
+            {
+                return false;
+            }
+        }
+
+        if (!string.Equals(EarlierResourceName(value), segment, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        tenant = new TenantId(value);
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves one tenant directory of a file provider (#467): the tenant it names, and the directory to read it from.
+    /// A directory this release writes is read where it is. A directory an earlier release wrote (as
+    /// <paramref name="earlier"/> reads it) is renamed to the name this release writes, once, so the next write, delete or
+    /// reset for that tenant lands on the same directory the reload read — reading it in place would let a deleted stub
+    /// or a reset environment come back on the next restart. Anything else is skipped, and the line printed names the
+    /// directory, why, and how to recover it.
+    /// </summary>
+    /// <param name="directory">The tenant directory found under the provider's root.</param>
+    /// <param name="area">The provider's directory, as the operator knows it (<c>mappings</c>, <c>environments</c>, …).</param>
+    /// <param name="earlier">How an earlier release named a tenant's directory, or <see langword="null"/> when it named it as this one does.</param>
+    /// <param name="skipped">Receives the line describing a skipped directory; the caller logs it.</param>
+    /// <param name="tenant">The tenant, when one is resolved.</param>
+    /// <param name="path">The directory to read, when one is resolved.</param>
+    public static bool TryResolveDirectory(
+        string directory,
+        string area,
+        TryDecodeEarlier? earlier,
+        out string skipped,
+        out TenantId tenant,
+        out string path)
+    {
+        var name = Path.GetFileName(directory);
+        path = directory;
+        skipped = "";
+        if (TryDecode(name, out tenant))
+        {
+            return true;
+        }
+
+        if (earlier is null || !earlier(name, out tenant))
+        {
+            skipped = $"{area}/{name}: its name is not one this provider writes for a tenant — skipped, not read as a tenant.";
+            tenant = default;
+            return false;
+        }
+
+        var target = Path.Combine(Path.GetDirectoryName(directory)!, TenantPathSegment.Encode(tenant));
+        if (Directory.Exists(target))
+        {
+            skipped = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', which also has {area}/{Path.GetFileName(target)} — "
+                + "skipped, not merged; move what it holds into the second directory to keep it.";
+            tenant = default;
+            return false;
+        }
+
+        try
+        {
+            Directory.Move(directory, target);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            skipped = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', and renaming it to {area}/{Path.GetFileName(target)} failed "
+                + $"({exception.GetType().Name}) — skipped; rename it by hand to keep it.";
+            tenant = default;
+            return false;
+        }
+
+        Console.WriteLine($"mockifyr: {area}/{name}: written by an earlier release for tenant '{tenant.Value}' — renamed to {area}/{Path.GetFileName(target)}.");
+        path = target;
+        return true;
+    }
+
+    /// <summary>How an earlier release named a tenant's directory: the tenant <paramref name="segment"/> meant, if any.</summary>
+    public delegate bool TryDecodeEarlier(string segment, out TenantId tenant);
+
+    // The resources provider's writer before #467 (ResourceJson.SafeName as it was), kept only to recognise its output.
+    private static string EarlierResourceName(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        foreach (var c in value)
+        {
+            if (char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.')
+            {
+                builder.Append(c);
+            }
+            else
+            {
+                builder.Append('%').Append(((int)c).ToString("X2", CultureInfo.InvariantCulture));
+            }
+        }
+
+        var safe = builder.ToString();
+        return safe is "." or ".." ? safe.Replace(".", "%2E", StringComparison.Ordinal) : safe;
+    }
+
     private static bool IsUpperHex(char c) => char.IsAsciiDigit(c) || c is >= 'A' and <= 'F';
 }

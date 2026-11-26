@@ -20,11 +20,19 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 - **A tenant name can no longer reach outside `--root-dir`'s directories (#467).** The file providers used the tenant
   value as a path: a tenant header of `../escape` or `/tmp/x` wrote stub JSON outside `mappings/`, `a/b` was written
   nested and lost on restart, and an environments reset under `..` would have deleted the whole root directory. A tenant
-  is now one path segment in the stub, environment and tenant-declaration providers: portable characters stay as they
-  are, so existing directories for plain names are unchanged, and every other character is written as `%XX`. **Upgrade
-  note:** environments of a tenant whose name holds `:`, `%` or a non-ASCII letter were written under the raw name and
-  are reloaded only once saved again; two tenants differing only in case still share a directory on a case-insensitive
-  file system.
+  is now one path segment in the stub, environment, sandbox-resource and tenant-declaration providers, by one encoder:
+  portable characters stay as they are, so existing directories for plain names are unchanged, and every other
+  character is written as `%XX`.
+- **A `--root-dir` host now reloads a sandbox resource of a tenant whose name is not `[A-Za-z0-9._-]` (#467).** The
+  resources provider escaped the tenant directory with its own encoder and read the escaped name back as the tenant, so
+  a document of tenant `Acme Corp` was reloaded under `Acme%20Corp` and answered 404 after a restart.
+  **Upgrade note:** a tenant directory an earlier release wrote under a name this release writes differently (an
+  environment or stub directory under the raw tenant value, such as `a*b`; a resources directory under the old escape,
+  such as `Acme%20Corp`) is read as its tenant and renamed once, at startup, to this release's name, with a line saying
+  so, so that a later delete or reset reaches it. A resources directory whose old name cannot be read back unambiguously
+  (a tenant holding a non-ASCII letter), or one whose tenant already has a directory under the new name, is left in
+  place and skipped with a line naming it and how to recover it. Two tenants differing only in case still share a
+  directory on a case-insensitive file system.
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404

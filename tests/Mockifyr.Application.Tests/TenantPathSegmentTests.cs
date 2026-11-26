@@ -156,4 +156,106 @@ public sealed class TenantPathSegmentTests : IDisposable
         Assert.All(loaded, pair => Assert.Equal("v-" + pair.Key.Value, pair.Value.Single().Resolve()));
         Assert.DoesNotContain(new TenantId(".."), loaded.Keys);
     }
+
+    /// <summary>
+    /// The resources provider's writer before #467 escaped per UTF-16 code unit, which is reversible only for printable
+    /// ASCII. Every printable-ASCII name that writer could have produced reads back as itself (unless this release writes
+    /// the same segment, which then wins and means the same tenant); anything it could not have produced, or that is
+    /// ambiguous, is refused rather than guessed.
+    /// </summary>
+    [Theory]
+    [InlineData("Acme Corp", "Acme%20Corp")]
+    [InlineData("..", "%2E%2E")]
+    [InlineData("a b*c", "a%20b%2Ac")]
+    [InlineData("x(y)", "x%28y%29")]
+    public void An_earlier_resource_directory_reads_as_its_tenant(string tenant, string earlier)
+    {
+        Assert.True(TenantPathSegment.TryDecodeEarlierResourceName(earlier, out var back));
+        Assert.Equal(tenant, back.Value);
+        Assert.NotEqual(earlier, TenantPathSegment.Encode(back));
+    }
+
+    [Theory]
+    [InlineData("%130")]      // U+0130 as the earlier writer spelled it: also reads as U+0013 and "0", so refused
+    [InlineData("%E9")]       // a Latin-1 code unit: not printable ASCII
+    [InlineData("a%2fb")]     // lower-case: the earlier writer used upper-case
+    [InlineData("a%2")]       // truncated
+    [InlineData("a b")]       // an unescaped space: not that writer's output
+    [InlineData("%41")]       // "A" escaped: that writer kept letters
+    [InlineData("plain")]     // this release's name for "plain": read by this release's rule, not as an earlier one
+    [InlineData("a%2Ab")]     // the same: this release writes "a*b" this way
+    [InlineData("a%2Fb")]     // the same for "a/b": both writers spelled it alike, so it is one tenant either way
+    [InlineData("")]
+    public void A_name_the_earlier_resource_writer_did_not_produce_is_refused(string segment) =>
+        Assert.False(TenantPathSegment.TryDecodeEarlierResourceName(segment, out _));
+
+    [Theory]
+    [InlineData("a*b")]
+    [InlineData("x:y")]
+    [InlineData("a%41")]
+    [InlineData("caf\u00E9")]
+    public void An_earlier_raw_directory_reads_as_its_tenant(string segment)
+    {
+        Assert.True(TenantPathSegment.TryDecodeEarlierRawName(segment, out var back));
+        Assert.Equal(segment, back.Value);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("a/b")]
+    [InlineData("a\\b")]
+    [InlineData("/tmp")]
+    [InlineData("plain")]     // this release's own name wins
+    [InlineData("Acme Corp")]
+    public void A_raw_name_that_is_not_one_earlier_directory_is_refused(string segment) =>
+        Assert.False(TenantPathSegment.TryDecodeEarlierRawName(segment, out _));
+
+    /// <summary>
+    /// An earlier directory whose tenant already has this release's directory beside it is left alone: merging two
+    /// directories silently could resurrect what one of them deleted, so the operator is told and decides.
+    /// </summary>
+    [Fact]
+    public void An_earlier_directory_beside_this_releases_one_is_skipped_not_merged()
+    {
+        var resources = Path.Combine(_root, "resources");
+        var persistence = new FileSystemResourcePersistence(resources);
+        var document = new ResourceDocument("1", "orders", "{}", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, 1);
+        persistence.Save(new TenantId("Acme Corp"), document);
+        Directory.CreateDirectory(Path.Combine(resources, "Acme%20Corp", "orders"));
+        File.WriteAllText(Path.Combine(resources, "Acme%20Corp", "orders", "2.json"), File.ReadAllText(Path.Combine(resources, "Acme Corp", "orders", "1.json")).Replace("\"1\"", "\"2\""));
+
+        var loaded = new FileSystemResourcesLoader(resources).LoadAll();
+
+        Assert.Equal("1", Assert.Single(Assert.Single(loaded).Value).Id);
+        Assert.True(Directory.Exists(Path.Combine(resources, "Acme%20Corp")));
+    }
+
+    /// <summary>
+    /// The sweep for a provider nobody has named yet (#467): no path in the shipped source is built from a tenant except
+    /// through <see cref="TenantPathSegment.Encode"/>. The resources provider was the member a reading of the other three
+    /// missed, because it had an encoder of its own; a fifth would be missed the same way.
+    /// </summary>
+    [Fact]
+    public void No_path_in_the_source_is_built_from_a_tenant_but_through_the_one_encoder()
+    {
+        var root = AppContext.BaseDirectory;
+        while (root is not null && !File.Exists(Path.Combine(root, "Mockifyr.sln")))
+        {
+            root = Path.GetDirectoryName(root);
+        }
+
+        Assert.NotNull(root);
+        var offenders = Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
+            .SelectMany(file => File.ReadLines(file).Select((line, index) => (file, line, index)))
+            .Where(row => (row.line.Contains("Path.Combine(", StringComparison.Ordinal) || row.line.Contains("Path.Join(", StringComparison.Ordinal))
+                && row.line.Contains("tenant", StringComparison.OrdinalIgnoreCase)
+                && !row.line.Contains("TenantPathSegment.Encode(", StringComparison.Ordinal)
+                && !row.line.Contains("\"tenants\"", StringComparison.Ordinal))
+            .Select(row => $"{Path.GetRelativePath(root, row.file)}:{row.index + 1}: {row.line.Trim()}")
+            .ToList();
+
+        Assert.Empty(offenders);
+    }
 }
