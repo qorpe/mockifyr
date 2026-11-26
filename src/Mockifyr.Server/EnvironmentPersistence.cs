@@ -92,7 +92,8 @@ public sealed class FileSystemEnvironmentPersistence(string environmentsDirector
         }
     }
 
-    internal string DirectoryFor(TenantId tenant) => Path.Combine(environmentsDirectory, tenant.Value);
+    // One segment, never a path (#467): a tenant named "../" would otherwise make Clear delete the root directory.
+    internal string DirectoryFor(TenantId tenant) => Path.Combine(environmentsDirectory, TenantPathSegment.Encode(tenant));
 
     // The key is already constrained to [A-Za-z0-9_-] by ReservedEnvironmentKeys.IsWellFormed, so it
     // is a safe file name — no traversal component can reach here.
@@ -113,7 +114,13 @@ public sealed class FileSystemEnvironmentsLoader(string environmentsDirectory) :
         var rows = new List<(TenantId, EnvironmentKey)>();
         foreach (var tenantDirectory in Directory.EnumerateDirectories(environmentsDirectory))
         {
-            var tenant = new TenantId(Path.GetFileName(tenantDirectory));
+            // Only a directory this provider names for a tenant is one; any other is not read as a tenant it resembles.
+            if (!TenantPathSegment.TryDecode(Path.GetFileName(tenantDirectory), out var tenant))
+            {
+                Console.WriteLine($"mockifyr: environments/{Path.GetFileName(tenantDirectory)}: its name is not one this provider writes for a tenant — skipped, not read as a tenant.");
+                continue;
+            }
+
             foreach (var file in Directory.EnumerateFiles(tenantDirectory, "*.json"))
             {
                 if (EnvironmentJson.Deserialize(File.ReadAllText(file)) is { } key)

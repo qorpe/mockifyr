@@ -97,7 +97,12 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
             return null;
         }
 
-        var tenant = new TenantId(name);
+        if (!TenantPathSegment.TryDecode(name, out var tenant))
+        {
+            reason = "its name is not one this provider writes for a tenant (see TenantPathSegment)";
+            return null;
+        }
+
         var stubs = new List<StubMapping>();
         foreach (var file in Directory.EnumerateFiles(directory).OrderBy(path => path, StringComparer.Ordinal))
         {

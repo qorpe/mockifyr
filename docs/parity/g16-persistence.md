@@ -355,6 +355,30 @@ the same seam.
   provider writes, so a hand-made layout nobody has named yet is skipped too. A directory is all or nothing: one
   foreign file and none of its stubs load. No ADR, because no layout changed: the provider has written this layout
   since G16a, and only the reading is new.
+- **A tenant is one path segment, never a path (verifier, PR #483).** The tenant came straight from the tenant header
+  into `Path.Combine`, so `a/b` was written nested (and lost on restart, the loader refusing a directory that holds one),
+  `../escape` was written outside `mappings/`, and a rooted name such as `/tmp/x` replaced the base altogether. The
+  environments provider joined the tenant the same way, and its `Clear` deletes recursively, so `..` would have deleted
+  the whole root directory; the tenant declarations joined it into a file name. All three now go through
+  `TenantPathSegment`: printable ASCII that is a portable file-name character stays as it is (so every directory an
+  earlier host wrote for a plain name is the same directory), and every other character — `/`, `\`, `%`, the
+  characters Windows refuses, control characters, anything non-ASCII — is written as its UTF-8 bytes in upper-case
+  `%XX`. A name of dots only, and a trailing dot or space, are escaped too; an empty or ill-formed name has no segment.
+  On the way back a directory is a tenant only when the encoder would have written exactly its name, so `a%2fb`,
+  `%41` or an unescaped `a:b` is skipped (listed, for stubs), never read as a tenant it resembles.
+  - **Upgrade note.** A tenant whose name holds a character outside the allow-list (a `:`, a `%`, a non-ASCII letter)
+    was written under its raw name by an earlier host; its directory is now named differently, so its environments are
+    not reloaded until they are saved again. Its stubs were never reloaded before #467.
+  - **Not covered: letter case.** Two tenants that differ only in case (`Acme`, `acme`) share one directory on a
+    case-insensitive file system (macOS, Windows). Escaping upper-case letters would move every existing directory, so
+    it is stated rather than changed; on Linux, the image's platform, they are two directories.
+  - `TenantPathSegmentTests` holds 22 hostile names (`a/b`, `a\b`, `.`, `..`, `../x`, `/tmp/x`, `C:\x`, a space,
+    `İstanbul`, `%`, a trailing dot or space, a NUL, an emoji, …) round-tripping through the encoder, the stub provider
+    and its loader, the environments provider (whose `Clear("..")` deletes only its own directory) and the tenant
+    declarations, plus ten directory names the decoder refuses. `RootDirTenantRestartTests` drives a real host through a
+    restart for seven of them. With the providers as they were, seven of these facts are red. Stryker scores the encoder
+    100 % (its first run, 83 %, found the dots-only rule and the strict decoder unreachable, so they were removed: the
+    one canonical re-encoding check refuses everything they did).
 - **Where it applies.** `DirectoryMappingsLoader` implements `IMultiTenantMappingsLoader`, so startup
   (`ApplyStartupMappings`) and git sync's reload after a pull both read the tenants. The second is also a fix: a
   pull reconciled only the default tenant from disk, so a non-default tenant held in memory was pruned on every

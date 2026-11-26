@@ -17,6 +17,14 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   (notes, hand-organised stubs, a bundle, a nested directory) is skipped whole and logged once, so a mappings tree you
   organised yourself does not start creating tenants. Git sync reloads with the same loader, so a pull now carries a
   tenant's stubs, and it no longer prunes the stubs of a tenant held in memory.
+- **A tenant name can no longer reach outside `--root-dir`'s directories (#467).** The file providers used the tenant
+  value as a path: a tenant header of `../escape` or `/tmp/x` wrote stub JSON outside `mappings/`, `a/b` was written
+  nested and lost on restart, and an environments reset under `..` would have deleted the whole root directory. A tenant
+  is now one path segment in the stub, environment and tenant-declaration providers: portable characters stay as they
+  are, so existing directories for plain names are unchanged, and every other character is written as `%XX`. **Upgrade
+  note:** environments of a tenant whose name holds `:`, `%` or a non-ASCII letter were written under the raw name and
+  are reloaded only once saved again; two tenants differing only in case still share a directory on a case-insensitive
+  file system.
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404
