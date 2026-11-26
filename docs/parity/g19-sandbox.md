@@ -117,6 +117,71 @@ schemas synthesize samples (`SchemaSample`), and with `?stateful=true` resource-
   the generated output byte-for-byte (petstore + a real-world-shaped orders YAML, stateful
   included).
 
+**Named examples as scenario states (#449, Part 1).** With `?scenarios=true`, each named example
+(`responses.<status>.content.<type>.examples.<name>`) of an operation also becomes a stub that requires the
+scenario state `<name>` and answers with that response's status and the example's value. What was decided,
+and what the reference engine confirmed:
+
+- **One scenario per import, not one per operation.** A consumer picks "insufficient-funds" for a product, not
+  for each of its operations. The scenario is `?scenario=<name>` or, without it, the document's `info.title`;
+  it is trimmed, and refused when the route `PUT /__admin/scenarios/{name}/state`, whose path segment it is,
+  could not select it: blank, over 128 characters, a control character, a `/` or only dots. The last two were
+  found by driving names through the route rather than reasoning about them: an escaped `/` stays escaped in an
+  ASP.NET Core route value, so the select answered 200 and set the state on `payments%2Fv1` while nothing
+  changed, and `.`/`..` are dot-segments the client removes, so the select answered 404. `%`, `+`, space,
+  `?`, `#`, `\`, `İ` and a literal `%2F` all round-trip, and each is a test row.
+- **The default stub stays exactly what an import without scenarios generates** — no scenario, the default
+  priority 5 — and every example stub carries priority 1. So an operation with no example of the selected
+  name keeps its default answer in that state, and `Started` serves what it always served. Differentially
+  confirmed: `G19cOpenApiScenarioDifferentialTests` loads the generated set raw into Java WireMock and
+  Mockifyr beside one selector stub per state (`newScenarioState`), and every step of
+  Started → `insufficient-funds` → `pending` → Started agrees, the 402 included.
+- **What is not bound is reported, never dropped silently:** an example named `Started` (every scenario's
+  initial state, so it could never be *selected*); a name a higher-ranked response of the same operation
+  already binds (ranked as response selection ranks them: 2xx, `default`, then the rest; within each band
+  every exact code before every range, then ascending); a name
+  that is empty or carries a control character (shown with `?` in its place); an example with no inline
+  value (`externalValue` is never fetched, the import's SSRF rule); and any example of an operation
+  `?stateful=true` wired to sandbox state, which answers from the stored documents.
+- **An example is served only with a status its document declares** (verifier, round 1: an example under
+  `4XX` or `default` was served as 200 because `int.TryParse("4XX")` fails and the code fell back). One
+  allow-list reads a response key: three ASCII digits 100–599 is that code, and a range `1XX`–`5XX` is its
+  lowest code (`4XX` → 400), reported with the key it came from (`"response": "4XX"`). `default` declares no
+  status, so its examples are reported (`the 'default' response declares no status`) and never bound: picking
+  a status for it would invent one. Every other key — `600`, `4xx`, `+20`, `٤٠٢`, `Default` — is refused by the
+  reader at parse (a typed 422), which a test holds, so no key reaches the generator unread. The default stub
+  reads keys by the same rule, which fixes the pre-existing G19c edge of an operation whose only response is
+  `4XX` answering 200; `default` keeps its documented 200 there, because a default stub must answer something.
+  The oracle confirms a `4XX` example answers 400 (`G19cOpenApiScenarioDifferentialTests`).
+- **An exact code outranks a range in its band, whatever their values** (verifier, round 2: `2XX` read as 200
+  sorted ahead of `201`, so a document pairing `201` with a `2XX` catch-all had its default stub answer 200
+  with the range's body, and `404` + `4XX` answered 400 — both answered the exact code on `main`, where a range
+  was unread and ranked last). The rank is band (2xx, `default`, the rest), then exact before range, then the
+  lower status. OpenAPI 3 gives an explicit code precedence over a range, and the pairing means the range as
+  the catch-all. The same order binds named examples, so an example under both `201` and `2XX` binds the `201`
+  one and reports the range's. Against `main` the only moves left are the intended ones: a range alone in its
+  band is read as its status, and `2XX` ranks with the success codes ahead of `default` and the errors.
+  `500` + `4XX` therefore binds `500` (the rest band holds an exact code), which is also what `main` chose.
+  Mutation run over the ranking after this fix (Stryker.NET 5.1.0, `G19cOpenApi*` facts, 2026-11-23): every
+  mutant on `RankResponses` and `IsRange` killed, 0 survived; overall file score 87.46%.
+  Mutation run over the generator after this fix (Stryker.NET 5.1.0, `G19cOpenApi*` facts, 2026-11-23): on the
+  changed lines 73 killed, 7 survived, 12 `CompileError`. All seven survivors are equivalent. Two are
+  `First()` → `FirstOrDefault()` after a non-empty guard (pre-existing, as above). The other five are in the key
+  reader's own guards: `&&`/`||` swaps on the length, first-digit, `XX` and digit checks, and the early return
+  removed. They cannot be told apart because the reader only ever receives keys the OpenAPI reader has already
+  accepted (a three-character code, a range or `default`). The refused-key theory pins that contract, so a
+  looser reader would turn that test red before it turned these guards live.
+- **`?scenario=<name>` without `?scenarios=true` is refused** (422) rather than silently dropped.
+- **Part 2 is open:** `?callbacks=true` (a document's `callbacks` as `webhook` actions). Tracked in
+  `deferred-edges.md`.
+- **Mutation testing** (Stryker.NET, `Mockifyr.Application.Tests` → `OpenApiStubGenerator.cs`, the lines this
+  slice added): 98 of 99 testable mutants killed. The one survivor is equivalent: `content.First()` →
+  `FirstOrDefault()` where a guard two lines above has already skipped empty content. Six more are
+  `CompileError` (Stryker cannot mutate an interpolated string handed to `string.Create`, nor the `out var` of a
+  conditional) and are not a coverage gap. The run found four real gaps first — a non-JSON content type, the
+  stub's `Content-Type`, a templated example and the 64-character display cap — each now held by a fact, and an
+  equivalent null/empty guard on `operation.Responses` that was removed rather than tested.
+
 **Validation story.** `G19cOpenApiGeneratorTests` (goldens + generation table + all five typed
 refusals), `G19cSchemaSampleTests` (format map, exact depth boundary, allOf, corners),
 `G19cOpenApiImportTests` (wire: import then SERVE — declared examples verbatim, synthesized
