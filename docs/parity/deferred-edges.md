@@ -87,6 +87,12 @@ truncation options; `systemValue` being deny-by-default with no allowlist; Faker
 arguments and locale selection; JWT limited to HS256/RS256 with no configurable secret, `nbf`, or
 array/object claims; no `soapXPath`.
 
+**XML service descriptions** ([ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md), owner
+decision on [#462](https://github.com/qorpe/mockifyr/issues/462)). There is no WSDL import and no ISO 20022
+validation against its XSD. A SOAP service or an ISO 20022 message is mocked as XML: `matchesXPath` and `equalToXml`
+on the request, and a literal or templated envelope as the response. Both stay out until a deployment brings an
+XML-first partner channel. ISO 8583 is not an HTTP protocol, so it is out of scope outright.
+
 **Deployment.** No HPA guidance in the chart — scaling this host is a decision about the workload in
 front of it, and a shipped default would be wrong more often than right. NetworkPolicy and
 PodDisruptionBudget *left* this section in [#397](https://github.com/qorpe/mockifyr/issues/397): the

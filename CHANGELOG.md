@@ -8,6 +8,14 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Documentation
+
+- **No WSDL import and no ISO 20022 validation, for now (#462, ADR 0017).** A SOAP service or an ISO 20022 message
+  is mocked as XML, as before, with `matchesXPath` and `equalToXml` on the request and a literal or templated
+  envelope as the response. Nothing imports a WSDL or checks a message against its XSD. ISO 8583, a binary card
+  protocol that is not carried over HTTP, is out of scope outright. The deferred-edge register lists all three
+  under Accepted. No behaviour changes.
+
 ### Fixed
 
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
