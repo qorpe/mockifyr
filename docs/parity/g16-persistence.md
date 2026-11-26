@@ -410,7 +410,12 @@ the same seam.
   the old escape, environments and stubs under the raw name) are read as their tenant, renamed, and a delete after the
   upgrade holds across the next restart. With the loaders as they were, 14 of these facts and the not-merged fact are
   red; the `plain` rows stay green. `TenantPathSegmentTests` holds the two earlier-name readings' accepted and refused
-  names.
+  names, and every outcome of resolving a directory (read in place, renamed, not merged, never written, vanished before
+  the rename) with the line it prints. Stryker on `TenantPathSegment.cs` (run 2026-11-26, the three suites above):
+  first 88.49 %, which found the printed lines unasserted and the `~`, DEL, `-`, `_`, mid-name dot and leading-separator
+  boundaries unexercised; then **99.26 %**, 133 mutants. The one survivor is equivalent: the `"."` case of the old
+  writer's dots-only rule matches only the value `.`, whose old name `%2E` is also this release's name for it, so the
+  canonical reading takes it first and the earlier reading is never asked.
 - **Where it applies.** `DirectoryMappingsLoader` implements `IMultiTenantMappingsLoader`, so startup
   (`ApplyStartupMappings`) and git sync's reload after a pull both read the tenants. The second is also a fix: a
   pull reconciled only the default tenant from disk, so a non-default tenant held in memory was pruned on every
