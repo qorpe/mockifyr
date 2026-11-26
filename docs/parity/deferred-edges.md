@@ -32,7 +32,9 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 ## Tracked — real gaps with issues
 
-*Nothing is open.*
+| Item | Issue | What is reachable today |
+|------|-------|-------------------------|
+| An OpenAPI document's `callbacks` / `webhooks` become `webhook` post-serve actions on import (`?callbacks=true`) | [#449](https://github.com/qorpe/mockifyr/issues/449) (Part 2; Part 1, named examples as scenario states, shipped) | A `webhook` post-serve action written by hand on the imported stub |
 
 Four entries left this section by shipping: **startup reload of a non-default tenant's stubs on
 `--root-dir`** ([#467](https://github.com/qorpe/mockifyr/issues/467) — a subdirectory the file provider wrote is

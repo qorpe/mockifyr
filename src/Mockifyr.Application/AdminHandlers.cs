@@ -788,17 +788,19 @@ public sealed class ImportOpenApiHandler(
     IMatcherRegistry matchers,
     IStubPersistence persistence,
     IResourceSchemaStore schemas)
-    : ICommandHandler<ImportOpenApiCommand, Result<int>>
+    : ICommandHandler<ImportOpenApiCommand, Result<OpenApiImportResult>>
 {
-    public ValueTask<Result<int>> Handle(ImportOpenApiCommand command, CancellationToken cancellationToken)
+    public ValueTask<Result<OpenApiImportResult>> Handle(ImportOpenApiCommand command, CancellationToken cancellationToken)
     {
         List<(StubMapping Stub, string Source)> stubs = [];
         IReadOnlyList<ResourceSchema> relations = [];
+        Mockifyr.Adapters.OpenApi.OpenApiScenarioReport? scenarios;
         try
         {
             var generated = Mockifyr.Adapters.OpenApi.OpenApiStubGenerator.GenerateWithRelations(
-                command.SpecText, command.Stateful);
+                command.SpecText, command.Stateful, command.Scenarios, command.ScenarioName);
             relations = generated.Relations;
+            scenarios = generated.Scenarios;
             foreach (var mappingJson in generated.Mappings)
             {
                 stubs.AddRange(MappingJsonReader.ReadWithSource(mappingJson, command.Tenant, matchers));
@@ -806,11 +808,11 @@ public sealed class ImportOpenApiHandler(
         }
         catch (Mockifyr.Adapters.OpenApi.OpenApiImportException exception)
         {
-            return ValueTask.FromResult<Result<int>>(Error.Validation("OpenApi." + exception.Error, exception.Message));
+            return ValueTask.FromResult<Result<OpenApiImportResult>>(Error.Validation("OpenApi." + exception.Error, exception.Message));
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
-            return ValueTask.FromResult<Result<int>>(Error.Validation(
+            return ValueTask.FromResult<Result<OpenApiImportResult>>(Error.Validation(
                 "OpenApi.Invalid", "A generated mapping did not read back: " + exception.Message));
         }
 
@@ -828,7 +830,7 @@ public sealed class ImportOpenApiHandler(
             schemas.Put(command.Tenant, relation);
         }
 
-        return ValueTask.FromResult<Result<int>>(stubs.Count);
+        return ValueTask.FromResult<Result<OpenApiImportResult>>(new OpenApiImportResult(stubs.Count, scenarios));
     }
 }
 

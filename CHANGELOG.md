@@ -8,8 +8,30 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ## Unreleased
 
+### Added
+
+- **An imported API's named examples are selectable scenario states (#449, Part 1).**
+  `POST /__admin/openapi/import?scenarios=true` turns every named example of an operation's responses into a
+  stub bound to one scenario (`&scenario=<name>`, else the document's `info.title`), in the state of the
+  example's name and with the status of the response that declares it. Selecting `insufficient-funds` with
+  `PUT /__admin/scenarios/{name}/state` serves the `402` example. An operation without an example of that
+  name keeps its default answer, and `Started` serves what an import without scenarios serves. Off by default:
+  without the parameter, an import generates exactly what it did and answers `{"imported": n}` as before.
+  With it, the answer also lists every bound state per operation and every example it did not bind, with the
+  reason (an example named `Started`, a name another response of the operation already binds, a name with a
+  control character, an `externalValue`, an operation wired by `?stateful=true`). A scenario name the state route
+  could not select is refused with a 422 and nothing lands: blank, over 128 characters, a control character, a
+  `/` (an escaped slash stays escaped in a route value, so the state would land on another name) or only dots
+  (a dot-segment a client removes). Every other name is driven through the route end to end. The served
+  answers are differentially confirmed against the reference engine. `?callbacks=true` is Part 2.
+  An example is served only with a status its document declares: one under a range key answers the range's
+  lowest code (`4XX` serves 400), each bound state names the key that declares it (`"response": "4XX"`), and
+  one under `default`, which declares no status, is reported rather than served as 200. `?scenario=<name>`
+  without `?scenarios=true` is refused with a 422 rather than dropped.
+
 ### Fixed
 
+<<<<<<< HEAD
 - **A `--root-dir` host now serves a non-default tenant's stubs after a restart (#467).** The file provider wrote
   them to `mappings/<tenant>/`, and startup read only the flat `mappings/*.json`, so a tenant's stub created over the
   admin API was persisted and never served again. A subdirectory of `mappings/` is now read as a tenant when every
@@ -38,6 +60,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   The one ambiguity read rather than skipped is a space before a digit or `A`–`F` (`Acme%20Corp` is `Acme Corp`), which
   reads U+0200–U+020F and U+2000–U+20FF as a space and hex digits. Two tenants differing only in case still share a
   directory on a case-insensitive file system.
+=======
+- **An OpenAPI import reads a range response key as the status it declares (#449).** The default stub of an
+  operation whose only response is `4XX` answered 200, and a `2XX` response lost to an error response
+  because a range was ranked as an unknown key. A range `nXX` now answers `n00`, a `2XX` ranks with the
+  success codes, and only `default` keeps the documented 200. Within each band (2xx, `default`, the rest) an
+  exact code outranks every range whatever its value, as OpenAPI 3 gives an explicit code precedence: `201` +
+  `2XX` still answers 201 and `404` + `4XX` still answers 404, exactly as before, and a range is used only
+  when its band declares no exact code.
+>>>>>>> origin/main
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404
