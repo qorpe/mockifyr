@@ -116,10 +116,15 @@ public sealed class FileSystemEnvironmentsLoader(string environmentsDirectory) :
         {
             // A directory this provider names for a tenant is read as that tenant; one an earlier release named by the raw
             // tenant value is renamed once to this one's, so Clear and the next save reach it (#467); any other is skipped.
-            if (!TenantPathSegment.TryResolveDirectory(
-                    tenantDirectory, "environments", TenantPathSegment.TryDecodeEarlierRawName, out var skipped, out var tenant, out var path))
+            var resolved = TenantPathSegment.TryResolveDirectory(
+                tenantDirectory, "environments", TenantPathSegment.TryDecodeEarlierRawName, out var notice, out var tenant, out var path);
+            if (notice.Length > 0)
             {
-                Console.WriteLine($"mockifyr: {skipped}");
+                Console.WriteLine($"mockifyr: {notice}");
+            }
+
+            if (!resolved)
+            {
                 continue;
             }
 

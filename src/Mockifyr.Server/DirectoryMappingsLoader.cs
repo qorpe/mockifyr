@@ -74,14 +74,19 @@ public sealed class DirectoryMappingsLoader(string mappingsDirectory, IMatcherRe
                 Skip($"{name}: {reason}");
             }
             else if (!TenantPathSegment.TryResolveDirectory(
-                         directory, "mappings", TenantPathSegment.TryDecodeEarlierRawName, out var skipped, out _, out _))
+                         directory, "mappings", TenantPathSegment.TryDecodeEarlierRawName, out var notice, out _, out _))
             {
                 // Only now, with every file proven the provider's: a directory an earlier release named by the raw tenant
                 // value is renamed to this release's name, so the next delete reaches the file the reload read (#467).
-                Skip(skipped["mappings/".Length..], line: skipped);
+                Skip(notice["mappings/".Length..], line: notice);
             }
             else
             {
+                if (notice.Length > 0)
+                {
+                    Console.WriteLine($"mockifyr: {notice}");
+                }
+
                 stubs.AddRange(tenantStubs);
             }
         }

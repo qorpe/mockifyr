@@ -148,10 +148,15 @@ public sealed class FileSystemResourcesLoader(string resourcesDirectory) : IReso
             // The tenant comes from the directory's name, by the encoder the writer used (#467); a directory an earlier
             // release named by its own escape is renamed once to this one's. The collection and id come from the stored
             // document, not from the directory names.
-            if (!TenantPathSegment.TryResolveDirectory(
-                    tenantDirectory, "resources", TenantPathSegment.TryDecodeEarlierResourceName, out var skipped, out var tenant, out var path))
+            var resolved = TenantPathSegment.TryResolveDirectory(
+                tenantDirectory, "resources", TenantPathSegment.TryDecodeEarlierResourceName, out var notice, out var tenant, out var path);
+            if (notice.Length > 0)
             {
-                Console.WriteLine($"mockifyr: {skipped}");
+                Console.WriteLine($"mockifyr: {notice}");
+            }
+
+            if (!resolved)
+            {
                 continue;
             }
 

@@ -180,34 +180,34 @@ public static class TenantPathSegment
     /// A directory this release writes is read where it is. A directory an earlier release wrote (as
     /// <paramref name="earlier"/> reads it) is renamed to the name this release writes, once, so the next write, delete or
     /// reset for that tenant lands on the same directory the reload read — reading it in place would let a deleted stub
-    /// or a reset environment come back on the next restart. Anything else is skipped, and the line printed names the
-    /// directory, why, and how to recover it.
+    /// or a reset environment come back on the next restart. Anything else is skipped. <paramref name="notice"/> carries
+    /// the line the caller prints: what was renamed, or which directory was skipped, why, and how to recover it.
     /// </summary>
     /// <param name="directory">The tenant directory found under the provider's root.</param>
     /// <param name="area">The provider's directory, as the operator knows it (<c>mappings</c>, <c>environments</c>, …).</param>
-    /// <param name="earlier">How an earlier release named a tenant's directory, or <see langword="null"/> when it named it as this one does.</param>
-    /// <param name="skipped">Receives the line describing a skipped directory; the caller logs it.</param>
+    /// <param name="earlier">How an earlier release named a tenant's directory.</param>
+    /// <param name="notice">Empty when the directory is read where it is; otherwise the line describing the rename or the skip.</param>
     /// <param name="tenant">The tenant, when one is resolved.</param>
     /// <param name="path">The directory to read, when one is resolved.</param>
     public static bool TryResolveDirectory(
         string directory,
         string area,
-        TryDecodeEarlier? earlier,
-        out string skipped,
+        TryDecodeEarlier earlier,
+        out string notice,
         out TenantId tenant,
         out string path)
     {
         var name = Path.GetFileName(directory);
         path = directory;
-        skipped = "";
+        notice = "";
         if (TryDecode(name, out tenant))
         {
             return true;
         }
 
-        if (earlier is null || !earlier(name, out tenant))
+        if (!earlier(name, out tenant))
         {
-            skipped = $"{area}/{name}: its name is not one this provider writes for a tenant — skipped, not read as a tenant.";
+            notice = $"{area}/{name}: its name is not one this provider writes for a tenant — skipped, not read as a tenant.";
             tenant = default;
             return false;
         }
@@ -215,7 +215,7 @@ public static class TenantPathSegment
         var target = Path.Combine(Path.GetDirectoryName(directory)!, TenantPathSegment.Encode(tenant));
         if (Directory.Exists(target))
         {
-            skipped = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', which also has {area}/{Path.GetFileName(target)} — "
+            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', which also has {area}/{Path.GetFileName(target)} — "
                 + "skipped, not merged; move what it holds into the second directory to keep it.";
             tenant = default;
             return false;
@@ -227,13 +227,13 @@ public static class TenantPathSegment
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            skipped = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', and renaming it to {area}/{Path.GetFileName(target)} failed "
+            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', and renaming it to {area}/{Path.GetFileName(target)} failed "
                 + $"({exception.GetType().Name}) — skipped; rename it by hand to keep it.";
             tenant = default;
             return false;
         }
 
-        Console.WriteLine($"mockifyr: {area}/{name}: written by an earlier release for tenant '{tenant.Value}' — renamed to {area}/{Path.GetFileName(target)}.");
+        notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}' — renamed to {area}/{Path.GetFileName(target)}.";
         path = target;
         return true;
     }

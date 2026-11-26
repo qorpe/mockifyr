@@ -168,6 +168,9 @@ public sealed class TenantPathSegmentTests : IDisposable
     [InlineData("..", "%2E%2E")]
     [InlineData("a b*c", "a%20b%2Ac")]
     [InlineData("x(y)", "x%28y%29")]
+    [InlineData("a b.c", "a%20b.c")]     // and kept a dot anywhere else
+    [InlineData("a b-c_d", "a%20b-c_d")] // it kept '-' and '_'
+    [InlineData("a~b", "a%7Eb")]         // '~' is the last printable ASCII character
     public void An_earlier_resource_directory_reads_as_its_tenant(string tenant, string earlier)
     {
         Assert.True(TenantPathSegment.TryDecodeEarlierResourceName(earlier, out var back));
@@ -179,12 +182,14 @@ public sealed class TenantPathSegmentTests : IDisposable
     [InlineData("%130")]      // U+0130 as the earlier writer spelled it: also reads as U+0013 and "0", so refused
     [InlineData("%E9")]       // a Latin-1 code unit: not printable ASCII
     [InlineData("a%2fb")]     // lower-case: the earlier writer used upper-case
+    [InlineData("a%7F")]      // DEL, just past '~': not printable
     [InlineData("a%2")]       // truncated
     [InlineData("a b")]       // an unescaped space: not that writer's output
     [InlineData("%41")]       // "A" escaped: that writer kept letters
     [InlineData("plain")]     // this release's name for "plain": read by this release's rule, not as an earlier one
     [InlineData("a%2Ab")]     // the same: this release writes "a*b" this way
     [InlineData("a%2Fb")]     // the same for "a/b": both writers spelled it alike, so it is one tenant either way
+    [InlineData("%2E")]       // the same for ".": this release escapes a trailing dot exactly as that writer did
     [InlineData("")]
     public void A_name_the_earlier_resource_writer_did_not_produce_is_refused(string segment) =>
         Assert.False(TenantPathSegment.TryDecodeEarlierResourceName(segment, out _));
@@ -207,6 +212,7 @@ public sealed class TenantPathSegmentTests : IDisposable
     [InlineData("a/b")]
     [InlineData("a\\b")]
     [InlineData("/tmp")]
+    [InlineData("\\b")]      // a separator first: not rooted on Linux, still not one segment
     [InlineData("plain")]     // this release's own name wins
     [InlineData("Acme Corp")]
     public void A_raw_name_that_is_not_one_earlier_directory_is_refused(string segment) =>
@@ -257,5 +263,46 @@ public sealed class TenantPathSegmentTests : IDisposable
             .ToList();
 
         Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void A_directory_is_read_in_place_renamed_or_skipped_and_the_notice_says_which()
+    {
+        var area = Path.Combine(_root, "environments");
+        Directory.CreateDirectory(Path.Combine(area, "plain"));
+        Directory.CreateDirectory(Path.Combine(area, "a*b"));
+        Directory.CreateDirectory(Path.Combine(area, "a%2fb"));
+
+        Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "plain"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
+            out var notice, out var tenant, out var path));
+        Assert.Equal(("", "plain", Path.Combine(area, "plain")), (notice, tenant.Value, path));
+
+        Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a*b"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
+            out notice, out tenant, out path));
+        Assert.Equal(("environments/a*b: written by an earlier release for tenant 'a*b' — renamed to environments/a%2Ab.", "a*b", Path.Combine(area, "a%2Ab")),
+            (notice, tenant.Value, path));
+        Assert.False(Directory.Exists(Path.Combine(area, "a*b")));
+
+        // A raw name of an earlier release beside this release's directory for the same tenant: not merged.
+        Directory.CreateDirectory(Path.Combine(area, "a*b"));
+        Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a*b"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
+            out notice, out tenant, out _));
+        Assert.Equal("environments/a*b: written by an earlier release for tenant 'a*b', which also has environments/a%2Ab — "
+            + "skipped, not merged; move what it holds into the second directory to keep it.", notice);
+        Assert.Equal(default, tenant);
+        Assert.True(Directory.Exists(Path.Combine(area, "a*b")));
+
+        // A name no writer produced: skipped.
+        Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a%2fb"), "resources", TenantPathSegment.TryDecodeEarlierResourceName,
+            out notice, out tenant, out _));
+        Assert.Equal("resources/a%2fb: its name is not one this provider writes for a tenant — skipped, not read as a tenant.", notice);
+        Assert.Equal(default, tenant);
+
+        // A directory that vanished between the listing and the rename (another process removed it): skipped, not thrown.
+        Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "x:y"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
+            out notice, out tenant, out _));
+        Assert.Equal("environments/x:y: written by an earlier release for tenant 'x:y', and renaming it to environments/x%3Ay failed "
+            + "(DirectoryNotFoundException) — skipped; rename it by hand to keep it.", notice);
+        Assert.Equal(default, tenant);
     }
 }
