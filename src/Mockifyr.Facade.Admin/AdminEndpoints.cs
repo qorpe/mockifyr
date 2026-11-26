@@ -929,9 +929,27 @@ public static class AdminEndpoints
         admin.MapPost("/openapi/import", async (HttpRequest request, ISender sender) =>
         {
             var stateful = request.Query.TryGetValue("stateful", out var flag) && flag.FirstOrDefault() == "true";
-            var result = await sender.Send(new ImportOpenApiCommand(await ReadBody(request), stateful, TenantOf(request)));
+            // #449: named examples become selectable scenario states, under ?scenario=<name> or the document's title.
+            var scenarios = request.Query.TryGetValue("scenarios", out var asked) && asked.FirstOrDefault() == "true";
+            var scenarioName = request.Query.TryGetValue("scenario", out var named) ? named.FirstOrDefault() : null;
+            var result = await sender.Send(new ImportOpenApiCommand(await ReadBody(request), stateful, TenantOf(request))
+            {
+                Scenarios = scenarios,
+                ScenarioName = scenarioName,
+            });
             return result.IsSuccess
-                ? Results.Json(new { imported = result.Value })
+                ? Results.Json(result.Value.Scenarios is { } report
+                    ? new
+                    {
+                        imported = result.Value.Imported,
+                        scenarios = new
+                        {
+                            scenario = report.Scenario,
+                            states = report.States.Select(s => new { operation = s.Operation, method = s.Method, path = s.Path, state = s.State, response = s.Response, status = s.Status }),
+                            ignored = report.Ignored.Select(i => new { operation = i.Operation, method = i.Method, path = i.Path, state = i.State, reason = i.Reason }),
+                        },
+                    }
+                    : (object)new { imported = result.Value.Imported })
                 : Results.Json(new { error = result.Error.Code, message = result.Error.Description },
                     statusCode: result.Error.Code == "OpenApi.TooLarge"
                         ? StatusCodes.Status413PayloadTooLarge

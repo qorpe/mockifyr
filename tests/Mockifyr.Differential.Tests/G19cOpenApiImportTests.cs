@@ -152,4 +152,187 @@ public sealed class G19cOpenApiImportTests : IAsyncDisposable
         Assert.Equal(3, mappings.Count);
         Assert.All(mappings, m => Assert.True(m.TryGetProperty("id", out _)));
     }
+
+    // ---- named examples as scenario states (#449) ----
+
+    private async Task<(int Status, string Body)> PayAsync(string tenant = "acme")
+    {
+        var (status, body) = await SendAsync(HttpMethod.Post, "/payments", "{}", tenant);
+        return ((int)status, body);
+    }
+
+    private Task<(HttpStatusCode Status, string Body)> SelectAsync(string scenario, string state, string tenant = "acme") =>
+        SendAsync(HttpMethod.Put, $"/__admin/scenarios/{Uri.EscapeDataString(scenario)}/state",
+            JsonSerializer.Serialize(new { state }), tenant);
+
+    [Fact]
+    public async Task With_scenarios_a_selected_state_serves_its_named_example_with_its_own_status()
+    {
+        var (importStatus, importBody) = await SendAsync(
+            HttpMethod.Post, "/__admin/openapi/import?scenarios=true&scenario=payments-v1", Fixture("payments-scenarios.yaml"));
+        Assert.Equal(HttpStatusCode.OK, importStatus);
+        using (var report = JsonDocument.Parse(importBody))
+        {
+            // Two operations' default stubs, and one stub per named example of createPayment.
+            Assert.Equal(5, report.RootElement.GetProperty("imported").GetInt32());
+            var scenarios = report.RootElement.GetProperty("scenarios");
+            Assert.Equal("payments-v1", scenarios.GetProperty("scenario").GetString());
+            Assert.Equal(
+                ["createPayment approved 201", "createPayment pending 201", "createPayment insufficient-funds 402"],
+                scenarios.GetProperty("states").EnumerateArray().Select(s =>
+                    $"{s.GetProperty("operation").GetString()} {s.GetProperty("state").GetString()} {s.GetProperty("status").GetInt32()}"));
+            Assert.Empty(scenarios.GetProperty("ignored").EnumerateArray());
+        }
+
+        // Before anything is selected the scenario is Started, and the default answer is today's: the first example.
+        var (status, body) = await PayAsync();
+        Assert.Equal(201, status);
+        Assert.Contains("APPROVED", body, StringComparison.Ordinal);
+
+        Assert.Equal(HttpStatusCode.OK, (await SelectAsync("payments-v1", "insufficient-funds")).Status);
+        (status, body) = await PayAsync();
+        Assert.Equal(402, status);
+        Assert.Contains("INSUFFICIENT_FUNDS", body, StringComparison.Ordinal);
+
+        // An operation that declares no example of that name keeps its default answer in that state.
+        var (balanceStatus, balanceBody) = await SendAsync(HttpMethod.Get, "/balance");
+        Assert.Equal((HttpStatusCode.OK, true), (balanceStatus, balanceBody.Contains("100", StringComparison.Ordinal)));
+
+        await SelectAsync("payments-v1", "pending");
+        (status, body) = await PayAsync();
+        Assert.Equal((201, true), (status, body.Contains("PENDING", StringComparison.Ordinal)));
+
+        Assert.Equal(HttpStatusCode.OK, (await SendAsync(HttpMethod.Post, "/__admin/scenarios/reset")).Status);
+        (status, body) = await PayAsync();
+        Assert.Equal((201, true), (status, body.Contains("APPROVED", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Without_scenarios_selecting_a_state_changes_nothing_and_the_report_is_unchanged()
+    {
+        var (_, importBody) = await SendAsync(HttpMethod.Post, "/__admin/openapi/import", Fixture("payments-scenarios.yaml"));
+        Assert.Equal("{\"imported\":2}", importBody.Replace(" ", ""));
+
+        await SelectAsync("Payments", "insufficient-funds");
+        var (status, body) = await PayAsync();
+        Assert.Equal((201, true), (status, body.Contains("APPROVED", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task The_scenario_defaults_to_the_document_title_and_a_state_selected_in_one_tenant_stays_there()
+    {
+        foreach (var tenant in new[] { "acme", "globex" })
+        {
+            var (importStatus, _) = await SendAsync(
+                HttpMethod.Post, "/__admin/openapi/import?scenarios=true", Fixture("payments-scenarios.yaml"), tenant);
+            Assert.Equal(HttpStatusCode.OK, importStatus);
+        }
+
+        await SelectAsync("Payments", "insufficient-funds", "acme");
+
+        Assert.Equal(402, (await PayAsync("acme")).Status);
+        Assert.Equal(201, (await PayAsync("globex")).Status);
+    }
+
+    [Theory]
+    [InlineData("%20%20", "The scenario name is empty")]
+    [InlineData("a%01b", "The scenario name carries a control character")]
+    public async Task An_unusable_scenario_name_is_refused_and_nothing_lands(string name, string expected)
+    {
+        var (status, body) = await SendAsync(
+            HttpMethod.Post, $"/__admin/openapi/import?scenarios=true&scenario={name}", Fixture("payments-scenarios.yaml"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, status);
+        Assert.Contains(expected, body, StringComparison.Ordinal);
+
+        var (_, mappings) = await SendAsync(HttpMethod.Get, "/__admin/mappings");
+        using var doc = JsonDocument.Parse(mappings);
+        Assert.Empty(doc.RootElement.GetProperty("mappings").EnumerateArray());
+    }
+
+    /// <summary>
+    /// The scenario name is a path segment of <c>PUT /__admin/scenarios/{name}/state</c>, so a name is accepted only
+    /// if that route selects it: every name a client escapes and the route decodes back is driven end to end here.
+    /// </summary>
+    [Theory]
+    [InlineData("a%b")]
+    [InlineData("a%2Fb")]
+    [InlineData("pay ments")]
+    [InlineData("a+b")]
+    [InlineData("a?b#c")]
+    [InlineData("a\\b")]
+    [InlineData("a.b")]
+    [InlineData("...a")]
+    [InlineData("çekirdek İ")]
+    public async Task An_accepted_scenario_name_is_one_the_state_route_selects(string name)
+    {
+        var (importStatus, _) = await SendAsync(
+            HttpMethod.Post, $"/__admin/openapi/import?scenarios=true&scenario={Uri.EscapeDataString(name)}", Fixture("payments-scenarios.yaml"));
+        Assert.Equal(HttpStatusCode.OK, importStatus);
+
+        Assert.Equal(HttpStatusCode.OK, (await SelectAsync(name, "insufficient-funds")).Status);
+        Assert.Equal(402, (await PayAsync()).Status);
+    }
+
+    /// <summary>
+    /// The names the route cannot round-trip are refused at import, where the fix is one parameter away, rather than
+    /// accepted and found unselectable: an escaped '/' stays escaped in a route value (the select answers 200 and
+    /// sets another name), and '.' / '..' are dot-segments a client removes (the select answers 404).
+    /// </summary>
+    [Theory]
+    [InlineData("payments/v1", "contains '/'")]
+    [InlineData("/", "contains '/'")]
+    [InlineData(".", "is only dots")]
+    [InlineData("..", "is only dots")]
+    [InlineData("...", "is only dots")]
+    public async Task A_scenario_name_the_state_route_cannot_select_is_refused(string name, string expected)
+    {
+        var (status, body) = await SendAsync(
+            HttpMethod.Post, $"/__admin/openapi/import?scenarios=true&scenario={Uri.EscapeDataString(name)}", Fixture("payments-scenarios.yaml"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, status);
+        Assert.Contains($"The scenario name {expected}", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A named example under a range answers the range's lowest code, never 200; one under <c>default</c> declares no
+    /// status, so it is reported and selecting its name leaves the default answer in place (#449, verifier round 1).
+    /// </summary>
+    [Fact]
+    public async Task An_example_under_a_range_is_served_with_that_range_and_one_under_default_is_reported()
+    {
+        var (importStatus, importBody) = await SendAsync(
+            HttpMethod.Post, "/__admin/openapi/import?scenarios=true&scenario=ranges", Fixture("payments-ranges.yaml"));
+        Assert.Equal(HttpStatusCode.OK, importStatus);
+        using (var report = JsonDocument.Parse(importBody))
+        {
+            var scenarios = report.RootElement.GetProperty("scenarios");
+            Assert.Equal(
+                ["approved 201 201", "insufficient-funds 4XX 400"],
+                scenarios.GetProperty("states").EnumerateArray().Select(s =>
+                    $"{s.GetProperty("state").GetString()} {s.GetProperty("response").GetString()} {s.GetProperty("status").GetInt32()}"));
+            var ignored = Assert.Single(scenarios.GetProperty("ignored").EnumerateArray());
+            Assert.Equal("server-down", ignored.GetProperty("state").GetString());
+            Assert.StartsWith("the 'default' response declares no status", ignored.GetProperty("reason").GetString(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(HttpStatusCode.OK, (await SelectAsync("ranges", "insufficient-funds")).Status);
+        var (status, body) = await PayAsync();
+        Assert.Equal((400, true), (status, body.Contains("INSUFFICIENT_FUNDS", StringComparison.Ordinal)));
+
+        await SelectAsync("ranges", "server-down");
+        (status, body) = await PayAsync();
+        Assert.Equal((201, true), (status, body.Contains("APPROVED", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task A_scenario_name_without_scenarios_is_refused_and_nothing_lands()
+    {
+        var (status, body) = await SendAsync(
+            HttpMethod.Post, "/__admin/openapi/import?scenario=payments-v1", Fixture("payments-scenarios.yaml"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, status);
+        Assert.Contains("?scenario=<name> names the scenario of ?scenarios=true", body, StringComparison.Ordinal);
+
+        var (_, mappings) = await SendAsync(HttpMethod.Get, "/__admin/mappings");
+        using var doc = JsonDocument.Parse(mappings);
+        Assert.Empty(doc.RootElement.GetProperty("mappings").EnumerateArray());
+    }
 }
