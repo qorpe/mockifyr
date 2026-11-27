@@ -35,6 +35,10 @@ Each of these was driven through the oracle. It rejects them, so building them w
 | Item | Issue | What is reachable today |
 |------|-------|-------------------------|
 | An OpenAPI document's `callbacks` / `webhooks` become `webhook` post-serve actions on import (`?callbacks=true`) | [#449](https://github.com/qorpe/mockifyr/issues/449) (Part 2; Part 1, named examples as scenario states, shipped) | A `webhook` post-serve action written by hand on the imported stub |
+| Serve-time contract validation as a per-tenant default, and a 400 body shaped like the real API's (a template per import) | [#448](https://github.com/qorpe/mockifyr/issues/448) (Part 2; Part 1, `?validate=true` with an RFC 9457 problem body, shipped) | `?validate=true` on each import; the problem document's shape is fixed |
+| OpenAPI 3.1 documents: the pinned reader (Microsoft.OpenApi 1.6) refuses them at import with a 422 naming the version | [#448](https://github.com/qorpe/mockifyr/issues/448) (found there; needs the reader's 2.x line) | A 3.0 rendering of the same document |
+| Contract validation does not check cookie parameters, non-JSON bodies, or a schema that still refers to itself after inlining (a recursive model) | [#448](https://github.com/qorpe/mockifyr/issues/448) | Those parts of the request are served unchecked; everything else on the stub is checked |
+| The docs website has no page for serve-time contract validation (`?validate=true`), nor for the limitations above | [#448](https://github.com/qorpe/mockifyr/issues/448) (the website is `qorpe/mockifyr.qorpe.com`) | `docs/parity/g19-sandbox.md` and ADR 0018 |
 
 Four entries left this section by shipping: **startup reload of a non-default tenant's stubs on
 `--root-dir`** ([#467](https://github.com/qorpe/mockifyr/issues/467) — a subdirectory the file provider wrote is

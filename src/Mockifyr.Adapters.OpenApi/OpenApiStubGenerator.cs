@@ -96,6 +96,10 @@ public static partial class OpenApiStubGenerator
     /// The one scenario every example stub of this import binds to; the document's <c>info.title</c> when null.
     /// Refused without <paramref name="scenarios"/>, rather than dropped.
     /// </param>
+    /// <param name="validate">
+    /// Write each operation's request contract into its stubs as <c>request.validate</c> (#448, ADR 0018), so a
+    /// request that breaks it is answered 400 instead of served.
+    /// </param>
     /// <remarks>
     /// One scenario per import, not one per operation: a consumer selects "insufficient-funds" for a product and
     /// every operation that declares an example of that name answers with it, while an operation that declares
@@ -104,7 +108,7 @@ public static partial class OpenApiStubGenerator
     /// state and outranks it at priority 1.
     /// </remarks>
     public static OpenApiImport GenerateWithRelations(
-        string specText, bool stateful = false, bool scenarios = false, string? scenarioName = null)
+        string specText, bool stateful = false, bool scenarios = false, string? scenarioName = null, bool validate = false)
     {
         GuardSpec(specText);
         if (!scenarios && scenarioName is not null)
@@ -154,6 +158,7 @@ public static partial class OpenApiStubGenerator
             foreach (var (operationType, operation) in item.Operations)
             {
                 var method = operationType.ToString().ToUpperInvariant();
+                var before = mappings.Count;
                 if (stateWired.TryGetValue((path, method), out var wired))
                 {
                     mappings.Add(wired);
@@ -167,14 +172,25 @@ public static partial class OpenApiStubGenerator
                                 "the operation is wired to sandbox state (stateful=true), which answers from the stored documents"));
                         }
                     }
-
-                    continue;
+                }
+                else
+                {
+                    mappings.Add(ExampleMapping(path, method, operation));
+                    if (scenario is not null)
+                    {
+                        mappings.AddRange(ScenarioMappings(scenario, path, method, operation, bound, ignored));
+                    }
                 }
 
-                mappings.Add(ExampleMapping(path, method, operation));
-                if (scenario is not null)
+                // #448: every stub this operation produced — the example stub, its scenario states and a
+                // state-wired CRUD stub alike — carries the same contract, so which of them wins cannot
+                // decide whether the request is checked.
+                if (validate)
                 {
-                    mappings.AddRange(ScenarioMappings(scenario, path, method, operation, bound, ignored));
+                    for (var i = before; i < mappings.Count; i++)
+                    {
+                        mappings[i] = RequestContract.Attach(mappings[i], path, item, operation);
+                    }
                 }
             }
         }

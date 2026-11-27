@@ -10,6 +10,16 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **An imported API can refuse a request that breaks its contract (#448, Part 1; ADR 0018).**
+  `POST /__admin/openapi/import?validate=true` writes each operation's request contract into its stubs
+  (`request.validate`: path, query and header parameters with their schemas, and the JSON body schema with
+  local references inlined). A request that breaks it is answered `400 application/problem+json`, naming each
+  violation by `location`, `pointer` and `rule` (at most 20). Its stub's response is not rendered, so a sandbox
+  `state` write does not happen; its scenario does not advance, and no webhook or publish fires. The journal
+  keeps it, and `GET /__admin/requests/{id}` shows `requestViolations`. Off by default, so an import without
+  the flag is unchanged. A `validate` declaration that cannot be read, or a host with no validator registered,
+  refuses rather than serves unchecked.
+
 - **An imported API's named examples are selectable scenario states (#449, Part 1).**
   `POST /__admin/openapi/import?scenarios=true` turns every named example of an operation's responses into a
   stub bound to one scenario (`&scenario=<name>`, else the document's `info.title`), in the state of the
@@ -31,7 +41,9 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Fixed
 
-<<<<<<< HEAD
+- **The documentation no longer claims OpenAPI 3.1 import.** The pinned reader refuses a 3.1 document with
+  a 422 naming its version, and always has. A test now pins that refusal (found by #448).
+
 - **A `--root-dir` host now serves a non-default tenant's stubs after a restart (#467).** The file provider wrote
   them to `mappings/<tenant>/`, and startup read only the flat `mappings/*.json`, so a tenant's stub created over the
   admin API was persisted and never served again. A subdirectory of `mappings/` is now read as a tenant when every
@@ -60,7 +72,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   The one ambiguity read rather than skipped is a space before a digit or `A`–`F` (`Acme%20Corp` is `Acme Corp`), which
   reads U+0200–U+020F and U+2000–U+20FF as a space and hex digits. Two tenants differing only in case still share a
   directory on a case-insensitive file system.
-=======
 - **An OpenAPI import reads a range response key as the status it declares (#449).** The default stub of an
   operation whose only response is `4XX` answered 200, and a `2XX` response lost to an error response
   because a range was ranked as an unknown key. A range `nXX` now answers `n00`, a `2XX` ranks with the
@@ -68,7 +79,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   exact code outranks every range whatever its value, as OpenAPI 3 gives an explicit code precedence: `201` +
   `2XX` still answers 201 and `404` + `4XX` still answers 404, exactly as before, and a range is used only
   when its band declares no exact code.
->>>>>>> origin/main
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404

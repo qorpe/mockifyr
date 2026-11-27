@@ -214,6 +214,9 @@ public sealed record ImportOpenApiCommand(string SpecText, bool Stateful, Tenant
 
     /// <summary>The scenario the example stubs bind to; the document's <c>info.title</c> when null (#449).</summary>
     public string? ScenarioName { get; init; }
+
+    /// <summary>Write each operation's request contract into its stubs, so a violating request is answered 400 (#448). Off by default.</summary>
+    public bool Validate { get; init; }
 }
 
 /// <summary>What an OpenAPI import stored: how many stubs, and what its named examples became when asked (#449).</summary>

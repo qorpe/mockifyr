@@ -196,6 +196,10 @@ public static class MockifyrServiceCollectionExtensions
             services.AddSingleton<IAdminApiExtension>(adminExtension);
         }
 
+        // Contract validation (#448, ADR 0018): always registered, because it acts only on a stub that
+        // declares request.validate — and without it such a stub would refuse every request (fail-closed).
+        services.AddSingleton<IRequestValidator, Mockifyr.Adapters.OpenApi.OpenApiRequestValidator>();
+
         services.AddSingleton(sp => new StubEngine(
             sp.GetRequiredService<IStubStore>(),
             sp.GetRequiredService<IResponseRenderer>(),
@@ -206,7 +210,8 @@ public static class MockifyrServiceCollectionExtensions
             sp.GetServices<IPayloadDecryptor>(),
             sp.GetServices<IPayloadProtector>(),
             sp.GetServices<ISignatureVerifier>(),
-            sp.GetServices<IResponseSigner>()));
+            sp.GetServices<IResponseSigner>(),
+            sp.GetServices<IRequestValidator>()));
 
         // Outbound edge (G12d): the proxy responder + recorder for proxy directives and record mode,
         // and the shared live-recording state the admin control endpoints and the fallback both see.
