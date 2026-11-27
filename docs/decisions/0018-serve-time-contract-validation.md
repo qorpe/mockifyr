@@ -20,8 +20,8 @@ calling.
    state-wired CRUD stub alike), so which of them wins cannot decide whether a request is checked. Without
    the flag an import is byte-identical to before.
 2. **The contract travels with the stub**, as `request.validate` in the mapping JSON: the path template,
-   the path/query/header parameters with their schemas, and the `application/json` (or `+json`) body
-   schema, every local `$ref` inlined. Nothing points back at the document, so a stub validates identically
+   the path/query/header parameters with their schemas, and the body schema of each `application/json`
+   (or `+json`) media type, keyed by that type, every local `$ref` inlined. Nothing points back at the document, so a stub validates identically
    after an export, a restore or a reload on any of the four backends, with no new store and no per-backend
    code. The alternative, a per-tenant contract store referenced by id, was rejected: it is a second piece of
    state that can be lost while the stub that relies on it survives, which is the defect ADR 0015 avoided for

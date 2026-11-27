@@ -297,6 +297,11 @@ public sealed class SandboxRequestValidationWireTests
     [InlineData(""" "validate": { "path": "/x", "parameters": [ { "name": "q", "in": "cookie" } ] } """)]
     [InlineData(""" "validate": { "path": "/x", "body": { "required": true } } """)]
     [InlineData(""" "validate": { "path": "/x", "body": { "schema": { "type": 5 } } } """)]
+    [InlineData(""" "validate": { "path": "/x", "body": { "schemas": {} } } """)]
+    [InlineData(""" "validate": { "path": "/x", "body": { "schemas": [] } } """)]
+    [InlineData(""" "validate": { "path": "/x", "body": { "schemas": { "application/json": 5 } } } """)]
+    [InlineData(""" "validate": { "path": "/x", "body": { "schemas": { " ": {} } } } """)]
+    [InlineData(""" "validate": { "path": "/x", "body": { "schema": 5, "schemas": { "application/json": {} } } } """)]
     public async Task A_contract_that_cannot_be_read_refuses_rather_than_serving_unchecked(string validate)
     {
         await using var app = await StartAsync();
@@ -560,6 +565,161 @@ public sealed class SandboxRequestValidationWireTests
         using var response = await client.SendAsync(request);
 
         Assert.Contains(await ViolationsAsync(response), v => v.Location == location && v.Pointer == pointer && v.Rule == rule);
+    }
+
+    private const string Shapes =
+        """
+        {
+          "openapi": "3.0.3", "info": { "title": "shapes", "version": "1.0" },
+          "paths": {
+            "/q": { "get": {
+              "parameters": [ { "name": "ids", "in": "query", "required": true, "explode": false, "schema": { "type": "array", "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/qmin": { "get": {
+              "parameters": [ { "name": "ids", "in": "query", "required": true, "explode": false, "schema": { "type": "array", "minItems": 1, "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/h": { "get": {
+              "parameters": [ { "name": "X-Ids", "in": "header", "schema": { "type": "array", "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/hmin": { "get": {
+              "parameters": [ { "name": "X-Ids", "in": "header", "required": true, "schema": { "type": "array", "minItems": 1, "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/tags": { "get": {
+              "parameters": [ { "name": "tags", "in": "query", "required": true, "explode": false, "schema": { "type": "array", "maxItems": 1, "items": { "type": "string" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/ptags/{tags}": { "get": {
+              "parameters": [ { "name": "tags", "in": "path", "required": true, "schema": { "type": "array", "maxItems": 1, "items": { "type": "string" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/m": { "patch": {
+              "requestBody": { "required": true, "content": {
+                "application/json": { "schema": { "type": "object", "required": ["a"], "properties": { "a": { "type": "integer" } } } },
+                "application/merge-patch+json": { "schema": { "type": "object", "properties": { "a": { "type": "integer" } } } },
+                "application/vnd.shapes.v2+json": { "example": {} } } },
+              "responses": { "200": { "description": "ok" } } } }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// Verifier round 2 on #486, the class "a value or body read in a shape that is not the one the contract
+    /// declares": an empty array in non-exploded form and in a header, a comma that was percent-encoded inside a
+    /// query or path item, a body judged by another JSON media type's schema, and a body sent with no type.
+    /// </summary>
+    [Theory]
+    [InlineData("GET", "/q?ids=", null, null, null, null)]
+    [InlineData("GET", "/h", "X-Ids", "", null, null)]
+    [InlineData("GET", "/h", "X-Ids", " ", null, null)]
+    [InlineData("GET", "/tags?tags=a%2Cb", null, null, null, null)]
+    [InlineData("GET", "/ptags/a%2Cb", null, null, null, null)]
+    [InlineData("PATCH", "/m", null, null, "application/merge-patch+json", "{}")]
+    [InlineData("PATCH", "/m", null, null, "application/merge-patch+json; charset=utf-8", "{}")]
+    [InlineData("PATCH", "/m", null, null, "application/vnd.shapes.v2+json", "{}")]
+    [InlineData("PATCH", "/m", null, null, "application/json", """{"a":1}""")]
+    public async Task A_value_is_read_in_the_shape_the_contract_declares(
+        string method, string url, string? header, string? value, string? mediaType, string? body)
+    {
+        await using var app = await StartAsync();
+        using var client = Client(app);
+        await ImportAsync(client, Shapes);
+
+        using var response = await client.SendAsync(Request(method, url, header, value, mediaType, body));
+
+        Assert.True(response.StatusCode == HttpStatusCode.OK, $"{method} {url} answered {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+    }
+
+    /// <summary>The same reads still refuse what the contract does not allow, so none of them passes vacuously.</summary>
+    [Theory]
+    [InlineData("GET", "/qmin?ids=", null, null, null, null, "query", "ids", "minItems")]
+    [InlineData("GET", "/hmin", "X-Ids", "", null, null, "header", "X-Ids", "minItems")]
+    [InlineData("GET", "/q?ids=1,,2", null, null, null, null, "query", "ids", "type")]
+    [InlineData("GET", "/tags?tags=a,b", null, null, null, null, "query", "tags", "maxItems")]
+    [InlineData("PATCH", "/m", null, null, "application/json", "{}", "body", "", "required")]
+    [InlineData("PATCH", "/m", null, null, "APPLICATION/JSON", "{}", "body", "", "required")]
+    [InlineData("PATCH", "/m", null, null, "application/merge-patch+json", """{"a":"x"}""", "body", "/a", "type")]
+    [InlineData("PATCH", "/m", null, null, "application/problem+json", "{}", "body", "", "mediaType")]
+    public async Task A_value_read_in_its_declared_shape_is_still_judged(
+        string method, string url, string? header, string? value, string? mediaType, string? body, string location, string pointer, string rule)
+    {
+        await using var app = await StartAsync();
+        using var client = Client(app);
+        await ImportAsync(client, Shapes);
+
+        using var response = await client.SendAsync(Request(method, url, header, value, mediaType, body));
+
+        Assert.Contains(await ViolationsAsync(response), v => v.Location == location && v.Pointer == pointer && v.Rule == rule);
+    }
+
+    /// <summary>
+    /// A body with no Content-Type is judged as before: by the schema of the first JSON media type the operation
+    /// declares. A hand-written contract with a single <c>schema</c> and no media types keeps reading and judging
+    /// every JSON body by it.
+    /// </summary>
+    [Fact]
+    public async Task An_untyped_body_and_a_contract_with_one_schema_are_judged_as_before()
+    {
+        await using var app = await StartAsync();
+        using var client = Client(app);
+        await ImportAsync(client, Shapes);
+
+        using (var untyped = new HttpRequestMessage(HttpMethod.Patch, "/m") { Content = new ByteArrayContent("{}"u8.ToArray()) })
+        using (var response = await client.SendAsync(untyped))
+        {
+            Assert.Contains(await ViolationsAsync(response), v => v.Location == "body" && v.Rule == "required");
+        }
+
+        using (var created = await client.PostAsync("/__admin/mappings", Json(
+            """{"request":{"method":"POST","urlPath":"/old","validate":{"path":"/old","body":{"required":true,"schema":{"type":"object","required":["a"]}}}},"response":{"status":200}}""")))
+        {
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        }
+
+        using (var ok = await client.SendAsync(Request("POST", "/old", null, null, "application/merge-patch+json", """{"a":1}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        }
+
+        using var refused = await client.SendAsync(Request("POST", "/old", null, null, "application/merge-patch+json", "{}"));
+        Assert.Contains(await ViolationsAsync(refused), v => v.Location == "body" && v.Rule == "required");
+    }
+
+    /// <summary>
+    /// The in-process facade hands a header value over untrimmed (HTTP trims it on the wire), so a blank value of
+    /// a header array is the empty array there too, and still refused under <c>minItems: 1</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(" ", null, 0)]
+    [InlineData(" ", 1, 1)]
+    [InlineData(" 1 , 2 ", null, 0)]
+    public void A_blank_header_array_is_the_empty_array_in_process(string value, int? minItems, int expected)
+    {
+        var schema = minItems is { } min
+            ? """{"type":"array","minItems":""" + min.ToString(CultureInfo.InvariantCulture) + ""","items":{"type":"integer"}}"""
+            : """{"type":"array","items":{"type":"integer"}}""";
+        var contract = new Mockifyr.Core.RequestValidationDirective(
+            "/h", [new Mockifyr.Core.ContractParameter("X-Ids", Mockifyr.Core.ContractParameterLocation.Header, true, schema)], null);
+        var request = Mockifyr.Core.CanonicalRequestBuilder.Build("GET", "/h", [new KeyValuePair<string, string>("X-Ids", value)]);
+
+        var violations = new Mockifyr.Adapters.OpenApi.OpenApiRequestValidator().Validate(request, contract);
+
+        Assert.Equal(expected, violations.Count);
+        Assert.All(violations, v => Assert.Equal("minItems", v.Rule));
+    }
+
+    private static HttpRequestMessage Request(string method, string url, string? header, string? value, string? mediaType, string? body)
+    {
+        var request = new HttpRequestMessage(new HttpMethod(method), url);
+        if (header is not null)
+        {
+            request.Headers.TryAddWithoutValidation(header, value);
+        }
+
+        if (mediaType is not null)
+        {
+            request.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(body ?? ""));
+            request.Content.Headers.TryAddWithoutValidation("Content-Type", mediaType);
+        }
+
+        return request;
     }
 
     /// <summary>

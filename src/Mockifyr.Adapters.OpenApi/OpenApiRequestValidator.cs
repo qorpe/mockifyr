@@ -9,18 +9,18 @@ namespace Mockifyr.Adapters.OpenApi;
 
 /// <summary>
 /// Judges a request against the contract an OpenAPI import wrote into its stub (#448, ADR 0018): path,
-/// query and header parameters by presence and by their schema, and an <c>application/json</c> body by
-/// its schema, with <c>format</c> asserted rather than annotated. The engine calls it only for a stub
-/// that declares <c>request.validate</c>, after that stub has already won the match.
+/// query and header parameters by presence and by their schema, and a JSON body by the schema declared
+/// for the media type it was sent as, with <c>format</c> asserted rather than annotated. The engine calls
+/// it only for a stub that declares <c>request.validate</c>, after that stub has already won the match.
 /// </summary>
 /// <remarks>
 /// Two rules are fail-closed in the direction each one protects:
 /// <list type="bullet">
 /// <item>A value is judged by its schema only when the validator implements both its serialization and its
 /// shape: a known-good list (<see cref="Judgeable"/>). Anything else (another style, an object, a schema
-/// whose type comes from <c>anyOf</c>/<c>oneOf</c>/<c>allOf</c>, a body in a non-JSON media type the
-/// operation declares) is checked for presence only and is a row in the deferred-edge register, because
-/// refusing a request the contract allows is the failure a sandbox exists to avoid.</item>
+/// whose type comes from <c>anyOf</c>/<c>oneOf</c>/<c>allOf</c>, a path array of strings, a body in a media
+/// type the operation declares with no schema for it) is checked for presence only and is a row in the
+/// deferred-edge register, because refusing a request the contract allows is the failure a sandbox exists to avoid.</item>
 /// <item>A violation's message is built from the contract alone (where, which parameter or pointer, which
 /// rule), never from the evaluator's text or the instance, so a value the journal masks cannot reach the
 /// answer or the journal through it.</item>
@@ -67,8 +67,9 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
     /// when it does not (known-good list; null means presence only). Judged: a schema whose own <c>type</c> names
     /// only primitives (plus <c>null</c>), or <c>array</c> of items like that; in the location's default
     /// serialization (query <c>form</c>, path and header <c>simple</c>), with <c>explode</c> either way for
-    /// <c>form</c>. Everything else is not judged: objects, <c>deepObject</c>, <c>spaceDelimited</c>,
-    /// <c>pipeDelimited</c>, <c>matrix</c>, <c>label</c>, and a type that only composition keywords decide.
+    /// <c>form</c>. Everything else is not judged: a path array of strings, objects, <c>deepObject</c>,
+    /// <c>spaceDelimited</c>, <c>pipeDelimited</c>, <c>matrix</c>, <c>label</c>, and a type that only composition
+    /// keywords decide.
     /// </summary>
     internal static Shape? Judgeable(ContractParameter parameter, string schemaText)
     {
@@ -91,7 +92,11 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
 
         if (types.SetEquals(["array"]))
         {
+            // A path reaches the engine already percent-decoded, so an encoded comma inside a string item cannot
+            // be told from the separator: a path array of strings is not judged. Integer, number and boolean
+            // items cannot hold a comma, so their split is exact.
             return schema["items"] is JsonObject items && Named(items) is { } itemTypes && itemTypes.IsSubsetOf(Primitives)
+                && !(parameter.In == ContractParameterLocation.Path && itemTypes.Contains("string"))
                 ? Shape.Array
                 : null;
         }
@@ -109,18 +114,58 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
 
     /// <summary>
     /// The raw values as the schema reads them: an array in <c>simple</c> style, or in <c>form</c> with
-    /// <c>explode: false</c>, is one comma-separated value; an exploded <c>form</c> array is one value per
-    /// occurrence. A primitive is its first value.
+    /// <c>explode: false</c>, is one comma-separated value, and an empty (or, in a header, blank) value is the
+    /// empty array, as OpenAPI serializes one; an exploded <c>form</c> array is one value per occurrence. A
+    /// primitive is its first value. A non-exploded query array is split on the commas of the RAW query
+    /// (<paramref name="rawQuery"/>) and each item decoded after, so a percent-encoded comma stays inside its item.
     /// </summary>
-    internal static IReadOnlyList<string> Serialized(ContractParameter parameter, Shape shape, IReadOnlyList<string> values)
+    internal static IReadOnlyList<string> Serialized(
+        ContractParameter parameter, Shape shape, IReadOnlyList<string> values, IReadOnlyList<string>? rawQuery = null)
     {
         if (shape != Shape.Array)
         {
             return values;
         }
 
-        var exploded = parameter.In == ContractParameterLocation.Query && (parameter.Explode ?? true);
-        return exploded ? values : [.. values.SelectMany(value => value.Split(',')).Select(item => parameter.In == ContractParameterLocation.Header ? item.Trim() : item)];
+        if (parameter.In == ContractParameterLocation.Query)
+        {
+            if (parameter.Explode ?? true)
+            {
+                return values;
+            }
+
+            return [.. (rawQuery ?? values).SelectMany(value => value.Length == 0 ? [] : value.Split(',')).Select(Decode)];
+        }
+
+        var header = parameter.In == ContractParameterLocation.Header;
+        return [.. values.SelectMany(value => (header ? value.Trim() : value) is { Length: > 0 } text ? text.Split(',') : [])
+            .Select(item => header ? item.Trim() : item)];
+    }
+
+    /// <summary>A query item decoded as the canonical request's own query parser decodes a value.</summary>
+    private static string Decode(string raw) => Uri.UnescapeDataString(raw);
+
+    /// <summary>Every raw (undecoded) value of the query parameter <paramref name="name"/>, in order, from the request's URL.</summary>
+    internal static List<string> RawQueryValues(string url, string name)
+    {
+        var start = url.IndexOf('?', StringComparison.Ordinal);
+        var raw = new List<string>();
+        if (start < 0)
+        {
+            return raw;
+        }
+
+        foreach (var pair in url[(start + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=', StringComparison.Ordinal);
+            var key = Uri.UnescapeDataString(eq >= 0 ? pair[..eq] : pair);
+            if (string.Equals(key, name, StringComparison.Ordinal))
+            {
+                raw.Add(eq >= 0 ? pair[(eq + 1)..] : "");
+            }
+        }
+
+        return raw;
     }
 
     /// <summary>
@@ -199,7 +244,9 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
 
             if (parameter.Schema is { } schemaText && Judgeable(parameter, schemaText) is { } shape)
             {
-                violations.AddRange(Judge(location, parameter.Name, Coerce(schemaText, Serialized(parameter, shape, values)), schemaText, nested: false));
+                var raw = parameter.In == ContractParameterLocation.Query ? RawQueryValues(request.Url, parameter.Name) : null;
+                var read = Serialized(parameter, shape, values, raw is { Count: > 0 } ? raw : null);
+                violations.AddRange(Judge(location, parameter.Name, Coerce(schemaText, read), schemaText, nested: false));
             }
         }
 
@@ -220,13 +267,31 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
                 : [];
         }
 
-        // The body is judged as JSON only when it was SENT as JSON (or with no type at all). One sent as another
-        // media type the operation declares is not judged by the JSON schema; one sent as a type it does not
-        // declare is refused, so the rule cannot pass a body vacuously.
+        // A body is judged only by the schema declared for the media type it was SENT as (verifier on #486): with
+        // per-type schemas, the entry for that exact type, else one whose range covers it; a declared type with no
+        // entry is presence only, and a type the operation does not declare is refused, so no rule passes a body
+        // vacuously. A body sent with no type is judged as JSON, by the contract's single schema or its first.
+        // A hand-written contract with one schema and no per-type entries judges every JSON type by it.
         var sent = HeaderValues(request, "Content-Type").FirstOrDefault()?.Split(';')[0].Trim();
-        if (!string.IsNullOrEmpty(sent) && !IsJson(sent))
+        string? schemaText;
+        if (string.IsNullOrEmpty(sent))
         {
-            return body.MediaTypes is { } declared && !declared.Any(type => Covers(type, sent))
+            schemaText = body.Schema ?? body.Schemas?.FirstOrDefault().Value;
+        }
+        else if (body.Schemas is { Count: > 0 } schemas)
+        {
+            schemaText = schemas
+                .FirstOrDefault(entry => string.Equals(entry.Key.Split(';')[0].Trim(), sent, StringComparison.OrdinalIgnoreCase)).Value
+                ?? schemas.FirstOrDefault(entry => Covers(entry.Key, sent)).Value;
+        }
+        else
+        {
+            schemaText = IsJson(sent) ? body.Schema : null;
+        }
+
+        if (schemaText is null)
+        {
+            return body.MediaTypes is { } declared && !declared.Any(type => Covers(type, sent!))
                 ? [new RequestViolation("body", "", "mediaType", "The request body's media type is not one the operation declares.")]
                 : [];
         }
@@ -241,7 +306,7 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
             return [new RequestViolation("body", "", "json", "The operation takes a JSON body and what was sent is not JSON.")];
         }
 
-        return Judge("body", "", parsed, body.Schema, nested: true);
+        return Judge("body", "", parsed, schemaText, nested: true);
     }
 
     private List<RequestViolation> Judge(string location, string name, JsonNode? instance, string schemaText, bool nested)

@@ -552,8 +552,8 @@ public static class MappingJsonReader
     /// <summary>
     /// Reads the opt-in contract an OpenAPI import writes (#448, ADR 0018):
     /// <c>"validate": { "path": "/users/{id}", "parameters": [ { "name", "in", "required", "schema" } ],
-    /// "body": { "required", "schema" } }</c>. Unlike the crypto directives, a declaration that is present
-    /// but cannot be read does NOT read as null: it reads as a directive carrying its
+    /// "body": { "required", "schema" | "schemas": { mediaType: schema }, "mediaTypes" } }</c>. Unlike the
+    /// crypto directives, a declaration that is present but cannot be read does NOT read as null: it reads as a directive carrying its
     /// <see cref="RequestValidationDirective.Defect"/>, so the stub refuses what it wins instead of serving
     /// it unchecked by a contract that was meant to hold.
     /// </summary>
@@ -643,12 +643,32 @@ public static class MappingJsonReader
         ContractBody? body = null;
         if (validate.TryGetProperty("body", out var declaredBody))
         {
-            var schema = declaredBody.ValueKind == JsonValueKind.Object && declaredBody.TryGetProperty("schema", out var bs)
-                ? ReadSchema(bs)
-                : (Text: null, Ok: false);
-            if (!schema.Ok || schema.Text is null)
+            if (declaredBody.ValueKind != JsonValueKind.Object)
             {
-                return Broken("'validate.body' needs a 'schema' object.");
+                return Broken("'validate.body' needs a 'schema' or a 'schemas' object.");
+            }
+
+            var schema = declaredBody.TryGetProperty("schema", out var bs) ? ReadSchema(bs) : (Text: null, Ok: true);
+            if (!schema.Ok)
+            {
+                return Broken("'validate.body.schema' is not an object.");
+            }
+
+            List<KeyValuePair<string, string>>? schemas = null;
+            if (declaredBody.TryGetProperty("schemas", out var perType))
+            {
+                if (perType.ValueKind != JsonValueKind.Object
+                    || perType.EnumerateObject().Any(p => string.IsNullOrWhiteSpace(p.Name) || p.Value.ValueKind != JsonValueKind.Object))
+                {
+                    return Broken("'validate.body.schemas' must map each media type to a schema object.");
+                }
+
+                schemas = [.. perType.EnumerateObject().Select(p => new KeyValuePair<string, string>(p.Name, p.Value.GetRawText()))];
+            }
+
+            if (schema.Text is null && schemas is not { Count: > 0 })
+            {
+                return Broken("'validate.body' needs a 'schema' or a 'schemas' object.");
             }
 
             List<string>? mediaTypes = null;
@@ -663,7 +683,7 @@ public static class MappingJsonReader
                 mediaTypes = [.. declaredTypes.EnumerateArray().Select(t => t.GetString()!)];
             }
 
-            body = new ContractBody(declaredBody.TryGetProperty("required", out var br) && br.ValueKind == JsonValueKind.True, schema.Text, mediaTypes);
+            body = new ContractBody(declaredBody.TryGetProperty("required", out var br) && br.ValueKind == JsonValueKind.True, schema.Text, mediaTypes, schemas);
         }
 
         return new RequestValidationDirective(template, parameters, body);

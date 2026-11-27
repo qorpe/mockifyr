@@ -240,9 +240,22 @@ wins is unchanged too.
   verifier found (a header array, `explode: false`, a type from `anyOf`, a form body beside a JSON one) found a
   fifth: an object in exploded `form` arrives as its properties' keys, so its name is never in the query and a
   presence check refused every valid request. A `deepObject` is present when a `name[…]` key is.
-- **A body is judged as JSON only when it is sent as JSON** (or untyped). The contract now lists every media type
-  the operation declares: a body in another declared type is not judged, and one in an undeclared type is
-  refused with `rule: mediaType`.
+- **A body is judged only by the schema declared for the media type it was sent as.** The contract lists every
+  media type the operation declares and carries a schema per JSON type (`validate.body.schemas`), because
+  `application/json` and `application/merge-patch+json` on one operation usually differ: judging a merge-patch
+  `{}` by the JSON type's `required` refused a valid request (verifier's second round on #486). The exact type is
+  looked up before a range that covers it, parameters such as `; charset=utf-8` are dropped and the type is
+  compared case-insensitively. A declared type with no schema (a non-JSON type, a JSON type without one) is not
+  judged; an undeclared type, `application/problem+json` included, is refused with `rule: mediaType`; a body with
+  no Content-Type is judged as JSON by the first type's schema, as before. A hand-written contract with a single
+  `schema` and no `schemas` keeps judging every JSON type by it.
+- **A value is read in the shape the contract serializes it (the same round).** An empty value of a non-exploded
+  `form` array (`ids=`) or of a `simple` header array is the empty array, as OpenAPI serializes one, so it is
+  judged by `minItems` rather than refused as `[""]`. A non-exploded query array is split on the commas of the
+  raw query and each item decoded after, so `tags=a%2Cb` is the one item `a,b`. A path reaches the engine already
+  decoded, so the two cannot be told apart there: a path array of strings is checked for presence only (integer,
+  number and boolean items cannot hold a comma, so their split stays exact). A header value is judged as sent,
+  with no percent-decoding, as every server reads one.
 - **A rejection and an idempotent replay are counted.** `IServeEventObserver` is a listener that only observes;
   the metrics listener is one, so `requests.served` and `response.status` see a 400 rejection and a replay,
   while webhooks and publishes (plain listeners) still never run for either.
@@ -263,6 +276,12 @@ wins is unchanged too.
   accepted request), the journal's violations;
 - the export → re-import round trip, six unreadable declarations, and a hostile 500-violation body bounded
   to 20.
+- the shapes of the second round, each with its refusing twin so no rule passes vacuously: `ids=` and a blank
+  header accepted and refused under `minItems: 1`, `tags=a%2Cb` accepted and `tags=a,b` refused under
+  `maxItems: 1`, a path array of strings with `%2C` served, a merge-patch `{}` accepted while the same `{}` as
+  `application/json` (in any case) is refused, a declared JSON type without a schema served, an undeclared
+  `application/problem+json` refused, an untyped body judged as before, and a hand-written single-`schema`
+  contract still judging. Each fix was put back on its own and turned its tests red.
 
 `RequestValidationGateTests` (Core) covers the gate's fail-closed branches and the cap. Stryker.NET 5.1.0 on
 `RequestValidation.cs`: 94.44%, with one survivor that is equivalent. At `found.Count <= 20` → `< 20`,

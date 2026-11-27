@@ -22,8 +22,10 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   the rule, never the request's value, so a masked header or body field cannot reach the answer or the journal
   through it. A parameter is judged by its schema only in a serialization and shape the validator reads exactly
   (query `form`, path and header `simple`, primitives and arrays of them); any other is checked for presence
-  only. A body is judged as JSON only when sent as JSON; one in a media type the operation does not declare is
-  refused (`rule: mediaType`).
+  only; an empty non-exploded array is the empty array, and a percent-encoded comma stays inside its query item.
+  A body is judged only by the schema declared for the media type it was sent as (`application/json` and
+  `application/merge-patch+json` each by its own); one in a media type the operation does not declare is refused
+  (`rule: mediaType`).
 
 - **A contract rejection and an idempotent replay are counted in `requests.served` and `response.status`.**
   `IServeEventObserver` marks a listener that only observes; observers are told about a request the host

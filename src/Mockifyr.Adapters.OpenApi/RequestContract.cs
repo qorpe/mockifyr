@@ -92,16 +92,30 @@ public static class RequestContract
 
         contract["parameters"] = parameters;
 
-        if (operation.RequestBody is { } body
-            && body.Content.FirstOrDefault(c => IsJson(c.Key)).Value is { Schema: { } bodySchema }
-            && Inline(bodySchema) is { } inlinedBody)
+        // Each JSON media type carries its OWN schema, so a body is judged only by the schema declared for the
+        // type it was sent as: application/json and application/merge-patch+json on one operation usually
+        // differ (verifier on #486). A JSON type with no schema (or a recursive one) carries none and is
+        // checked for presence only.
+        if (operation.RequestBody is { } body)
         {
-            contract["body"] = new JsonObject
+            var schemas = new JsonObject();
+            foreach (var (type, content) in body.Content)
             {
-                ["required"] = body.Required,
-                ["schema"] = inlinedBody,
-                ["mediaTypes"] = new JsonArray([.. body.Content.Keys.Select(type => (JsonNode?)JsonValue.Create(type))]),
-            };
+                if (IsJson(type) && content.Schema is { } typeSchema && Inline(typeSchema) is { } inlined)
+                {
+                    schemas[type] = inlined;
+                }
+            }
+
+            if (schemas.Count > 0)
+            {
+                contract["body"] = new JsonObject
+                {
+                    ["required"] = body.Required,
+                    ["schemas"] = schemas,
+                    ["mediaTypes"] = new JsonArray([.. body.Content.Keys.Select(type => (JsonNode?)JsonValue.Create(type))]),
+                };
+            }
         }
 
         return contract;

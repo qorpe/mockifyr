@@ -31,13 +31,22 @@ public sealed record ContractParameter(
 
 /// <summary>An operation's request body contract (#448).</summary>
 /// <param name="Required">Whether the request must carry a body.</param>
-/// <param name="Schema">The JSON Schema the <c>application/json</c> body must satisfy, as JSON text.</param>
+/// <param name="Schema">
+/// A single JSON Schema, as JSON text, or null. With no <paramref name="Schemas"/> it judges every body sent as a
+/// JSON type (a hand-written contract); with them it judges only a body sent with no Content-Type.
+/// </param>
 /// <param name="MediaTypes">
 /// Every media type the operation declares for its body, JSON or not, or null when the contract does not list
-/// them. A body sent as a JSON type is judged by <paramref name="Schema"/>; one sent as another declared type is
-/// not judged (presence only); one sent as a type the list does not declare is refused.
+/// them. A body sent as a type the list does not declare is refused.
 /// </param>
-public sealed record ContractBody(bool Required, string Schema, IReadOnlyList<string>? MediaTypes = null);
+/// <param name="Schemas">
+/// The schema declared for each JSON media type, in the document's order, or null. A body sent with a type is
+/// judged only by the entry for that type (an exact type before a range that covers it); a body sent as a declared
+/// type with no entry is checked for presence only. A body with no Content-Type is judged by
+/// <paramref name="Schema"/>, else by the first entry.
+/// </param>
+public sealed record ContractBody(
+    bool Required, string? Schema, IReadOnlyList<string>? MediaTypes = null, IReadOnlyList<KeyValuePair<string, string>>? Schemas = null);
 
 /// <summary>
 /// A stub's opt-in declaration that a request it matches must also satisfy the operation's contract
