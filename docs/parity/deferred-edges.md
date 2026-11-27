@@ -34,6 +34,7 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 | Item | Issue | What is reachable today |
 |------|-------|-------------------------|
+| Website limitations page for ADR 0017: no WSDL import and no ISO 20022 validation for now, ISO 8583 out of scope | [#462](https://github.com/qorpe/mockifyr/issues/462) | The owner's decision requires the limitations page on `mockifyr.qorpe.com` to say so plainly; it does not yet. The text it needs is the Decision section of [ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md). The row leaves when the `qorpe/mockifyr.qorpe.com` change that adds it merges |
 | An OpenAPI document's `callbacks` / `webhooks` become `webhook` post-serve actions on import (`?callbacks=true`) | [#449](https://github.com/qorpe/mockifyr/issues/449) (Part 2; Part 1, named examples as scenario states, shipped) | A `webhook` post-serve action written by hand on the imported stub |
 
 Four entries left this section by shipping: **startup reload of a non-default tenant's stubs on
@@ -88,6 +89,12 @@ XML `namespaceAwareness` modes and mixed content; `now`-relative date matching, 
 truncation options; `systemValue` being deny-by-default with no allowlist; Faker expressions taking
 arguments and locale selection; JWT limited to HS256/RS256 with no configurable secret, `nbf`, or
 array/object claims; no `soapXPath`.
+
+**XML service descriptions** ([ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md), owner
+decision on [#462](https://github.com/qorpe/mockifyr/issues/462)). There is no WSDL import and no ISO 20022
+validation against its XSD. A SOAP service or an ISO 20022 message is mocked as XML: `matchesXPath` and `equalToXml`
+on the request, and a literal or templated envelope as the response. Both stay out until a deployment brings an
+XML-first partner channel. ISO 8583 is not an HTTP protocol, so it is out of scope outright.
 
 **Deployment.** No HPA guidance in the chart — scaling this host is a decision about the workload in
 front of it, and a shipped default would be wrong more often than right. NetworkPolicy and

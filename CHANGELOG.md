@@ -29,9 +29,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   one under `default`, which declares no status, is reported rather than served as 200. `?scenario=<name>`
   without `?scenarios=true` is refused with a 422 rather than dropped.
 
+### Documentation
+
+- **No WSDL import and no ISO 20022 validation, for now (#462, ADR 0017).** A SOAP service or an ISO 20022 message
+  is mocked as XML, as before, with `matchesXPath` and `equalToXml` on the request and a literal or templated
+  envelope as the response. Nothing imports a WSDL or checks a message against its XSD. ISO 8583, a binary card
+  protocol that is not carried over HTTP, is out of scope outright. The deferred-edge register lists all three
+  under Accepted, and tracks the website limitations page the decision requires until it is published. No behaviour
+  changes.
+
 ### Fixed
 
-<<<<<<< HEAD
 - **A `--root-dir` host now serves a non-default tenant's stubs after a restart (#467).** The file provider wrote
   them to `mappings/<tenant>/`, and startup read only the flat `mappings/*.json`, so a tenant's stub created over the
   admin API was persisted and never served again. A subdirectory of `mappings/` is now read as a tenant when every
@@ -60,7 +68,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   The one ambiguity read rather than skipped is a space before a digit or `A`–`F` (`Acme%20Corp` is `Acme Corp`), which
   reads U+0200–U+020F and U+2000–U+20FF as a space and hex digits. Two tenants differing only in case still share a
   directory on a case-insensitive file system.
-=======
 - **An OpenAPI import reads a range response key as the status it declares (#449).** The default stub of an
   operation whose only response is `4XX` answered 200, and a `2XX` response lost to an error response
   because a range was ranked as an unknown key. A range `nXX` now answers `n00`, a `2XX` ranks with the
@@ -68,7 +75,6 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   exact code outranks every range whatever its value, as OpenAPI 3 gives an explicit code precedence: `201` +
   `2XX` still answers 201 and `404` + `4XX` still answers 404, exactly as before, and a range is used only
   when its band declares no exact code.
->>>>>>> origin/main
 - **A host on Postgres, Redis or LiteDB now serves every tenant's stubs after a restart (#466).** Startup
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404
