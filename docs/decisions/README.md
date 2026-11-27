@@ -22,5 +22,6 @@ consequences.
 | [0014](0014-adopt-qorpe-ui.md) | The dashboard composes from the published @qorpe/ui kit | Accepted |
 | [0015](0015-relational-sandbox-resources.md) | Relations in the sandbox resource model | Proposed |
 | [0016](0016-sandbox-client-credentials.md) | A simulated client-credentials grant for sandbox tenants (amends 0011) | Accepted |
+| [0017](0017-xml-service-descriptions-out-of-scope.md) | No WSDL import and no ISO 20022 validation, for now; ISO 8583 out of scope | Accepted |
 
 When adding a decision, use the next number and add a row to this table.

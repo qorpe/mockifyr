@@ -38,10 +38,12 @@ Each of these was driven through the oracle. It rejects them, so building them w
 | `private_key_jwt` client authentication on the token endpoint | [#450](https://github.com/qorpe/mockifyr/issues/450) | `client_secret_basic` and `client_secret_post` only |
 | Access tokens on the partner surface `/__sandbox/*` | [#450](https://github.com/qorpe/mockifyr/issues/450) | The surface takes the static key; a token there is refused as an unknown key |
 | The docs website's guide page for the client-credentials grant (CLAUDE.md §3b) | [#450](https://github.com/qorpe/mockifyr/issues/450) | README's flag rows, ADR 0016 and `g19-sandbox.md` document it; `mockifyr.qorpe.com` does not yet |
+| Website limitations page for ADR 0017: no WSDL import and no ISO 20022 validation for now, ISO 8583 out of scope | [#462](https://github.com/qorpe/mockifyr/issues/462) | The owner's decision requires the limitations page on `mockifyr.qorpe.com` to say so plainly; it does not yet. The text it needs is the Decision section of [ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md). The row leaves when the `qorpe/mockifyr.qorpe.com` change that adds it merges |
 | An OpenAPI document's `callbacks` / `webhooks` become `webhook` post-serve actions on import (`?callbacks=true`) | [#449](https://github.com/qorpe/mockifyr/issues/449) (Part 2; Part 1, named examples as scenario states, shipped) | A `webhook` post-serve action written by hand on the imported stub |
-| Startup reload of a non-default tenant's stubs on `--root-dir` | [#467](https://github.com/qorpe/mockifyr/issues/467) | The file provider writes them to `mappings/<tenant>/`, and the directory loader reads only the flat `mappings/`. Postgres, Redis and LiteDB reload every tenant since [#466](https://github.com/qorpe/mockifyr/issues/466). Reading subdirectories as tenants would change what a hand-organised mappings tree means, so it waits for a decision |
 
-Three entries left this section by shipping: **resource embedding**
+Four entries left this section by shipping: **startup reload of a non-default tenant's stubs on
+`--root-dir`** ([#467](https://github.com/qorpe/mockifyr/issues/467) — a subdirectory the file provider wrote is
+read as its tenant, anything else is skipped, see `g16-persistence.md`), **resource embedding**
 ([#378](https://github.com/qorpe/mockifyr/issues/378) — `?_expand=customer`, see `g19-sandbox.md`),
 **resource querying** ([#353](https://github.com/qorpe/mockifyr/issues/353)) and the **relations
 dashboard screen**, all in the G22 epic; before them, change-feed reload for environments and sandbox
@@ -91,6 +93,12 @@ XML `namespaceAwareness` modes and mixed content; `now`-relative date matching, 
 truncation options; `systemValue` being deny-by-default with no allowlist; Faker expressions taking
 arguments and locale selection; JWT limited to HS256/RS256 with no configurable secret, `nbf`, or
 array/object claims; no `soapXPath`.
+
+**XML service descriptions** ([ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md), owner
+decision on [#462](https://github.com/qorpe/mockifyr/issues/462)). There is no WSDL import and no ISO 20022
+validation against its XSD. A SOAP service or an ISO 20022 message is mocked as XML: `matchesXPath` and `equalToXml`
+on the request, and a literal or templated envelope as the response. Both stay out until a deployment brings an
+XML-first partner channel. ISO 8583 is not an HTTP protocol, so it is out of scope outright.
 
 **Deployment.** No HPA guidance in the chart — scaling this host is a decision about the workload in
 front of it, and a shipped default would be wrong more often than right. NetworkPolicy and

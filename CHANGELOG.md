@@ -38,6 +38,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   one under `default`, which declares no status, is reported rather than served as 200. `?scenario=<name>`
   without `?scenarios=true` is refused with a 422 rather than dropped.
 
+### Documentation
+
+- **No WSDL import and no ISO 20022 validation, for now (#462, ADR 0017).** A SOAP service or an ISO 20022 message
+  is mocked as XML, as before, with `matchesXPath` and `equalToXml` on the request and a literal or templated
+  envelope as the response. Nothing imports a WSDL or checks a message against its XSD. ISO 8583, a binary card
+  protocol that is not carried over HTTP, is out of scope outright. The deferred-edge register lists all three
+  under Accepted, and tracks the website limitations page the decision requires until it is published. No behaviour
+  changes.
+
 ### Changed
 
 - **`docs-guard.sh` refuses fused XML doc blocks.** A run of `///` lines that opens `<summary>` or
@@ -48,6 +57,34 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Fixed
 
+- **A `--root-dir` host now serves a non-default tenant's stubs after a restart (#467).** The file provider wrote
+  them to `mappings/<tenant>/`, and startup read only the flat `mappings/*.json`, so a tenant's stub created over the
+  admin API was persisted and never served again. A subdirectory of `mappings/` is now read as a tenant when every
+  file in it is one the provider wrote: `<guid>.json` holding one stub whose id is that guid. Any other subdirectory
+  (notes, hand-organised stubs, a bundle, a nested directory) is skipped whole and logged once, so a mappings tree you
+  organised yourself does not start creating tenants. Git sync reloads with the same loader, so a pull now carries a
+  tenant's stubs, and it no longer prunes the stubs of a tenant held in memory.
+- **A tenant name can no longer reach outside `--root-dir`'s directories (#467).** The file providers used the tenant
+  value as a path: a tenant header of `../escape` or `/tmp/x` wrote stub JSON outside `mappings/`, `a/b` was written
+  nested and lost on restart, and an environments reset under `..` would have deleted the whole root directory. A tenant
+  is now one path segment in the stub, environment, sandbox-resource and tenant-declaration providers, by one encoder:
+  portable characters stay as they are, so existing directories for plain names are unchanged, and every other
+  character is written as `%XX`.
+- **A `--root-dir` host now reloads a sandbox resource of a tenant whose name is not `[A-Za-z0-9._-]` (#467).** The
+  resources provider escaped the tenant directory with its own encoder and read the escaped name back as the tenant, so
+  a document of tenant `Acme Corp` was reloaded under `Acme%20Corp` and answered 404 after a restart.
+  **Upgrade note:** a tenant directory an earlier release wrote under a name this release writes differently (an
+  environment or stub directory under the raw tenant value, such as `a*b`; a resources directory under the old escape,
+  such as `Acme%20Corp`) is read as its tenant and renamed once, at startup, to this release's name, with a line saying
+  so, so that a later delete or reset reaches it. Every tenant directory this release writes carries a
+  `.mockifyr-tenant` file, and only a directory without one is read by the earlier release's rule, so a name both
+  releases could have written for two different tenants is never decided by guessing. A resources directory whose old
+  name could mean more than one tenant (every letter above U+00FF that the old escape spelled with three or four digits,
+  among them `ı İ ş Ş ğ Ğ`, Greek and Cyrillic; a single Latin-1 letter such as `é`; an emoji), or one whose tenant
+  already has a directory under the new name, is left in place and skipped with a line naming it and how to recover it.
+  The one ambiguity read rather than skipped is a space before a digit or `A`–`F` (`Acme%20Corp` is `Acme Corp`), which
+  reads U+0200–U+020F and U+2000–U+20FF as a space and hex digits. Two tenants differing only in case still share a
+  directory on a case-insensitive file system.
 - **An OpenAPI import reads a range response key as the status it declares (#449).** The default stub of an
   operation whose only response is `4XX` answered 200, and a `2XX` response lost to an error response
   because a range was ranked as an unknown key. A range `nXX` now answers `n00`, a `2XX` ranks with the
@@ -59,8 +96,8 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   reloaded only the default tenant's stubs. On a database that already held other tenants' stubs, a new
   container served none of them: their tenants and API keys came back, and their imported API answered 404
   until something re-imported it. Startup now loads every tenant from a backend that spans tenants, each
-  under its own, as the change-feed reload already did. LiteDB gained the same all-tenant read. `--root-dir`
-  still reloads the default tenant only (#467).
+  under its own, as the change-feed reload already did. LiteDB gained the same all-tenant read. (`--root-dir`
+  followed in #467.)
 - **Postgres and LiteDB key a persisted stub by its tenant and its id (#466).** Both keyed it by the stub id
   alone, so when two tenants held the same id (the same mapping file imported into both), the second tenant's
   write took the first's row and its delete removed it, and after a restart the first tenant had nothing.
