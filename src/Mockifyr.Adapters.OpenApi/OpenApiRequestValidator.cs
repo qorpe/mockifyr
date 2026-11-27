@@ -13,6 +13,19 @@ namespace Mockifyr.Adapters.OpenApi;
 /// its schema, with <c>format</c> asserted rather than annotated. The engine calls it only for a stub
 /// that declares <c>request.validate</c>, after that stub has already won the match.
 /// </summary>
+/// <remarks>
+/// Two rules are fail-closed in the direction each one protects:
+/// <list type="bullet">
+/// <item>A value is judged by its schema only when the validator implements both its serialization and its
+/// shape: a known-good list (<see cref="Judgeable"/>). Anything else (another style, an object, a schema
+/// whose type comes from <c>anyOf</c>/<c>oneOf</c>/<c>allOf</c>, a body in a non-JSON media type the
+/// operation declares) is checked for presence only and is a row in the deferred-edge register, because
+/// refusing a request the contract allows is the failure a sandbox exists to avoid.</item>
+/// <item>A violation's message is built from the contract alone (where, which parameter or pointer, which
+/// rule), never from the evaluator's text or the instance, so a value the journal masks cannot reach the
+/// answer or the journal through it.</item>
+/// </list>
+/// </remarks>
 public sealed partial class OpenApiRequestValidator : IRequestValidator
 {
     /// <summary>How many compiled schemas are kept before the cache starts over (one per distinct schema text).</summary>
@@ -26,8 +39,131 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
 
     private readonly ConcurrentDictionary<string, JsonSchema> _schemas = new(StringComparer.Ordinal);
 
+    /// <summary>The longest body pointer a violation names; a longer one (instance keys are the caller's) is cut.</summary>
+    public const int MaxPointerLength = 256;
+
     [GeneratedRegex(@"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$", RegexOptions.CultureInvariant)]
     private static partial Regex JsonNumber();
+
+    [GeneratedRegex(@"^[A-Za-z$][A-Za-z0-9]{0,63}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex Keyword();
+
+    private static readonly HashSet<string> Primitives = new(StringComparer.Ordinal) { "string", "integer", "number", "boolean" };
+
+    private static string Bounded(string pointer) => pointer.Length > MaxPointerLength ? pointer[..MaxPointerLength] + "…" : pointer;
+
+    /// <summary>What a judgeable parameter's schema describes: one primitive value, or an array of them.</summary>
+    internal enum Shape
+    {
+        /// <summary>One string, integer, number or boolean.</summary>
+        Primitive,
+
+        /// <summary>An array of those.</summary>
+        Array,
+    }
+
+    /// <summary>
+    /// The shape of a parameter whose value this validator reads exactly as the contract serializes it, or null
+    /// when it does not (known-good list; null means presence only). Judged: a schema whose own <c>type</c> names
+    /// only primitives (plus <c>null</c>), or <c>array</c> of items like that; in the location's default
+    /// serialization (query <c>form</c>, path and header <c>simple</c>), with <c>explode</c> either way for
+    /// <c>form</c>. Everything else is not judged: objects, <c>deepObject</c>, <c>spaceDelimited</c>,
+    /// <c>pipeDelimited</c>, <c>matrix</c>, <c>label</c>, and a type that only composition keywords decide.
+    /// </summary>
+    internal static Shape? Judgeable(ContractParameter parameter, string schemaText)
+    {
+        var style = parameter.Style ?? (parameter.In == ContractParameterLocation.Query ? "form" : "simple");
+        var known = parameter.In switch
+        {
+            ContractParameterLocation.Query => style == "form",
+            _ => style == "simple",
+        };
+        if (!known || JsonNode.Parse(schemaText) is not JsonObject schema)
+        {
+            return null;
+        }
+
+        var types = Named(schema);
+        if (types is null)
+        {
+            return null;
+        }
+
+        if (types.SetEquals(["array"]))
+        {
+            return schema["items"] is JsonObject items && Named(items) is { } itemTypes && itemTypes.IsSubsetOf(Primitives)
+                ? Shape.Array
+                : null;
+        }
+
+        return types.IsSubsetOf(Primitives) ? Shape.Primitive : null;
+    }
+
+    /// <summary>A schema's own non-null <c>type</c> names, or null when it names none (its type is decided elsewhere).</summary>
+    private static HashSet<string>? Named(JsonObject schema)
+    {
+        var types = TypesOf(schema);
+        types.Remove("null");
+        return types.Count == 0 ? null : types;
+    }
+
+    /// <summary>
+    /// The raw values as the schema reads them: an array in <c>simple</c> style, or in <c>form</c> with
+    /// <c>explode: false</c>, is one comma-separated value; an exploded <c>form</c> array is one value per
+    /// occurrence. A primitive is its first value.
+    /// </summary>
+    internal static IReadOnlyList<string> Serialized(ContractParameter parameter, Shape shape, IReadOnlyList<string> values)
+    {
+        if (shape != Shape.Array)
+        {
+            return values;
+        }
+
+        var exploded = parameter.In == ContractParameterLocation.Query && (parameter.Explode ?? true);
+        return exploded ? values : [.. values.SelectMany(value => value.Split(',')).Select(item => parameter.In == ContractParameterLocation.Header ? item.Trim() : item)];
+    }
+
+    /// <summary>
+    /// Whether a query parameter's presence can be read when its name is not itself a key. A <c>deepObject</c>
+    /// arrives as <c>name[prop]=…</c>, so it is present when such a key is; an object in exploded <c>form</c>
+    /// arrives as its properties' own keys, with no trace of its name, so its presence cannot be read and is not
+    /// judged (refusing it would refuse every valid request). Anything else: its name is its key.
+    /// </summary>
+    private static bool PresenceIsReadable(ContractParameter parameter, CanonicalRequest request, ref List<string> values)
+    {
+        var style = parameter.Style ?? "form";
+        if (style == "deepObject")
+        {
+            var prefix = parameter.Name + "[";
+            if (request.Query.Any(group => group.Key.StartsWith(prefix, StringComparison.Ordinal)))
+            {
+                values = [""];
+            }
+
+            return true;
+        }
+
+        var objectTyped = parameter.Schema is { } text && JsonNode.Parse(text) is JsonObject schema
+            && (TypesOf(schema).Contains("object") || (schema["properties"] is not null && TypesOf(schema).Count == 0));
+        return !(style == "form" && (parameter.Explode ?? true) && objectTyped);
+    }
+
+    private static bool IsJson(string mediaType)
+        => string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase)
+            || mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when a declared media type range (<c>*/*</c>, <c>text/*</c>, or an exact type) covers what was sent.</summary>
+    private static bool Covers(string declared, string sent)
+    {
+        var range = declared.Split(';')[0].Trim();
+        if (range == "*/*" || string.Equals(range, sent, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return range.EndsWith("/*", StringComparison.Ordinal)
+            && sent.StartsWith(range[..^1], StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <inheritdoc />
     public IReadOnlyList<RequestViolation> Validate(CanonicalRequest request, RequestValidationDirective contract)
@@ -45,6 +181,11 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
             };
 
             var location = parameter.In.ToString().ToLowerInvariant();
+            if (values.Count == 0 && parameter.In == ContractParameterLocation.Query && !PresenceIsReadable(parameter, request, ref values))
+            {
+                continue;
+            }
+
             if (values.Count == 0)
             {
                 if (parameter.Required)
@@ -56,9 +197,9 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
                 continue;
             }
 
-            if (parameter.Schema is { } schemaText)
+            if (parameter.Schema is { } schemaText && Judgeable(parameter, schemaText) is { } shape)
             {
-                violations.AddRange(Judge(location, parameter.Name, Coerce(schemaText, values), schemaText, nested: false));
+                violations.AddRange(Judge(location, parameter.Name, Coerce(schemaText, Serialized(parameter, shape, values)), schemaText, nested: false));
             }
         }
 
@@ -76,6 +217,17 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
         {
             return body.Required
                 ? [new RequestViolation("body", "", "required", "The operation requires a request body and none was sent.")]
+                : [];
+        }
+
+        // The body is judged as JSON only when it was SENT as JSON (or with no type at all). One sent as another
+        // media type the operation declares is not judged by the JSON schema; one sent as a type it does not
+        // declare is refused, so the rule cannot pass a body vacuously.
+        var sent = HeaderValues(request, "Content-Type").FirstOrDefault()?.Split(';')[0].Trim();
+        if (!string.IsNullOrEmpty(sent) && !IsJson(sent))
+        {
+            return body.MediaTypes is { } declared && !declared.Any(type => Covers(type, sent))
+                ? [new RequestViolation("body", "", "mediaType", "The request body's media type is not one the operation declares.")]
                 : [];
         }
 
@@ -114,12 +266,12 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
 
         foreach (var detail in ContractConformance.FailureLeaves(result))
         {
-            var (rule, message) = detail.Errors is { Count: > 0 } errors
-                ? (errors.First().Key, errors.First().Value)
-                : ("schema", "does not satisfy the schema");
-            var pointer = nested ? detail.InstanceLocation.ToString() : name;
+            // The rule is the schema keyword's name, a closed vocabulary; the evaluator's own message is never
+            // used, because for the numeric keywords it quotes the request's value (verifier on #486).
+            var rule = detail.Errors is { Count: > 0 } errors && Keyword().IsMatch(errors.First().Key) ? errors.First().Key : "schema";
+            var pointer = nested ? Bounded(detail.InstanceLocation.ToString()) : name;
             var where = nested ? (pointer.Length == 0 ? "The request body" : $"The body at {pointer}") : $"The {location} parameter '{name}'";
-            violations.Add(new RequestViolation(location, pointer, rule, $"{where}: {message}"));
+            violations.Add(new RequestViolation(location, pointer, rule, $"{where} does not satisfy the contract's '{rule}'."));
         }
 
         return violations;
@@ -241,21 +393,47 @@ public sealed partial class OpenApiRequestValidator : IRequestValidator
 
                 Bound(schema, "exclusiveMinimum", "minimum");
                 Bound(schema, "exclusiveMaximum", "maximum");
-                foreach (var (_, child) in schema.ToList())
-                {
-                    Translate(child, depth + 1);
-                }
 
-                break;
-            case JsonArray array:
-                foreach (var child in array)
+                // Only into what is itself a schema (a known-good list): a literal under example, default,
+                // enum or const is data, and rewriting its "nullable" or "exclusiveMinimum" key would change it.
+                foreach (var (key, child) in schema.ToList())
                 {
-                    Translate(child, depth + 1);
+                    if (SchemaValued.Contains(key))
+                    {
+                        Translate(child, depth + 1);
+                    }
+                    else if (SchemaArrays.Contains(key) && child is JsonArray members)
+                    {
+                        foreach (var member in members)
+                        {
+                            Translate(member, depth + 1);
+                        }
+                    }
+                    else if (SchemaMaps.Contains(key) && child is JsonObject map)
+                    {
+                        foreach (var (_, member) in map.ToList())
+                        {
+                            Translate(member, depth + 1);
+                        }
+                    }
                 }
 
                 break;
         }
     }
+
+    private static readonly HashSet<string> SchemaValued = new(StringComparer.Ordinal)
+    {
+        "items", "additionalProperties", "not", "if", "then", "else", "contains", "propertyNames",
+        "unevaluatedItems", "unevaluatedProperties", "additionalItems",
+    };
+
+    private static readonly HashSet<string> SchemaArrays = new(StringComparer.Ordinal) { "allOf", "anyOf", "oneOf", "prefixItems" };
+
+    private static readonly HashSet<string> SchemaMaps = new(StringComparer.Ordinal)
+    {
+        "properties", "patternProperties", "$defs", "definitions", "dependentSchemas",
+    };
 
     private static void Bound(JsonObject schema, string exclusive, string inclusive)
     {

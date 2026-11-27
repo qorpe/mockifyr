@@ -494,6 +494,8 @@ action runs. The contract travels with the stub rather than living in a store be
 exports and restores everywhere with no per-backend code. Driving a 3.1 document through it found that the
 import had never read OpenAPI 3.1, although the docs said so: the pinned reader refuses it with a 422. The
 claim is corrected, the refusal is pinned by a test, and 3.1 is a register row with Part 2's per-tenant
-default and error template.
+default and error template. Its first review found the evaluator's message carried a masked value into the
+journal, so a violation now names only the contract; and that four valid serializations were refused, so a value is
+judged only in a serialization and shape the validator reads exactly (presence otherwise, a register row).
 
 Builds clean (0 warnings); 1700+ tests green across the four suites.

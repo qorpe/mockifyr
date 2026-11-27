@@ -68,6 +68,25 @@ public static class RequestContract
                 entry["schema"] = inlined;
             }
 
+            // The serialization travels with the contract, so the validator never judges a value it read
+            // in a different serialization than the document declares (verifier on #486).
+            if (parameter.Style is { } style)
+            {
+                entry["style"] = style switch
+                {
+                    ParameterStyle.Form => "form",
+                    ParameterStyle.Simple => "simple",
+                    ParameterStyle.Matrix => "matrix",
+                    ParameterStyle.Label => "label",
+                    ParameterStyle.SpaceDelimited => "spaceDelimited",
+                    ParameterStyle.PipeDelimited => "pipeDelimited",
+                    ParameterStyle.DeepObject => "deepObject",
+                    _ => "unknown",
+                };
+            }
+
+            entry["explode"] = parameter.Explode;
+
             parameters.Add(entry);
         }
 
@@ -77,7 +96,12 @@ public static class RequestContract
             && body.Content.FirstOrDefault(c => IsJson(c.Key)).Value is { Schema: { } bodySchema }
             && Inline(bodySchema) is { } inlinedBody)
         {
-            contract["body"] = new JsonObject { ["required"] = body.Required, ["schema"] = inlinedBody };
+            contract["body"] = new JsonObject
+            {
+                ["required"] = body.Required,
+                ["schema"] = inlinedBody,
+                ["mediaTypes"] = new JsonArray([.. body.Content.Keys.Select(type => (JsonNode?)JsonValue.Create(type))]),
+            };
         }
 
         return contract;

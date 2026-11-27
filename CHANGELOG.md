@@ -18,7 +18,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   `state` write does not happen; its scenario does not advance, and no webhook or publish fires. The journal
   keeps it, and `GET /__admin/requests/{id}` shows `requestViolations`. Off by default, so an import without
   the flag is unchanged. A `validate` declaration that cannot be read, or a host with no validator registered,
-  refuses rather than serves unchecked.
+  refuses rather than serves unchecked. A violation's message names the location, the parameter or pointer and
+  the rule, never the request's value, so a masked header or body field cannot reach the answer or the journal
+  through it. A parameter is judged by its schema only in a serialization and shape the validator reads exactly
+  (query `form`, path and header `simple`, primitives and arrays of them); any other is checked for presence
+  only. A body is judged as JSON only when sent as JSON; one in a media type the operation does not declare is
+  refused (`rule: mediaType`).
+
+- **A contract rejection and an idempotent replay are counted in `requests.served` and `response.status`.**
+  `IServeEventObserver` marks a listener that only observes; observers are told about a request the host
+  answered without serving its stub, and post-serve actions (webhooks, publishes) still are not. The replay was
+  uncounted since #358.
 
 - **An imported API's named examples are selectable scenario states (#449, Part 1).**
   `POST /__admin/openapi/import?scenarios=true` turns every named example of an operation's responses into a

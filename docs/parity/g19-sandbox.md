@@ -227,6 +227,25 @@ wins is unchanged too.
 - OpenAPI 3.0's `nullable: true` and its boolean `exclusiveMinimum`/`exclusiveMaximum` mean something else
   to a 2020-12 evaluator: the first is ignored, so `null` is refused, and the second makes the schema
   unusable. Both are translated before the schema is stored (ADR 0018 §7).
+- **A violation names the contract, never the request (verifier on #486).** The evaluator's own message quotes
+  the instance for the numeric keywords (`4111111111111111 should be at most 100`), which walked a value past
+  `--mask-headers`/`--mask-body-fields` into the 400 body and the journal. A message is now built only from the
+  location, the parameter's name or the body pointer, and the rule (a schema keyword); a body pointer, which is
+  made of the caller's keys, is cut at 256 characters. A wire test drives every keyword family with masked values
+  and finds none of them in the answer, the journal listing or the entry.
+- **Judged only when read exactly (known-good list).** A parameter is judged by its schema only in the location's
+  default serialization (query `form`, exploded or not; path and header `simple`, an array split on commas) and
+  when its schema's own `type` names primitives or an array of them. Anything else is checked for presence only:
+  refusing a request the contract allows is the failure a sandbox exists to avoid. Driving the four shapes the
+  verifier found (a header array, `explode: false`, a type from `anyOf`, a form body beside a JSON one) found a
+  fifth: an object in exploded `form` arrives as its properties' keys, so its name is never in the query and a
+  presence check refused every valid request. A `deepObject` is present when a `name[…]` key is.
+- **A body is judged as JSON only when it is sent as JSON** (or untyped). The contract now lists every media type
+  the operation declares: a body in another declared type is not judged, and one in an undeclared type is
+  refused with `rule: mediaType`.
+- **A rejection and an idempotent replay are counted.** `IServeEventObserver` is a listener that only observes;
+  the metrics listener is one, so `requests.served` and `response.status` see a 400 rejection and a replay,
+  while webhooks and publishes (plain listeners) still never run for either.
 - `Accept`, `Content-Type` and `Authorization` header parameters are not checked: OpenAPI 3 §4.8.12.1 says
   such a parameter is ignored.
 - Fail-closed in three places: a hand-written `validate` that cannot be read, a schema the evaluator throws

@@ -614,7 +614,29 @@ public static class MappingJsonReader
                     return Broken($"the schema of parameter '{Clip(name.GetString())}' is not an object.");
                 }
 
-                parameters.Add(new ContractParameter(name.GetString()!, where.Value, required, schema.Text));
+                string? style = null;
+                if (parameter.TryGetProperty("style", out var st))
+                {
+                    if (st.ValueKind != JsonValueKind.String || st.GetString() is not { Length: > 0 } styleName)
+                    {
+                        return Broken($"the style of parameter '{Clip(name.GetString())}' is not a string.");
+                    }
+
+                    style = styleName;
+                }
+
+                bool? explode = null;
+                if (parameter.TryGetProperty("explode", out var ex))
+                {
+                    if (ex.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    {
+                        return Broken($"the explode flag of parameter '{Clip(name.GetString())}' is not a boolean.");
+                    }
+
+                    explode = ex.ValueKind == JsonValueKind.True;
+                }
+
+                parameters.Add(new ContractParameter(name.GetString()!, where.Value, required, schema.Text, style, explode));
             }
         }
 
@@ -629,7 +651,19 @@ public static class MappingJsonReader
                 return Broken("'validate.body' needs a 'schema' object.");
             }
 
-            body = new ContractBody(declaredBody.TryGetProperty("required", out var br) && br.ValueKind == JsonValueKind.True, schema.Text);
+            List<string>? mediaTypes = null;
+            if (declaredBody.TryGetProperty("mediaTypes", out var declaredTypes))
+            {
+                if (declaredTypes.ValueKind != JsonValueKind.Array
+                    || declaredTypes.EnumerateArray().Any(t => t.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(t.GetString())))
+                {
+                    return Broken("'validate.body.mediaTypes' must be an array of media type strings.");
+                }
+
+                mediaTypes = [.. declaredTypes.EnumerateArray().Select(t => t.GetString()!)];
+            }
+
+            body = new ContractBody(declaredBody.TryGetProperty("required", out var br) && br.ValueKind == JsonValueKind.True, schema.Text, mediaTypes);
         }
 
         return new RequestValidationDirective(template, parameters, body);

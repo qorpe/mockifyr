@@ -63,9 +63,11 @@ public sealed class MockifyrTelemetry(TelemetryOptions options) : IDisposable
 /// Records serving metrics from the <see cref="IServeEventListener"/> seam (#246). Deliberately a
 /// listener rather than instrumentation inside <see cref="StubEngine"/>: the engine stays pure and
 /// dependency-free, and every serve event already flows through this seam — the same choke point the
-/// journal and webhooks use, so nothing can be served without being counted.
+/// journal and webhooks use, so nothing can be served without being counted. It is an
+/// <see cref="IServeEventObserver"/>, so a request the host answered without serving its stub (a
+/// contract rejection, an idempotent replay) is counted too, with the status it was given.
 /// </summary>
-public sealed class MetricsServeEventListener : IServeEventListener
+public sealed class MetricsServeEventListener : IServeEventObserver
 {
     // Instrument names follow the OTel HTTP conventions where one applies, and the configured prefix
     // where the concept is ours. Renaming these breaks dashboards, so the DEFAULT is contract, not

@@ -363,6 +363,310 @@ public sealed class SandboxRequestValidationWireTests
         Assert.Equal(Mockifyr.Core.RequestValidationGate.MaxViolations, (await ViolationsAsync(response)).Count);
     }
 
+    // ---- Verifier findings on #486 ----
+
+    /// <summary>
+    /// BLOCKER: a violation's message is built from the contract alone. For the numeric keywords the
+    /// evaluator's own text quotes the request's value, so a masked header or body field reached the 400
+    /// body and the journal through it. Every keyword family is driven here with a value that is masked,
+    /// and the value must appear nowhere: not in the answer, not in the journal entry.
+    /// </summary>
+    [Fact]
+    public async Task A_masked_value_appears_neither_in_the_answer_nor_in_the_journal_whatever_rule_it_breaks()
+    {
+        const string spec =
+            """
+            {
+              "openapi": "3.0.3", "info": { "title": "cards", "version": "1.0" },
+              "paths": { "/cards": { "post": {
+                "parameters": [
+                  { "name": "X-Card", "in": "header", "required": true, "schema": { "type": "integer", "maximum": 100 } },
+                  { "name": "X-Pin", "in": "header", "schema": { "type": "string", "pattern": "^[0-9]{4}$", "maxLength": 4, "enum": ["1234"] } },
+                  { "name": "X-Step", "in": "header", "schema": { "type": "number", "multipleOf": 7, "exclusiveMinimum": true, "minimum": 9000000 } } ],
+                "requestBody": { "required": true, "content": { "application/json": { "schema": {
+                  "type": "object", "additionalProperties": false, "properties": {
+                    "amount": { "type": "integer", "maximum": 1 },
+                    "pan": { "type": "string", "format": "email", "maxLength": 3, "enum": ["x"] },
+                    "cvv": { "type": "integer", "minimum": 99999999, "multipleOf": 1000 } } } } } },
+                "responses": { "201": { "description": "ok" } } } } }
+            }
+            """;
+        await using var app = await StartAsync("--mask-headers", "X-Card,X-Pin,X-Step", "--mask-body-fields", "pan,cvv,amount");
+        using var client = Client(app);
+        await ImportAsync(client, spec);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/cards")
+        {
+            Content = Json("""{"amount":555777,"pan":"4111111111111111","cvv":271828}"""),
+        };
+        request.Headers.Add("X-Card", "4111111111111111");
+        request.Headers.Add("X-Pin", "98765");
+        request.Headers.Add("X-Step", "31415926");
+        using var response = await client.SendAsync(request);
+        var answer = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var journal = await client.GetAsync("/__admin/requests");
+        var entries = await journal.Content.ReadAsStringAsync();
+        using var listed = JsonDocument.Parse(entries);
+        var id = listed.RootElement.GetProperty("requests")[0].GetProperty("id").GetString();
+        var entry = await client.GetStringAsync($"/__admin/requests/{id}");
+
+        Assert.Contains("requestViolations", entry);
+        foreach (var secret in new[] { "4111111111111111", "98765", "31415926", "555777", "271828" })
+        {
+            Assert.DoesNotContain(secret, answer, StringComparison.Ordinal);
+            Assert.DoesNotContain(secret, entry, StringComparison.Ordinal);
+            Assert.DoesNotContain(secret, entries, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task A_body_pointer_built_from_the_callers_keys_is_bounded()
+    {
+        const string spec =
+            """
+            { "openapi": "3.0.3", "info": { "title": "m", "version": "1" },
+              "paths": { "/m": { "post": {
+                "requestBody": { "content": { "application/json": { "schema": { "type": "object", "additionalProperties": { "type": "integer" } } } } },
+                "responses": { "201": { "description": "ok" } } } } } }
+            """;
+        await using var app = await StartAsync();
+        using var client = Client(app);
+        await ImportAsync(client, spec);
+
+        var key = new string('k', 5000);
+        using var response = await client.PostAsync("/m", Json($$"""{"{{key}}":"not an integer"}"""));
+
+        var violation = Assert.Single(await ViolationsAsync(response), v => v.Rule == "type");
+        Assert.True(violation.Pointer.Length <= 257, $"pointer of {violation.Pointer.Length} characters");
+        Assert.DoesNotContain(new string('k', 300), await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    private const string Serializations =
+        """
+        {
+          "openapi": "3.0.3", "info": { "title": "serializations", "version": "1.0" },
+          "paths": {
+            "/h": { "get": {
+              "parameters": [ { "name": "X-Ids", "in": "header", "required": true, "schema": { "type": "array", "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/q": { "get": {
+              "parameters": [ { "name": "ids", "in": "query", "required": true, "explode": false, "schema": { "type": "array", "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/e": { "get": {
+              "parameters": [ { "name": "ids", "in": "query", "required": true, "schema": { "type": "array", "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/p/{ids}": { "get": {
+              "parameters": [ { "name": "ids", "in": "path", "required": true, "schema": { "type": "array", "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/pipe": { "get": {
+              "parameters": [ { "name": "ids", "in": "query", "required": true, "style": "pipeDelimited", "schema": { "type": "array", "items": { "type": "integer" } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/deep": { "get": {
+              "parameters": [ { "name": "f", "in": "query", "required": true, "style": "deepObject", "schema": { "type": "object", "properties": { "a": { "type": "integer" } } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/obj": { "get": {
+              "parameters": [ { "name": "f", "in": "query", "required": true, "schema": { "type": "object", "properties": { "a": { "type": "integer" } } } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/any": { "get": {
+              "parameters": [ { "name": "n", "in": "query", "required": true, "schema": { "anyOf": [ { "type": "integer" }, { "type": "boolean" } ] } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/one": { "get": {
+              "parameters": [ { "name": "n", "in": "query", "required": true, "schema": { "oneOf": [ { "type": "integer" }, { "type": "boolean" } ] } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/all": { "get": {
+              "parameters": [ { "name": "n", "in": "query", "required": true, "schema": { "allOf": [ { "type": "integer" }, { "minimum": 1 } ] } } ],
+              "responses": { "200": { "description": "ok" } } } },
+            "/token": { "post": {
+              "requestBody": { "required": true, "content": {
+                "application/json": { "schema": { "type": "object", "required": ["grant"], "properties": { "grant": { "type": "string" } } } },
+                "application/x-www-form-urlencoded": { "schema": { "type": "object" } } } },
+              "responses": { "201": { "description": "ok" } } } }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// MAJOR 2: a request the contract allows is never refused because the validator would read it in a
+    /// serialization, shape or media type it does not implement. Members: a header array (simple), a query
+    /// array with explode false, an exploded query array, a path array (simple), pipeDelimited, deepObject,
+    /// an object in form style, a parameter whose type comes from anyOf, oneOf or allOf, and a form body on
+    /// an operation that also declares JSON.
+    /// </summary>
+    [Theory]
+    [InlineData("GET", "/h", "X-Ids", "1, 2,3", null)]
+    [InlineData("GET", "/q?ids=1,2", null, null, null)]
+    [InlineData("GET", "/e?ids=1&ids=2", null, null, null)]
+    [InlineData("GET", "/p/1,2", null, null, null)]
+    [InlineData("GET", "/pipe?ids=1|2", null, null, null)]
+    [InlineData("GET", "/deep?f[a]=1", null, null, null)]
+    [InlineData("GET", "/obj?a=1", null, null, null)]
+    [InlineData("GET", "/any?n=7", null, null, null)]
+    [InlineData("GET", "/one?n=true", null, null, null)]
+    [InlineData("GET", "/all?n=7", null, null, null)]
+    [InlineData("POST", "/token", null, null, "application/x-www-form-urlencoded")]
+    [InlineData("POST", "/token", null, null, "application/json")]
+    public async Task A_request_the_contract_allows_is_served_in_every_serialization(string method, string url, string? header, string? value, string? mediaType)
+    {
+        await using var app = await StartAsync();
+        using var client = Client(app);
+        await ImportAsync(client, Serializations);
+
+        using var request = new HttpRequestMessage(new HttpMethod(method), url);
+        if (header is not null)
+        {
+            request.Headers.TryAddWithoutValidation(header, value);
+        }
+
+        if (mediaType is not null)
+        {
+            request.Content = new StringContent(mediaType == "application/json" ? """{"grant":"client_credentials"}""" : "grant=client_credentials", Encoding.UTF8, mediaType);
+        }
+
+        using var response = await client.SendAsync(request);
+
+        Assert.True((int)response.StatusCode is 200 or 201, $"{method} {url} answered {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+    }
+
+    /// <summary>The same rules refuse what the contract does not allow, so none of them passes vacuously.</summary>
+    [Theory]
+    [InlineData("GET", "/h", "X-Ids", "1,two", null, "header", "X-Ids", "type")]
+    [InlineData("GET", "/q?ids=1,two", null, null, null, "query", "ids", "type")]
+    [InlineData("GET", "/e?ids=1&ids=two", null, null, null, "query", "ids", "type")]
+    [InlineData("GET", "/p/1,two", null, null, null, "path", "ids", "type")]
+    [InlineData("GET", "/pipe", null, null, null, "query", "ids", "required")]
+    [InlineData("GET", "/any", null, null, null, "query", "n", "required")]
+    [InlineData("POST", "/token", null, null, "text/plain", "body", "", "mediaType")]
+    [InlineData("POST", "/token", null, null, "application/json", "body", "", "required")]
+    public async Task What_the_contract_does_not_allow_is_still_refused(
+        string method, string url, string? header, string? value, string? mediaType, string location, string pointer, string rule)
+    {
+        await using var app = await StartAsync();
+        using var client = Client(app);
+        await ImportAsync(client, Serializations);
+
+        using var request = new HttpRequestMessage(new HttpMethod(method), url);
+        if (header is not null)
+        {
+            request.Headers.TryAddWithoutValidation(header, value);
+        }
+
+        if (mediaType is not null)
+        {
+            request.Content = new StringContent(mediaType == "application/json" ? "{}" : "grant", Encoding.UTF8, mediaType);
+        }
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Contains(await ViolationsAsync(response), v => v.Location == location && v.Pointer == pointer && v.Rule == rule);
+    }
+
+    /// <summary>
+    /// MINOR 3: a request the host answered without serving its stub is still counted, with the status it was
+    /// given: a contract rejection (400) and an idempotent replay. Observers are told; post-serve actions are not
+    /// (the webhook test above holds that half).
+    /// </summary>
+    [Fact]
+    public async Task A_contract_rejection_and_an_idempotent_replay_are_counted()
+    {
+        await using var app = await StartAsync("--metrics", "true", "--idempotency", "true");
+        using var client = Client(app);
+        await ImportAsync(client, Spec30);
+
+        using var rejected = await client.PostAsync("/payments", Json("""{"money":{"amount":1,"currency":"EUR"}}"""));
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Equal((1, 400.0), await ServedAsync(client, "POST", 1));
+
+        var replayed = false;
+        for (var i = 0; i < 2; i++)
+        {
+            using var post = new HttpRequestMessage(HttpMethod.Post, "/payments") { Content = Json(Valid) };
+            post.Headers.Add("Idempotency-Key", "k-1");
+            using var answered = await client.SendAsync(post);
+            Assert.Equal(HttpStatusCode.Created, answered.StatusCode);
+            replayed = answered.Headers.Contains("Idempotency-Replayed");
+        }
+
+        Assert.True(replayed, "the second request was not a replay");
+        Assert.Equal((3, 400.0 + 201 + 201), await ServedAsync(client, "POST", 3));
+    }
+
+    /// <summary>
+    /// The served count once it reaches <paramref name="expected"/> (or after five seconds): the exporter caches a
+    /// scrape for a moment, so one read straight after a request can be the previous scrape.
+    /// </summary>
+    private static async Task<(long Count, double StatusSum)> ServedAsync(HttpClient client, string method, long expected)
+    {
+        var served = (Count: 0L, StatusSum: 0.0);
+        for (var attempt = 0; attempt < 50 && served.Count < expected; attempt++)
+        {
+            if (attempt > 0)
+            {
+                await Task.Delay(100);
+            }
+
+            served = Served(await client.GetStringAsync("/__admin/metrics"), method);
+        }
+
+        return served;
+    }
+
+    /// <summary>The served counter for one method, and the sum of the statuses recorded for it.</summary>
+    private static (long Count, double StatusSum) Served(string scrape, string method)
+    {
+        long count = 0;
+        double sum = 0;
+        foreach (var line in scrape.Split('\n'))
+        {
+            if (!line.Contains($"method=\"{method}\"", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var value = line[(line.LastIndexOf(' ') + 1)..];
+            if (line.Contains("requests_served", StringComparison.Ordinal) && !line.StartsWith('#'))
+            {
+                count += (long)double.Parse(value, CultureInfo.InvariantCulture);
+            }
+            else if (line.Contains("response_status_sum", StringComparison.Ordinal))
+            {
+                sum += double.Parse(value, CultureInfo.InvariantCulture);
+            }
+        }
+
+        return (count, sum);
+    }
+
+    /// <summary>
+    /// NIT on #486: the 3.0 to 2020-12 translation rewrites schemas only. A literal under example, default,
+    /// enum, const or examples is data, and its "nullable" or "exclusiveMinimum" key stays as written; a schema
+    /// under properties, items, allOf or additionalProperties is still translated.
+    /// </summary>
+    [Fact]
+    public void The_translation_rewrites_schemas_and_never_a_literal()
+    {
+        var translated = JsonDocument.Parse(Mockifyr.Adapters.OpenApi.OpenApiRequestValidator.ToJsonSchema(
+            """
+            { "type": "object",
+              "example": { "nullable": true, "exclusiveMinimum": true, "minimum": 1 },
+              "default": { "nullable": false },
+              "enum": [ { "nullable": true } ],
+              "properties": { "n": { "type": "string", "nullable": true } },
+              "additionalProperties": { "type": "number", "minimum": 0, "exclusiveMinimum": true },
+              "allOf": [ { "type": "integer", "nullable": true } ],
+              "items": { "type": "boolean", "nullable": true } }
+            """)).RootElement;
+
+        Assert.Equal("""{"nullable":true,"exclusiveMinimum":true,"minimum":1}""", translated.GetProperty("example").GetRawText());
+        Assert.Equal("""{"nullable":false}""", translated.GetProperty("default").GetRawText());
+        Assert.Equal("""[{"nullable":true}]""", translated.GetProperty("enum").GetRawText());
+        Assert.Equal("""["string","null"]""", translated.GetProperty("properties").GetProperty("n").GetProperty("type").GetRawText());
+        Assert.Equal(0, translated.GetProperty("additionalProperties").GetProperty("exclusiveMinimum").GetInt32());
+        Assert.Equal("""["integer","null"]""", translated.GetProperty("allOf")[0].GetProperty("type").GetRawText());
+        Assert.Equal("""["boolean","null"]""", translated.GetProperty("items").GetProperty("type").GetRawText());
+    }
+
     private sealed record Violation(string Location, string Pointer, string Rule);
 
     private static async Task<List<Violation>> ViolationsAsync(HttpResponseMessage response)
@@ -399,9 +703,9 @@ public sealed class SandboxRequestValidationWireTests
 
     private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
 
-    private static async Task<WebApplication> StartAsync()
+    private static async Task<WebApplication> StartAsync(params string[] args)
     {
-        var app = MockifyrHost.Build(["--port", "0"]);
+        var app = MockifyrHost.Build(["--port", "0", .. args]);
         await app.StartAsync();
         return app;
     }

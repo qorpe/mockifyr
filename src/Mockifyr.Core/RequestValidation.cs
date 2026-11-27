@@ -20,12 +20,24 @@ public enum ContractParameterLocation
 /// <param name="In">Where it lives.</param>
 /// <param name="Required">Whether the request must carry it.</param>
 /// <param name="Schema">The parameter's JSON Schema as JSON text, or null when the contract declares none.</param>
-public sealed record ContractParameter(string Name, ContractParameterLocation In, bool Required, string? Schema);
+/// <param name="Style">
+/// The OpenAPI serialization style (<c>form</c>, <c>simple</c>, <c>deepObject</c>…), or null for the location's
+/// default (<c>form</c> for query, <c>simple</c> for path and header). The validator judges a value by its schema
+/// only in a serialization it implements; any other is checked for presence only (deferred-edges).
+/// </param>
+/// <param name="Explode">The OpenAPI <c>explode</c> flag, or null for the style's default (true for <c>form</c>).</param>
+public sealed record ContractParameter(
+    string Name, ContractParameterLocation In, bool Required, string? Schema, string? Style = null, bool? Explode = null);
 
 /// <summary>An operation's request body contract (#448).</summary>
 /// <param name="Required">Whether the request must carry a body.</param>
 /// <param name="Schema">The JSON Schema the <c>application/json</c> body must satisfy, as JSON text.</param>
-public sealed record ContractBody(bool Required, string Schema);
+/// <param name="MediaTypes">
+/// Every media type the operation declares for its body, JSON or not, or null when the contract does not list
+/// them. A body sent as a JSON type is judged by <paramref name="Schema"/>; one sent as another declared type is
+/// not judged (presence only); one sent as a type the list does not declare is refused.
+/// </param>
+public sealed record ContractBody(bool Required, string Schema, IReadOnlyList<string>? MediaTypes = null);
 
 /// <summary>
 /// A stub's opt-in declaration that a request it matches must also satisfy the operation's contract

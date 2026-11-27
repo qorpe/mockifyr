@@ -254,7 +254,8 @@ public sealed class StubEngine
     /// Journals a request its contract rejected (#448). Deliberately not <see cref="DispatchServeEvent"/>:
     /// the listeners are where post-serve actions (webhooks, broker publishes) run, and a request the
     /// contract refused must not trigger them — the idempotent replay journals the same way, for the same
-    /// reason.
+    /// reason. Observers (<see cref="IServeEventObserver"/>, the metrics) are told, so a contract rejection
+    /// is counted like any answer the host gave.
     /// </summary>
     private Guid RecordRejection(
         TenantId tenant, CanonicalRequest request, StubMapping winner, CanonicalResponse rejected, IReadOnlyList<RequestViolation> violations)
@@ -271,6 +272,11 @@ public sealed class StubEngine
         };
 
         _journal.Record(serveEvent);
+        foreach (var observer in _serveEventListeners.OfType<IServeEventObserver>())
+        {
+            _ = observer.OnServeEventAsync(serveEvent, CancellationToken.None);
+        }
+
         return serveEvent.Id;
     }
 
