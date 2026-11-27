@@ -6,14 +6,14 @@ using Mockifyr.Core;
 
 namespace Mockifyr.Facade.WebSocket;
 
+/// <summary>A <c>send</c> action: the templated message data and whether it broadcasts (vs. the originating channel).</summary>
+public sealed record SendAction(string Data, bool Broadcast);
+
 /// <summary>
 /// A WebSocket message stub (the <c>message-mappings</c> JSON dialect, G15d; self-tested): a trigger
 /// that matches an inbound message body and a set of templated responses to send back to the originating
 /// channel. The trigger reuses the standard body value-matchers; the responses reuse the templating engine.
 /// </summary>
-/// <summary>A <c>send</c> action: the templated message data and whether it broadcasts (vs. the originating channel).</summary>
-public sealed record SendAction(string Data, bool Broadcast);
-
 public sealed record MessageMapping(
     Guid Id,
     TenantId Tenant,

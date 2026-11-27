@@ -1122,6 +1122,110 @@ A third survivor was equivalent — `token.Length <= length ? token : token[..le
 string either way when the two are equal — and was removed rather than documented by replacing the
 ternary with `Math.Min`.
 
+## A simulated client-credentials grant (#450, ADR 0016)
+
+`--sandbox-oauth` (beside `--sandbox-auth`) lets a sandbox key obtain an OAuth 2.0 access token by the
+client-credentials grant, so that a partner's token code runs in the sandbox before it runs in
+production. ADR 0016 amends 0011's "no OAuth server" to "no general-purpose authorization server". This
+is Part 1 of #450.
+
+**The client is the key.** The key's id is the `client_id`, and the `mfk_` token shown at issue is the
+`client_secret`. Nothing new is stored. The serve path looks the key up again on every call, so a token
+is refused once its key is revoked or expires, a read-only key's token may only read, and its calls count
+against the key's quota. The token carries only the key's id and its tenant. It is accepted wherever the
+key itself is, so `X-Api-Key: <token>` serves exactly as `Authorization: Bearer <token>` does: the token
+stands in for the key, and refusing one carrier would only make a partner's client fail on a header that
+works with the key.
+
+**A key of a suspended tenant (#357) gets no token.** The serve path would refuse the token on its first
+use, so the token endpoint refuses at issue, once the secret has proved possession, with `invalid_client`
+and "This sandbox tenant is suspended. Contact the operator." A wrong secret still says only that
+authentication failed. Resuming the tenant lets the same key obtain a token again.
+
+**Errors are RFC 6749 §5.2's.** The goal is that a client library meets here what it will meet in
+production:
+- `invalid_request`: the body is not form-encoded or is over 8 KiB (declared or chunked), a parameter is
+  sent twice, `grant_type` is missing, or credentials arrive both in the header and in the body;
+- `unsupported_grant_type`: any grant other than `client_credentials`, compared case-sensitively;
+- `invalid_scope`: a scope outside §3.3's characters, or empty;
+- `invalid_client`, a 401 with `WWW-Authenticate: Basic`: authentication failed.
+
+**An unknown `client_id` and a wrong secret get byte-identical answers.** A secret is still hashed and
+compared when the id is unknown, so the time a refusal takes does not reveal which half was wrong. Only
+once the secret has proved possession does the answer say "expired" or "revoked", the same rule the serve
+path follows (#355).
+
+**On a mock call, an invalid token gets RFC 6750's answer:** 401, `WWW-Authenticate: Bearer
+error="invalid_token"`, and a JSON body. "Expired" is said only of a token this host signed for a key it
+holds. Anything else is "not valid".
+
+**Validation is a fixed list, not a list of attacks.** The header may contain `alg`, `typ` and `kid` and
+nothing else. `alg` must be exactly `RS256` and `kid` must be this key's. That refuses, by construction:
+- `alg: none`;
+- an HMAC keyed with the published public key;
+- `crit`;
+- a key the token supplies itself (`jwk`, `jku`, `x5u`);
+- every header field nobody has named yet.
+
+The claims `iss`, `client_id`, `tenant` and an integral `exp` are required. A duplicate property name is
+refused, in the header and in the payload, so two `tenant` claims cannot mean whichever one a parser
+keeps. Segments must be base64url: `Convert.FromBase64String` would also accept `+`, `/`, `=` and
+whitespace, so a token re-encoded in standard base64 would otherwise verify. A token over 4 KiB is not
+read.
+
+**The tenant's clock decides expiry** (#290). `iat` and `exp` are set from the tenant's clock when the
+token is minted, and checked against it when the token is used. A one-hour expiry is therefore testable
+by moving the clock, and the boundary is exact: `exp` is the first instant the token is refused.
+
+**Two replicas, one key.** The `kid` is the key's RFC 7638 thumbprint, so hosts given the same
+`--oauth-signing-key-file` publish the same key set and accept each other's tokens. A wire test runs two
+hosts over one store and proves it. A host given no file generates a key at startup and says so in one
+line: its tokens stop working on restart, and another replica will not accept them.
+
+**Configuration that cannot be honoured stops the host.** This applies to:
+- a token path that is not a plain absolute path, or that sits under `/__admin`, `/__sandbox`,
+  `/__mockifyr` or `/.well-known`;
+- a lifetime that is not a whole number of seconds from 1 to 86400;
+- an issuer with a space;
+- a key file that is missing, public-only, shorter than 2048 bits, or not RSA.
+
+The refusal names the flag and never the file's content.
+
+**Validation.** There is no oracle: the reference engine has no token endpoint.
+- `SandboxTokenSignerTests` (108 cases) covers the token against RFC 7515/7519/7638 and against an
+  independent verifier built from the published key set.
+- `SandboxOAuthWireTests` (60 cases) runs a real host. It covers issuance by both client-authentication
+  methods; tenant isolation, including a contradicting tenant header; expiry on a frozen clock;
+  revocation, read-only and quota through a token; every RFC error above; the key set; two replicas; a
+  token whose key is unknown here or moved to another tenant; the admin surface ignoring a token; and the
+  unconfigured host, where nothing is mapped and a JWT is refused as an unknown key, exactly as before.
+- **Stryker: 97.06 %** on `SandboxOAuth.cs`. The five survivors are equivalent:
+  - `ExportParameters(includePrivateParameters: true)` in the constructor reads the same public modulus
+    and exponent;
+  - the two emptied `catch` blocks return `default`, which is the `null` they returned;
+  - the empty-segment guard falls through to a decode of `""`, which yields bytes no header, payload or
+    signature accepts;
+  - the `"!"` padding for an impossible base64 length is replaced by `""`, and the decode fails either
+    way.
+
+Mutation testing found two gaps before they shipped:
+- no case reached the length cap exactly, so `>` and `>=` were indistinguishable;
+- the base64url allow-list was never exercised by an input that standard base64 decodes. Every
+  malformed case had also been the wrong length.
+
+Self-review found one more before review: the first Content-Type check was a prefix test.
+`application/x-www-form-urlencoded-evil` passed it, and the form reader then threw on the type it could
+not parse, so the endpoint answered 500. The media type is now parsed and compared whole. Seven refused
+spellings and three accepted ones are wire cases, and the prefix test turns three of them red.
+
+**Not in this part** (each a row in `deferred-edges.md`):
+- a per-tenant mode in which static keys are refused;
+- `private_key_jwt`;
+- tokens on `/__sandbox/*`.
+
+Scopes are carried, not enforced. A requested scope is echoed into the token and the response, and no
+stub or route reads it.
+
 ## Why a call did not match, told to the caller (#457)
 
 The first hour of every integration goes on a wrong path, a missing header or a wrong content type, and

@@ -184,9 +184,6 @@ public static class MockifyrHost
                 : TenantId.Default;
     }
 
-    /// <summary>The tenant header the admin surface reads (mirrors the serving facade).</summary>
-
-
     /// <summary>
     /// The admin routes that make this host act on the network rather than on one tenant's data:
     /// recording (a forward proxy to any target), outbound certificate trust, and Git sync.
@@ -677,6 +674,8 @@ public static class MockifyrHost
         {
             builder.Services.AddSingleton(new SandboxAuthOptions(Enabled: true));
         }
+
+        ConfigureSandboxOAuth(builder);
 
         // Sandbox resources (G19a, ADR 0011 addendum): both caps are flag-tunable — the
         // per-collection document bound and the per-document body bytes (413 beyond it).
@@ -1461,6 +1460,10 @@ public static class MockifyrHost
         // namespace is absent rather than open.
         app.MapSandboxEndpoints(app.Services.GetRequiredService<SandboxAuthOptions>().Enabled);
 
+        // The client-credentials grant (#450, ADR 0016), before the mock catch-all so its two paths are
+        // the grant's and not a stub's. Absent --sandbox-oauth nothing is mapped.
+        app.MapSandboxTokenEndpoints();
+
         // Dashboard (optional): when --dashboard <dir> points at the built UI (ui/dist), serve it under
         // the reserved /__mockifyr prefix — static assets plus an SPA fallback to index.html for client
         // routes. Mapped before the mock-serving catch-all and scoped to /__mockifyr, so mocked APIs on
@@ -1585,6 +1588,95 @@ public static class MockifyrHost
     }
 
     /// <summary>
+    /// The simulated client-credentials grant (#450, ADR 0016): <c>--sandbox-oauth</c>, with its
+    /// path, lifetime, issuer and signing key.
+    /// </summary>
+    /// <remarks>
+    /// Every explicitly given value that cannot be honoured stops the host, as a malformed
+    /// <c>--tenant-header</c> does: an endpoint at a path nobody can reach, or tokens that live for a
+    /// lifetime the operator did not write, would start quietly and be found by a partner.
+    /// </remarks>
+    private static void ConfigureSandboxOAuth(WebApplicationBuilder builder)
+    {
+        if (!builder.Configuration.GetValue<bool>("sandbox-oauth"))
+        {
+            return;
+        }
+
+        if (!builder.Configuration.GetValue<bool>("sandbox-auth"))
+        {
+            // The grant's client IS a sandbox key, so without key-based access there is no client.
+            throw new InvalidOperationException("--sandbox-oauth needs --sandbox-auth: its clients are sandbox keys.");
+        }
+
+        var path = builder.Configuration["oauth-token-path"] is { Length: > 0 } configuredPath ? configuredPath : SandboxOAuthOptions.DefaultTokenPath;
+        if (!SandboxOAuthOptions.IsUsableTokenPath(path))
+        {
+            throw new InvalidOperationException(
+                $"--oauth-token-path '{path}' must be an absolute path of letters, digits, '/', '-', '_' or '.', outside /__admin, /__sandbox, /__mockifyr and /.well-known.");
+        }
+
+        var lifetime = SandboxOAuthOptions.DefaultLifetime;
+        if (builder.Configuration["oauth-token-lifetime"] is { Length: > 0 } configuredLifetime)
+        {
+            if (!int.TryParse(configuredLifetime, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+                || seconds < 1
+                || seconds > SandboxOAuthOptions.MaxLifetime.TotalSeconds)
+            {
+                throw new InvalidOperationException(
+                    $"--oauth-token-lifetime '{configuredLifetime}' must be a whole number of seconds from 1 to {(int)SandboxOAuthOptions.MaxLifetime.TotalSeconds}.");
+            }
+
+            lifetime = TimeSpan.FromSeconds(seconds);
+        }
+
+        var issuer = builder.Configuration["oauth-issuer"] is { Length: > 0 } configuredIssuer ? configuredIssuer : SandboxOAuthOptions.DefaultIssuer;
+        if (issuer.Length > 256 || issuer.Any(c => c < '\x21' || c > '\x7E'))
+        {
+            throw new InvalidOperationException("--oauth-issuer must be at most 256 printable ASCII characters with no spaces.");
+        }
+
+        SandboxTokenSigner signer;
+        if (builder.Configuration["oauth-signing-key-file"] is { Length: > 0 } keyFile)
+        {
+            if (!File.Exists(keyFile))
+            {
+                throw new InvalidOperationException($"--oauth-signing-key-file '{keyFile}' does not exist.");
+            }
+
+            var rsa = RSA.Create();
+            try
+            {
+                rsa.ImportFromPem(File.ReadAllText(keyFile));
+
+                // A public key imports cleanly and fails only when the first token is signed, so the
+                // private half is asked for here, where a refusal names the flag.
+                _ = rsa.ExportParameters(includePrivateParameters: true);
+                signer = new SandboxTokenSigner(rsa);
+            }
+            catch (Exception e) when (e is ArgumentException or CryptographicException)
+            {
+                rsa.Dispose();
+
+                // The message names the file and the rule, never the file's content.
+                throw new InvalidOperationException(
+                    $"--oauth-signing-key-file '{keyFile}' must hold a PEM RSA private key of at least {SandboxTokenSigner.MinKeySizeBits} bits.", e);
+            }
+        }
+        else
+        {
+            signer = SandboxTokenSigner.Generate();
+            Console.WriteLine("mockifyr: sandbox access tokens are signed with a key generated at startup — they stop "
+                + "working on restart and another replica will not accept them. Give --oauth-signing-key-file to share one.");
+        }
+
+        builder.Services.AddSingleton(new SandboxOAuthOptions(path, lifetime, issuer));
+        builder.Services.AddSingleton(signer);
+        Console.WriteLine($"mockifyr: sandbox keys may obtain access tokens by client credentials at {path} "
+            + $"(lifetime {(int)lifetime.TotalSeconds}s, key set at {SandboxOAuthOptions.JwksPath}).");
+    }
+
+    /// <summary>
     /// Restores persisted environment keys (G17). Unlike mappings — which load only the default tenant
     /// at startup — this restores <b>every</b> tenant, because a key that failed to come back would not
     /// fail loudly: the stub referencing it would serve the literal <c>{{key}}</c> instead.
@@ -1627,7 +1719,6 @@ public static class MockifyrHost
         }
     }
 
-    /// <summary>Rehydrates persisted API keys (G19d) — issued credentials survive restarts.</summary>
     /// <summary>
     /// Loads declared tenants from the configured backend (#357): a suspension that forgot itself on
     /// restart would be a suspension in name only.
@@ -1641,6 +1732,7 @@ public static class MockifyrHost
         }
     }
 
+    /// <summary>Rehydrates persisted API keys (G19d) — issued credentials survive restarts.</summary>
     private static void ApplyStartupApiKeys(WebApplication app)
     {
         var store = app.Services.GetRequiredService<IApiKeyStore>();

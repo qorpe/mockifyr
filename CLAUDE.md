@@ -486,4 +486,11 @@ field the contract declares and would overwrite one that was. Mutation testing p
 refusal alone: the message was asserted only by substring, and the separator between several
 alternatives had never been exercised.
 
+**The sandbox-parity wave (owner decision 2026-11-17)** gives a partner what card-scheme and bank
+developer platforms give their integrators. **#450 Part 1** narrows ADR 0011's "no OAuth server" to a
+simulated client-credentials grant (ADR 0016). `--sandbox-oauth` lets a sandbox key obtain an RS256
+bearer token that acts as the key on mock calls, expires on the tenant's clock, and is verified by a
+fixed header allow-list. Its RFC errors are the ones a client library meets in production. A per-tenant
+OAuth-only mode, `private_key_jwt` and tokens on `/__sandbox` are tracked in the register.
+
 Builds clean (0 warnings); 1700+ tests green across the four suites.
