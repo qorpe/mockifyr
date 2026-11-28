@@ -91,7 +91,7 @@ per-key scenario isolation (G19d+).
 ## G19c — OpenAPI import
 
 **What shipped.** `Mockifyr.Adapters.OpenApi` (Microsoft.OpenApi.Readers, MIT, edge-only — never
-referenced by Core): OpenAPI 3.0/3.1 (JSON or YAML) in, ordinary mapping JSON out, imported
+referenced by Core): OpenAPI 3.0 (JSON or YAML) in, ordinary mapping JSON out, imported
 through `POST /__admin/openapi/import` and the Add-stub **OpenAPI** channel in the dashboard.
 Paths become `urlPathTemplate`/`urlPath` matchers, declared examples serve as-is, example-less
 schemas synthesize samples (`SchemaSample`), and with `?stateful=true` resource-shaped path pairs
@@ -199,7 +199,96 @@ the five survivors are analyzed equivalents, recorded here per the contract:
 The pre-existing differential suites pass untouched — the parity surface did not move.
 
 **Deferred (tracked).** GraphQL SDL / AsyncAPI import; OpenAPI *export* of authored stubs;
-`examples` (multi-example) rotation; request-body-aware matchers from `requestBody` schemas.
+`examples` (multi-example) rotation. (Request-body-aware checking from `requestBody` schemas shipped as
+serve-time contract validation, #448, below.)
+
+**OpenAPI 3.1 is refused, not imported (found by #448, 2026-11-27).** This section said "3.0/3.1" since
+G19c. Driving a 3.1 document through the import shows the pinned reader (Microsoft.OpenApi 1.6) refuses it:
+`422 OpenApi.Invalid — OpenAPI specification version '3.1.0' is not supported`. It fails loudly, so no 3.1
+document was ever imported wrong; the claim was simply untrue. `SandboxRequestValidationWireTests` pins the
+refusal, so the day the reader learns 3.1 that test goes red. Register row: OpenAPI 3.1 documents.
+
+### Serve-time contract validation (#448 Part 1, ADR 0018)
+
+**What shipped.** `POST /__admin/openapi/import?validate=true` writes each operation's request contract into
+its stubs as `request.validate`: the path template, the path/query/header parameters with their schemas, the
+JSON body schema with every local `$ref` inlined. A request that wins such a stub and breaks the contract is
+answered `400 application/problem+json`, with `violations[]` of `{location, pointer, rule, message}` (at
+most 20). Its response is not rendered, so a `state` write never happens; its scenario does not advance, and
+no post-serve action runs. The journal keeps it, and `GET /__admin/requests/{id}` shows `requestViolations`.
+Off by default: an import without the flag is unchanged, and the contract is not a matcher, so which stub
+wins is unchanged too.
+
+**Learned.**
+- A query or header value arrives as text, so it is read as the JSON value its schema's `type` names before
+  it is judged: `limit=7` against `type: integer` is the number 7. Text that does not read as that type
+  (`ten`, `1.5` for an integer, `1,5` under any culture) stays a string, so the schema reports `type`. The
+  number grammar is JSON's, never the current culture's: a tr-TR process reads `1.5` the same way.
+- OpenAPI 3.0's `nullable: true` and its boolean `exclusiveMinimum`/`exclusiveMaximum` mean something else
+  to a 2020-12 evaluator: the first is ignored, so `null` is refused, and the second makes the schema
+  unusable. Both are translated before the schema is stored (ADR 0018 §7).
+- **A violation names the contract, never the request (verifier on #486).** The evaluator's own message quotes
+  the instance for the numeric keywords (`4111111111111111 should be at most 100`), which walked a value past
+  `--mask-headers`/`--mask-body-fields` into the 400 body and the journal. A message is now built only from the
+  location, the parameter's name or the body pointer, and the rule (a schema keyword); a body pointer, which is
+  made of the caller's keys, is cut at 256 characters. A wire test drives every keyword family with masked values
+  and finds none of them in the answer, the journal listing or the entry.
+- **Judged only when read exactly (known-good list).** A parameter is judged by its schema only in the location's
+  default serialization (query `form`, exploded or not; path and header `simple`, an array split on commas) and
+  when its schema's own `type` names primitives or an array of them. Anything else is checked for presence only:
+  refusing a request the contract allows is the failure a sandbox exists to avoid. Driving the four shapes the
+  verifier found (a header array, `explode: false`, a type from `anyOf`, a form body beside a JSON one) found a
+  fifth: an object in exploded `form` arrives as its properties' keys, so its name is never in the query and a
+  presence check refused every valid request. A `deepObject` is present when a `name[…]` key is.
+- **A body is judged only by the schema declared for the media type it was sent as.** The contract lists every
+  media type the operation declares and carries a schema per JSON type (`validate.body.schemas`), because
+  `application/json` and `application/merge-patch+json` on one operation usually differ: judging a merge-patch
+  `{}` by the JSON type's `required` refused a valid request (verifier's second round on #486). The exact type is
+  looked up before a range that covers it, parameters such as `; charset=utf-8` are dropped and the type is
+  compared case-insensitively. A declared type with no schema (a non-JSON type, a JSON type without one) is not
+  judged; an undeclared type, `application/problem+json` included, is refused with `rule: mediaType`; a body with
+  no Content-Type is judged as JSON by the first type's schema, as before. A hand-written contract with a single
+  `schema` and no `schemas` keeps judging every JSON type by it.
+- **A value is read in the shape the contract serializes it (the same round).** An empty value of a non-exploded
+  `form` array (`ids=`) or of a `simple` header array is the empty array, as OpenAPI serializes one, so it is
+  judged by `minItems` rather than refused as `[""]`. A non-exploded query array is split on the commas of the
+  raw query and each item decoded after, so `tags=a%2Cb` is the one item `a,b`. A path reaches the engine already
+  decoded, so the two cannot be told apart there: a path array of strings is checked for presence only (integer,
+  number and boolean items cannot hold a comma, so their split stays exact). A header value is judged as sent,
+  with no percent-decoding, as every server reads one.
+- **A rejection and an idempotent replay are counted.** `IServeEventObserver` is a listener that only observes;
+  the metrics listener is one, so `requests.served` and `response.status` see a 400 rejection and a replay,
+  while webhooks and publishes (plain listeners) still never run for either.
+- `Accept`, `Content-Type` and `Authorization` header parameters are not checked: OpenAPI 3 §4.8.12.1 says
+  such a parameter is ignored.
+- Fail-closed in three places: a hand-written `validate` that cannot be read, a schema the evaluator throws
+  on, and a host with no validator registered. Each refuses, naming the reason (`rule: contract` or
+  `unvalidated`).
+
+**Validation story.** There is no oracle, because the reference engine has no OpenAPI import.
+`SandboxRequestValidationWireTests` runs through a real host:
+- the six kinds the issue names: a missing required property, a wrong type, an enum, a format
+  (`email`, `date`), additionalProperties, and a parameter out of range (query `maximum`/`minimum`);
+- also an integer query given `1.5`, a required header missing, an integer path parameter given `abc`,
+  non-JSON, an empty required body and a 3.0 `exclusiveMinimum`;
+- the valid request served, `nullable` taking `null`, the header found case-insensitively, the tr-TR reading;
+- no sandbox state written on a rejected POST to a stateful import, no webhook fired (and one fired for the
+  accepted request), the journal's violations;
+- the export → re-import round trip, six unreadable declarations, and a hostile 500-violation body bounded
+  to 20.
+- the shapes of the second round, each with its refusing twin so no rule passes vacuously: `ids=` and a blank
+  header accepted and refused under `minItems: 1`, `tags=a%2Cb` accepted and `tags=a,b` refused under
+  `maxItems: 1`, a path array of strings with `%2C` served, a merge-patch `{}` accepted while the same `{}` as
+  `application/json` (in any case) is refused, a declared JSON type without a schema served, an undeclared
+  `application/problem+json` refused, an untyped body judged as before, and a hand-written single-`schema`
+  contract still judging. Each fix was put back on its own and turned its tests red.
+
+`RequestValidationGateTests` (Core) covers the gate's fail-closed branches and the cap. Stryker.NET 5.1.0 on
+`RequestValidation.cs`: 94.44%, with one survivor that is equivalent. At `found.Count <= 20` → `< 20`,
+slicing a list of exactly 20 to its first 20 returns the same items.
+
+**Deferred (tracked, deferred-edges.md).** A per-tenant default and an error body shaped per import (#448
+Part 2); OpenAPI 3.1; cookie parameters, non-JSON bodies and self-referencing schemas.
 
 ---
 

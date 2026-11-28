@@ -10,6 +10,28 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Added
 
+- **An imported API can refuse a request that breaks its contract (#448, Part 1; ADR 0018).**
+  `POST /__admin/openapi/import?validate=true` writes each operation's request contract into its stubs
+  (`request.validate`: path, query and header parameters with their schemas, and the JSON body schema with
+  local references inlined). A request that breaks it is answered `400 application/problem+json`, naming each
+  violation by `location`, `pointer` and `rule` (at most 20). Its stub's response is not rendered, so a sandbox
+  `state` write does not happen; its scenario does not advance, and no webhook or publish fires. The journal
+  keeps it, and `GET /__admin/requests/{id}` shows `requestViolations`. Off by default, so an import without
+  the flag is unchanged. A `validate` declaration that cannot be read, or a host with no validator registered,
+  refuses rather than serves unchecked. A violation's message names the location, the parameter or pointer and
+  the rule, never the request's value, so a masked header or body field cannot reach the answer or the journal
+  through it. A parameter is judged by its schema only in a serialization and shape the validator reads exactly
+  (query `form`, path and header `simple`, primitives and arrays of them); any other is checked for presence
+  only; an empty non-exploded array is the empty array, and a percent-encoded comma stays inside its query item.
+  A body is judged only by the schema declared for the media type it was sent as (`application/json` and
+  `application/merge-patch+json` each by its own); one in a media type the operation does not declare is refused
+  (`rule: mediaType`).
+
+- **A contract rejection and an idempotent replay are counted in `requests.served` and `response.status`.**
+  `IServeEventObserver` marks a listener that only observes; observers are told about a request the host
+  answered without serving its stub, and post-serve actions (webhooks, publishes) still are not. The replay was
+  uncounted since #358.
+
 - **A sandbox key can obtain an OAuth 2.0 access token by client credentials (#450, ADR 0016).** With
   `--sandbox-oauth` beside `--sandbox-auth`, `POST /oauth/token` takes a key's id and token as `client_id`
   and `client_secret` (HTTP Basic or the body) and returns an RS256 bearer token. On mock calls the token
@@ -56,6 +78,9 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   orphan whose member no longer exists is removed.
 
 ### Fixed
+
+- **The documentation no longer claims OpenAPI 3.1 import.** The pinned reader refuses a 3.1 document with
+  a 422 naming its version, and always has. A test now pins that refusal (found by #448).
 
 - **A tenant directory that lost its `.mockifyr-tenant` marker is skipped where it is, not re-homed under another
   tenant (#485).** The marker is what tells a `--root-dir` load that this release named a tenant's directory. Without it,

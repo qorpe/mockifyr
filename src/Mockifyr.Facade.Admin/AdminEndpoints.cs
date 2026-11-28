@@ -667,6 +667,8 @@ public static class AdminEndpoints
                 },
                 webhooks = JournalWebhooks(e),
                 publishes = JournalPublishes(e),
+                // #448: how the request broke its stub's contract, when it was answered 400 for it.
+                requestViolations = e.RequestViolations.Select(v => new { location = v.Location, pointer = v.Pointer, rule = v.Rule, message = v.Message }),
             });
         });
 
@@ -932,10 +934,13 @@ public static class AdminEndpoints
             // #449: named examples become selectable scenario states, under ?scenario=<name> or the document's title.
             var scenarios = request.Query.TryGetValue("scenarios", out var asked) && asked.FirstOrDefault() == "true";
             var scenarioName = request.Query.TryGetValue("scenario", out var named) ? named.FirstOrDefault() : null;
+            // #448: the imported operations answer a request that breaks the contract with 400.
+            var validate = request.Query.TryGetValue("validate", out var checking) && checking.FirstOrDefault() == "true";
             var result = await sender.Send(new ImportOpenApiCommand(await ReadBody(request), stateful, TenantOf(request))
             {
                 Scenarios = scenarios,
                 ScenarioName = scenarioName,
+                Validate = validate,
             });
             return result.IsSuccess
                 ? Results.Json(result.Value.Scenarios is { } report

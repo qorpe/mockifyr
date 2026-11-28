@@ -397,6 +397,7 @@ public static class MappingJsonReader
             Cookies = ReadNamedMatchers(request, "cookies", static (name, vm) => new CookieMatcher(name, vm)),
             Body = ReadBodyMatchers(request),
             Decrypt = ReadDecryptDirective(request),
+            Validate = ReadValidateDirective(request),
             Signature = ReadSignatureRequirement(request),
             Custom = ReadCustomMatchers(request, matchers),
         };
@@ -547,6 +548,152 @@ public static class MappingJsonReader
 
         return new PayloadDecryptDirective(scheme, names);
     }
+
+    /// <summary>
+    /// Reads the opt-in contract an OpenAPI import writes (#448, ADR 0018):
+    /// <c>"validate": { "path": "/users/{id}", "parameters": [ { "name", "in", "required", "schema" } ],
+    /// "body": { "required", "schema" | "schemas": { mediaType: schema }, "mediaTypes" } }</c>. Unlike the
+    /// crypto directives, a declaration that is present but cannot be read does NOT read as null: it reads as a directive carrying its
+    /// <see cref="RequestValidationDirective.Defect"/>, so the stub refuses what it wins instead of serving
+    /// it unchecked by a contract that was meant to hold.
+    /// </summary>
+    private static RequestValidationDirective? ReadValidateDirective(JsonElement request)
+    {
+        if (!request.TryGetProperty("validate", out var validate))
+        {
+            return null;
+        }
+
+        static RequestValidationDirective Broken(string defect) => new("", [], null) { Defect = defect };
+
+        if (validate.ValueKind != JsonValueKind.Object)
+        {
+            return Broken("'validate' is not an object.");
+        }
+
+        if (!validate.TryGetProperty("path", out var path) || path.ValueKind != JsonValueKind.String
+            || path.GetString() is not { Length: > 0 } template || template[0] != '/')
+        {
+            return Broken("'validate.path' must be the operation's path template, starting with '/'.");
+        }
+
+        var parameters = new List<ContractParameter>();
+        if (validate.TryGetProperty("parameters", out var declared))
+        {
+            if (declared.ValueKind != JsonValueKind.Array)
+            {
+                return Broken("'validate.parameters' is not an array.");
+            }
+
+            foreach (var parameter in declared.EnumerateArray())
+            {
+                if (parameter.ValueKind != JsonValueKind.Object
+                    || !parameter.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String
+                    || string.IsNullOrEmpty(name.GetString())
+                    || !parameter.TryGetProperty("in", out var location) || location.ValueKind != JsonValueKind.String)
+                {
+                    return Broken("every entry of 'validate.parameters' needs a 'name' and an 'in'.");
+                }
+
+                ContractParameterLocation? where = location.GetString() switch
+                {
+                    "path" => ContractParameterLocation.Path,
+                    "query" => ContractParameterLocation.Query,
+                    "header" => ContractParameterLocation.Header,
+                    _ => null,
+                };
+                if (where is null)
+                {
+                    return Broken($"'validate.parameters' names the location '{Clip(location.GetString())}'; it takes path, query or header.");
+                }
+
+                var required = parameter.TryGetProperty("required", out var r) && r.ValueKind == JsonValueKind.True;
+                var schema = parameter.TryGetProperty("schema", out var s) ? ReadSchema(s) : (Text: null, Ok: true);
+                if (!schema.Ok)
+                {
+                    return Broken($"the schema of parameter '{Clip(name.GetString())}' is not an object.");
+                }
+
+                string? style = null;
+                if (parameter.TryGetProperty("style", out var st))
+                {
+                    if (st.ValueKind != JsonValueKind.String || st.GetString() is not { Length: > 0 } styleName)
+                    {
+                        return Broken($"the style of parameter '{Clip(name.GetString())}' is not a string.");
+                    }
+
+                    style = styleName;
+                }
+
+                bool? explode = null;
+                if (parameter.TryGetProperty("explode", out var ex))
+                {
+                    if (ex.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    {
+                        return Broken($"the explode flag of parameter '{Clip(name.GetString())}' is not a boolean.");
+                    }
+
+                    explode = ex.ValueKind == JsonValueKind.True;
+                }
+
+                parameters.Add(new ContractParameter(name.GetString()!, where.Value, required, schema.Text, style, explode));
+            }
+        }
+
+        ContractBody? body = null;
+        if (validate.TryGetProperty("body", out var declaredBody))
+        {
+            if (declaredBody.ValueKind != JsonValueKind.Object)
+            {
+                return Broken("'validate.body' needs a 'schema' or a 'schemas' object.");
+            }
+
+            var schema = declaredBody.TryGetProperty("schema", out var bs) ? ReadSchema(bs) : (Text: null, Ok: true);
+            if (!schema.Ok)
+            {
+                return Broken("'validate.body.schema' is not an object.");
+            }
+
+            List<KeyValuePair<string, string>>? schemas = null;
+            if (declaredBody.TryGetProperty("schemas", out var perType))
+            {
+                if (perType.ValueKind != JsonValueKind.Object
+                    || perType.EnumerateObject().Any(p => string.IsNullOrWhiteSpace(p.Name) || p.Value.ValueKind != JsonValueKind.Object))
+                {
+                    return Broken("'validate.body.schemas' must map each media type to a schema object.");
+                }
+
+                schemas = [.. perType.EnumerateObject().Select(p => new KeyValuePair<string, string>(p.Name, p.Value.GetRawText()))];
+            }
+
+            if (schema.Text is null && schemas is not { Count: > 0 })
+            {
+                return Broken("'validate.body' needs a 'schema' or a 'schemas' object.");
+            }
+
+            List<string>? mediaTypes = null;
+            if (declaredBody.TryGetProperty("mediaTypes", out var declaredTypes))
+            {
+                if (declaredTypes.ValueKind != JsonValueKind.Array
+                    || declaredTypes.EnumerateArray().Any(t => t.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(t.GetString())))
+                {
+                    return Broken("'validate.body.mediaTypes' must be an array of media type strings.");
+                }
+
+                mediaTypes = [.. declaredTypes.EnumerateArray().Select(t => t.GetString()!)];
+            }
+
+            body = new ContractBody(declaredBody.TryGetProperty("required", out var br) && br.ValueKind == JsonValueKind.True, schema.Text, mediaTypes, schemas);
+        }
+
+        return new RequestValidationDirective(template, parameters, body);
+    }
+
+    private static (string? Text, bool Ok) ReadSchema(JsonElement schema) =>
+        schema.ValueKind == JsonValueKind.Object ? (schema.GetRawText(), true) : (null, false);
+
+    /// <summary>A value echoed into a defect message, bounded so a hostile mapping cannot grow it.</summary>
+    private static string? Clip(string? value) => value is { Length: > 64 } ? value[..64] + "…" : value;
 
     private static IReadOnlyList<IMatcher> ReadBodyMatchers(JsonElement request)
     {

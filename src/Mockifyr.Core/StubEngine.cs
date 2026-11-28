@@ -79,6 +79,7 @@ public sealed class StubEngine
     private readonly PayloadProtectionApplier _protection;
     private readonly SignatureGate _signatures;
     private readonly ResponseSigningApplier _signing;
+    private readonly RequestValidationGate _validation;
 
     /// <summary>Creates the engine with its collaborators.</summary>
     public StubEngine(
@@ -91,7 +92,8 @@ public sealed class StubEngine
         IEnumerable<IPayloadDecryptor>? payloadDecryptors = null,
         IEnumerable<IPayloadProtector>? payloadProtectors = null,
         IEnumerable<ISignatureVerifier>? signatureVerifiers = null,
-        IEnumerable<IResponseSigner>? responseSigners = null)
+        IEnumerable<IResponseSigner>? responseSigners = null,
+        IEnumerable<IRequestValidator>? requestValidators = null)
     {
         _stubStore = stubStore;
         _renderer = renderer;
@@ -103,6 +105,7 @@ public sealed class StubEngine
         _protection = new PayloadProtectionApplier(payloadProtectors ?? []);
         _signatures = new SignatureGate(signatureVerifiers ?? []);
         _signing = new ResponseSigningApplier(responseSigners ?? []);
+        _validation = new RequestValidationGate(requestValidators ?? []);
     }
 
     /// <summary>
@@ -114,6 +117,19 @@ public sealed class StubEngine
         var winner = FindMatch(tenant, request);
         if (winner is not null)
         {
+            // Contract validation (#448, ADR 0018) runs after the winner is chosen and before anything
+            // the stub would DO: a request that breaks the contract gets the 400 a real API would give,
+            // its scenario does not advance, its response is not rendered (so a `state` directive never
+            // writes), and no post-serve action fires. The journal still records it, with the violations,
+            // because the request really did arrive.
+            var violations = _validation.Check(request, winner.Request.Validate);
+            if (violations.Count > 0)
+            {
+                var rejected = RequestValidationGate.Problem(violations);
+                var rejectedId = RecordRejection(tenant, request, winner, rejected, violations);
+                return new StubResolution { Matched = true, Response = rejected, MatchedStub = winner, NearMisses = [], ServeEventId = rejectedId };
+            }
+
             // Templating sees the same decrypted view the winner matched against (G20a), so
             // {{jsonPath request.body …}} can correlate with what the client actually sent.
             var renderRequest = _decryption.For(request, winner.Request.Decrypt);
@@ -232,6 +248,36 @@ public sealed class StubEngine
         {
             _scenarioStore.SetState(tenant, scenario.ScenarioName, newState);
         }
+    }
+
+    /// <summary>
+    /// Journals a request its contract rejected (#448). Deliberately not <see cref="DispatchServeEvent"/>:
+    /// the listeners are where post-serve actions (webhooks, broker publishes) run, and a request the
+    /// contract refused must not trigger them — the idempotent replay journals the same way, for the same
+    /// reason. Observers (<see cref="IServeEventObserver"/>, the metrics) are told, so a contract rejection
+    /// is counted like any answer the host gave.
+    /// </summary>
+    private Guid RecordRejection(
+        TenantId tenant, CanonicalRequest request, StubMapping winner, CanonicalResponse rejected, IReadOnlyList<RequestViolation> violations)
+    {
+        var serveEvent = new ServeEvent
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenant,
+            Request = request,
+            MatchedStub = winner,
+            Response = rejected,
+            Timestamp = DateTimeOffset.UtcNow,
+            RequestViolations = violations,
+        };
+
+        _journal.Record(serveEvent);
+        foreach (var observer in _serveEventListeners.OfType<IServeEventObserver>())
+        {
+            _ = observer.OnServeEventAsync(serveEvent, CancellationToken.None);
+        }
+
+        return serveEvent.Id;
     }
 
     private Guid DispatchServeEvent(TenantId tenant, CanonicalRequest request, StubMapping? matchedStub, CanonicalResponse? response)

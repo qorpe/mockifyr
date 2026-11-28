@@ -560,7 +560,7 @@ public static class MockServingEndpoints
         context.Response.Headers["Idempotency-Replayed"] = "true";
         await context.Response.Body.WriteAsync(stored.Body);
 
-        context.RequestServices.GetRequiredService<IRequestJournal>().Record(new ServeEvent
+        var replay = new ServeEvent
         {
             Id = Guid.NewGuid(),
             TenantId = tenant,
@@ -573,7 +573,14 @@ public static class MockServingEndpoints
             },
             Timestamp = DateTimeOffset.UtcNow,
             Replayed = true,
-        });
+        };
+        context.RequestServices.GetRequiredService<IRequestJournal>().Record(replay);
+
+        // Counted like any answer (#448 MINOR): observers only, so no webhook or publish runs for a replay.
+        foreach (var observer in context.RequestServices.GetServices<IServeEventListener>().OfType<IServeEventObserver>())
+        {
+            _ = observer.OnServeEventAsync(replay, CancellationToken.None);
+        }
     }
 
     /// <summary>

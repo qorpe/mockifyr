@@ -798,7 +798,7 @@ public sealed class ImportOpenApiHandler(
         try
         {
             var generated = Mockifyr.Adapters.OpenApi.OpenApiStubGenerator.GenerateWithRelations(
-                command.SpecText, command.Stateful, command.Scenarios, command.ScenarioName);
+                command.SpecText, command.Stateful, command.Scenarios, command.ScenarioName, command.Validate);
             relations = generated.Relations;
             scenarios = generated.Scenarios;
             foreach (var mappingJson in generated.Mappings)

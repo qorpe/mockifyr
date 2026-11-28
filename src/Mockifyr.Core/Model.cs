@@ -191,6 +191,14 @@ public sealed record RequestPattern
     public SignatureRequirement? Signature { get; init; }
 
     /// <summary>
+    /// Opt-in declaration that a matched request must also satisfy its operation's contract (#448,
+    /// ADR 0018): an import with <c>?validate=true</c> writes it. It does not take part in matching —
+    /// the stub still wins as it always did — but a winner whose request breaks the contract is answered
+    /// 400 instead of served. Null on every stub that does not declare it.
+    /// </summary>
+    public RequestValidationDirective? Validate { get; init; }
+
+    /// <summary>
     /// The raw <c>urlPathTemplate</c> string (e.g. <c>/users/{id}</c>) when the stub matched by URI
     /// template, else null. Carried so response templating can expose named path variables as
     /// <c>{{request.path.&lt;name&gt;}}</c> (verified by the differential suite). The engine records it; extraction happens
@@ -456,6 +464,13 @@ public sealed record ServeEvent
     /// two entries, one of which says plainly that nothing ran the second time.
     /// </remarks>
     public bool Replayed { get; init; }
+
+    /// <summary>
+    /// How the request broke its matched stub's contract, when it did (#448): the request was answered
+    /// 400 with these, the stub's response was not rendered, its scenario did not advance and no
+    /// post-serve action ran. Empty on every other event.
+    /// </summary>
+    public IReadOnlyList<RequestViolation> RequestViolations { get; init; } = [];
 
     /// <summary>A snapshot of the correlated sub-events (e.g. webhook request/response).</summary>
     public IReadOnlyList<SubEvent> SubEvents

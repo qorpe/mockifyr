@@ -152,6 +152,16 @@ public interface IServeEventListener
 }
 
 /// <summary>
+/// A serve-event listener that only OBSERVES (counts, measures) and performs no post-serve action, so it is
+/// also told about a request the host answered without serving its stub: one a contract rejected (#448)
+/// and an idempotent replay (#358). A plain <see cref="IServeEventListener"/> is not told about those,
+/// because that is where webhooks and broker publishes run, and a refused or replayed request must not
+/// trigger them. The split is opt-in in the safe direction: a listener that does not declare itself an
+/// observer never sees a request that did not run.
+/// </summary>
+public interface IServeEventObserver : IServeEventListener;
+
+/// <summary>
 /// Renders a template string against a serve event's original (triggering) request — the model
 /// exposed to webhooks as <c>originalRequest</c> (G3b, verified by the differential suite). The
 /// implementation lives in the templating edge; the webhook listener depends only on this
