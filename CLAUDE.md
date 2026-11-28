@@ -322,9 +322,9 @@ and integer division rounded the wrong way for negatives.
 The **deferred-edge register**, `docs/parity/deferred-edges.md`, is the single answer to "is anything
 open?", with a verdict per item (out of scope / tracked / accepted). The per-group parity files still
 hold the narrative, but they record deferrals as of the group that wrote them, so they are not a count.
-Its Tracked section currently holds **one** row, OpenAPI `callbacks`/`webhooks` on import (#449 Part 2). The entry
-before it — startup reload of a non-default tenant's stubs on `--root-dir` (#467, a subdirectory the file provider
-wrote is read as its tenant) — is fixed; before it
+Its Tracked section currently holds **two** rows: OpenAPI `callbacks`/`webhooks` on import (#449 Part 2) and the
+website limitations page ADR 0017 owes (#462). The entry before them — startup reload of a non-default tenant's
+stubs on `--root-dir` (#467, a subdirectory the file provider wrote is read as its tenant) — is fixed; before it
 resource embedding (#378) shipped, and change-feed reload for environments and sandbox resources (#279) did in 1.5.0, where testing
 turned up a second defect the analysis had not predicted: a host reloaded on its own announcement and
 could hand an operator their own write back at the previous version, so every announcement now carries
@@ -485,6 +485,13 @@ and an `_expand` envelope rather than a top-level `customer`, which would be ind
 field the contract declares and would overwrite one that was. Mutation testing paid for itself in the
 refusal alone: the message was asserted only by substring, and the separator between several
 alternatives had never been exercised.
+
+**The sandbox-parity wave (owner decision 2026-11-17)** gives a partner what card-scheme and bank
+developer platforms give their integrators. **#450 Part 1** narrows ADR 0011's "no OAuth server" to a
+simulated client-credentials grant (ADR 0016). `--sandbox-oauth` lets a sandbox key obtain an RS256
+bearer token that acts as the key on mock calls, expires on the tenant's clock, and is verified by a
+fixed header allow-list. Its RFC errors are the ones a client library meets in production. A per-tenant
+OAuth-only mode, `private_key_jwt` and tokens on `/__sandbox` are tracked in the register.
 
 **Serve-time contract validation (#448 Part 1, ADR 0018)** makes an imported sandbox fail for the reasons
 production would: `?validate=true` on an OpenAPI import writes each operation's contract into its stubs as

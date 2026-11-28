@@ -32,6 +32,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   answered without serving its stub, and post-serve actions (webhooks, publishes) still are not. The replay was
   uncounted since #358.
 
+- **A sandbox key can obtain an OAuth 2.0 access token by client credentials (#450, ADR 0016).** With
+  `--sandbox-oauth` beside `--sandbox-auth`, `POST /oauth/token` takes a key's id and token as `client_id`
+  and `client_secret` (HTTP Basic or the body) and returns an RS256 bearer token. On mock calls the token
+  selects the key's tenant and acts as the key, so revocation, read-only and the quota still apply. It
+  expires on the tenant's clock, and its errors are RFC 6749's and RFC 6750's. The key set is at
+  `/.well-known/jwks.json`. `--oauth-signing-key-file` shares one signing key across replicas. Also new:
+  `--oauth-token-path`, `--oauth-token-lifetime` and `--oauth-issuer`. Off by default. Not an authorization
+  server: client credentials is the only grant. A key of a suspended tenant gets no token: the token
+  endpoint refuses it with `invalid_client`, once the secret has proved possession.
 - **An imported API's named examples are selectable scenario states (#449, Part 1).**
   `POST /__admin/openapi/import?scenarios=true` turns every named example of an operation's responses into a
   stub bound to one scenario (`&scenario=<name>`, else the document's `info.title`), in the state of the
@@ -50,6 +59,23 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
   lowest code (`4XX` serves 400), each bound state names the key that declares it (`"response": "4XX"`), and
   one under `default`, which declares no status, is reported rather than served as 200. `?scenario=<name>`
   without `?scenarios=true` is refused with a 422 rather than dropped.
+
+### Documentation
+
+- **No WSDL import and no ISO 20022 validation, for now (#462, ADR 0017).** A SOAP service or an ISO 20022 message
+  is mocked as XML, as before, with `matchesXPath` and `equalToXml` on the request and a literal or templated
+  envelope as the response. Nothing imports a WSDL or checks a message against its XSD. ISO 8583, a binary card
+  protocol that is not carried over HTTP, is out of scope outright. The deferred-edge register lists all three
+  under Accepted, and tracks the website limitations page the decision requires until it is published. No behaviour
+  changes.
+
+### Changed
+
+- **`docs-guard.sh` refuses fused XML doc blocks.** A run of `///` lines that opens `<summary>` or
+  `<remarks>` twice before any declaration means a member was inserted between another member's doc and
+  its declaration. The gate scans every `.cs` file and proves its detector against fixtures first. Nine
+  such blocks already in the repository are fixed: each doc is back on the member it describes, and one
+  orphan whose member no longer exists is removed.
 
 ### Fixed
 

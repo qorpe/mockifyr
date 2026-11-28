@@ -185,9 +185,8 @@ public static class EnvironmentSubstitution
     /// letters, digits, underscores or hyphens. This deliberately excludes anything with a dot, a
     /// space, or an argument — i.e. every Handlebars construct (<c>{{request.path}}</c>,
     /// <c>{{random 'X.y'}}</c>, <c>{{#if x}}</c>) is rejected before the lookup even runs.
-    /// </summary>
-    /// <summary>
-    /// Whether the text between the braces is a bare key name — no dots, no spaces, no helper syntax.
+    /// Put plainly: whether the text between the braces is a bare key name — no dots, no spaces, no
+    /// helper syntax.
     /// </summary>
     /// <remarks>Internal rather than private since #352: composition needs the same rule to find references.</remarks>
     internal static bool IsBareIdentifier(ReadOnlySpan<char> name)

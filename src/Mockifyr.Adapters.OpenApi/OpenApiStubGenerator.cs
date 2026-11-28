@@ -31,7 +31,6 @@ public static partial class OpenApiStubGenerator
     [GeneratedRegex("""\$ref["']?\s*:\s*["']?(?<target>[^"'\s,}]+)""")]
     private static partial Regex RefPattern();
 
-    /// <summary>Generates one mapping JSON per operation, or throws a typed <see cref="OpenApiImportException"/>.</summary>
     /// <summary>
     /// The size and external-<c>$ref</c> guards every path that accepts a specification must apply
     /// (G19c). Shared with conformance verification (#287): a document handed to a verify run comes

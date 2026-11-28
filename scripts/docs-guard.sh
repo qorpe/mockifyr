@@ -99,10 +99,61 @@ for script in sorted(os.listdir(os.path.join(root, "scripts"))):
         if script not in corpus + wf + read("CONTRIBUTING.md") + read("CLAUDE.md"):
             fail.append(f"scripts/{script} is referenced nowhere")
 
+# 6. Every XML doc block documents exactly ONE declaration (#450 verifier finding). A member
+#    inserted between an existing member's `///` block and its declaration leaves two blocks
+#    fused into one: the new member carries both summaries and the old one carries none, and
+#    the compiler says nothing when either is private. The rule is fail-closed on the shape,
+#    not on the one way it happened: a contiguous run of `///` lines (attributes, blank lines
+#    and `//` comments may sit inside it) that opens <summary> or <remarks> twice before any
+#    code line is refused, wherever in the repository it is.
+def fused_doc_blocks(text):
+    hits, seen, first = [], {}, 0
+    for no, line in enumerate(text.splitlines(), 1):
+        s = line.strip()
+        if s.startswith("///"):
+            for tag in re.findall(r"<(summary|remarks)\b", s):
+                if tag in seen:
+                    hits.append((no, tag, seen[tag]))
+                seen.setdefault(tag, no)
+        elif s == "" or s.startswith(("[", "//", "#")):
+            continue
+        else:
+            seen = {}
+    return hits
+# The detector proves itself first, so a regex that silently stopped matching cannot pass
+# the repository as clean: each red fixture must be flagged and each green one must not.
+_red = {
+    "two summaries in a row": "/// <summary>A</summary>\n/// <summary>B</summary>\nvoid B() {}",
+    "summary, remarks, summary": "/// <summary>A</summary>\n/// <remarks>r</remarks>\n/// <summary>B</summary>\nvoid B() {}",
+    "a blank line between the blocks": "/// <summary>A</summary>\n\n/// <summary>B</summary>\nvoid B() {}",
+    "an attribute between the blocks": "/// <summary>A</summary>\n[Obsolete]\n/// <summary>B</summary>\nvoid B() {}",
+    "two remarks": "/// <summary>A</summary>\n/// <remarks>x</remarks>\n/// <remarks>y</remarks>\nvoid A() {}",
+    "indented, multi-line": "    /// <summary>\n    /// A\n    /// </summary>\n    /// <summary>\n    /// B\n    /// </summary>\n    private void B() {}",
+}
+_green = {
+    "summary, attribute, declaration": "/// <summary>A</summary>\n[Obsolete]\nvoid A() {}",
+    "type then member": "/// <summary>T</summary>\nclass T {\n    /// <summary>M</summary>\n    void M() {}\n}",
+    "summary and remarks once each": "/// <summary>A</summary>\n/// <remarks>r</remarks>\nvoid A() {}",
+}
+for name, src in _red.items():
+    if not fused_doc_blocks(src):
+        fail.append(f"docs-guard selftest: fused-doc detector missed '{name}'")
+for name, src in _green.items():
+    if fused_doc_blocks(src):
+        fail.append(f"docs-guard selftest: fused-doc detector flagged '{name}', which is legal")
+for base, dirs, names in os.walk(root):
+    dirs[:] = [d for d in dirs if d not in ("bin", "obj", "node_modules", ".git")]
+    for n in names:
+        if n.endswith(".cs"):
+            path = os.path.join(base, n)
+            for no, tag, at in fused_doc_blocks(open(path, encoding="utf-8", errors="replace").read()):
+                fail.append(f"{os.path.relpath(path, root)}:{no}: a second <{tag}> before any declaration "
+                            f"(the block began at line {at}) — two members' docs are fused into one")
+
 if fail:
     print("── docs-guard: the docs stopped telling the truth:")
     for f in fail:
         print(f"  {f}")
     sys.exit(1)
-print(f"── docs-guard: green — links, {len(parsed)} flags, {len(os.listdir(os.path.join(root,'src')))} projects, route surfaces, parity notes and scripts all in sync")
+print(f"── docs-guard: green — links, {len(parsed)} flags, {len(os.listdir(os.path.join(root,'src')))} projects, route surfaces, parity notes, scripts and XML doc blocks all in sync")
 PY

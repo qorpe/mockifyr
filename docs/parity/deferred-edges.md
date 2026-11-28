@@ -34,6 +34,11 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 | Item | Issue | What is reachable today |
 |------|-------|-------------------------|
+| A per-tenant OAuth-only mode: static `mfk_` keys refused for a tenant configured for tokens | [#450](https://github.com/qorpe/mockifyr/issues/450) | With `--sandbox-oauth` a tenant's mocks accept both a token and the static key; the grant is host-wide (ADR 0016) |
+| `private_key_jwt` client authentication on the token endpoint | [#450](https://github.com/qorpe/mockifyr/issues/450) | `client_secret_basic` and `client_secret_post` only |
+| Access tokens on the partner surface `/__sandbox/*` | [#450](https://github.com/qorpe/mockifyr/issues/450) | The surface takes the static key; a token there is refused as an unknown key |
+| The docs website's guide page for the client-credentials grant (CLAUDE.md §3b) | [#450](https://github.com/qorpe/mockifyr/issues/450) | README's flag rows, ADR 0016 and `g19-sandbox.md` document it; `mockifyr.qorpe.com` does not yet |
+| Website limitations page for ADR 0017: no WSDL import and no ISO 20022 validation for now, ISO 8583 out of scope | [#462](https://github.com/qorpe/mockifyr/issues/462) | The owner's decision requires the limitations page on `mockifyr.qorpe.com` to say so plainly; it does not yet. The text it needs is the Decision section of [ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md). The row leaves when the `qorpe/mockifyr.qorpe.com` change that adds it merges |
 | An OpenAPI document's `callbacks` / `webhooks` become `webhook` post-serve actions on import (`?callbacks=true`) | [#449](https://github.com/qorpe/mockifyr/issues/449) (Part 2; Part 1, named examples as scenario states, shipped) | A `webhook` post-serve action written by hand on the imported stub |
 | Serve-time contract validation as a per-tenant default, and a 400 body shaped like the real API's (a template per import) | [#448](https://github.com/qorpe/mockifyr/issues/448) (Part 2; Part 1, `?validate=true` with an RFC 9457 problem body, shipped) | `?validate=true` on each import; the problem document's shape is fixed |
 | OpenAPI 3.1 documents: the pinned reader (Microsoft.OpenApi 1.6) refuses them at import with a 422 naming the version | [#448](https://github.com/qorpe/mockifyr/issues/448) (found there; needs the reader's 2.x line) | A 3.0 rendering of the same document |
@@ -92,6 +97,12 @@ XML `namespaceAwareness` modes and mixed content; `now`-relative date matching, 
 truncation options; `systemValue` being deny-by-default with no allowlist; Faker expressions taking
 arguments and locale selection; JWT limited to HS256/RS256 with no configurable secret, `nbf`, or
 array/object claims; no `soapXPath`.
+
+**XML service descriptions** ([ADR 0017](../decisions/0017-xml-service-descriptions-out-of-scope.md), owner
+decision on [#462](https://github.com/qorpe/mockifyr/issues/462)). There is no WSDL import and no ISO 20022
+validation against its XSD. A SOAP service or an ISO 20022 message is mocked as XML: `matchesXPath` and `equalToXml`
+on the request, and a literal or templated envelope as the response. Both stay out until a deployment brings an
+XML-first partner channel. ISO 8583 is not an HTTP protocol, so it is out of scope outright.
 
 **Deployment.** No HPA guidance in the chart — scaling this host is a decision about the workload in
 front of it, and a shipped default would be wrong more often than right. NetworkPolicy and
