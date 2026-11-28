@@ -387,7 +387,8 @@ the same seam.
     - **Which rule reads a directory is decided by a marker, not by trying both (verifier, PR #483, third round).**
       Every tenant directory this release writes carries `.mockifyr-tenant` (`TenantPathSegment.CreateTenantDirectory`,
       called by the stub, environment and resources providers). A marked directory is read by this release's rule only;
-      an unmarked one by the earlier writer's rule only, then renamed if its name differs and marked. Before the marker,
+      an unmarked one by the earlier writer's rule only, then renamed if its name differs and marked — unless this
+      release's rule reads the same name as a DIFFERENT tenant, which is skipped instead (#485, below). Before the marker,
       this release's rule ran first and won, and the third round showed what that cost: the old `SafeName` wrote `İ`
       (U+0130) as `%130`, which this release's decoder accepts as the tenant U+0013 `0`, so the directory was read in
       place under a tenant nobody can address, with no line. The class is "a directory name two writers could have
@@ -396,8 +397,32 @@ the same seam.
       between the two releases, named or not, because the two rules are never both consulted. A marked directory renamed
       by hand to a name this release would not write is skipped with its own line. On a git-synced root the marker is a
       file in the working tree like the stubs, and a stub directory counts it among the provider's own files.
-    - The raw-name reading accepts one segment only (not empty, `.`, `..`, a separator or a rooted name). Unmarked, an
-      earlier directory `%C4%B0` is the tenant `%C4%B0` and is renamed to `%25C4%25B0`.
+    - The raw-name reading accepts one segment only (not empty, `.`, `..`, a separator or a rooted name). Unmarked, a
+      directory `%C4%B0` is skipped (#485, below): it was once read as the earlier tenant `%C4%B0` and renamed to
+      `%25C4%25B0`, which also re-homed this release's `İ` whenever its marker was lost. It is never read as `İ` unmarked.
+    - **A directory of THIS release that lost its marker (#485).** The marker is a dotfile, and an operator, a copy or an
+      image build that drops dotfiles (a `.dockerignore` with `**/.*`, a sync excluding hidden files) removes it. **A copy
+      that drops dotfiles changes how a tenant directory is read.** Unmarked, the name is read by the earlier rule, and
+      for every tenant that is not a plain name that reading is a different tenant or none: `a/b`, written `a%2Fb`, reads
+      as the earlier tenant `a%2Fb`. Nothing on disk says which writer named an unmarked directory, so the rule is
+      **skip, never rename** whenever the two readings disagree:
+      - both rules read the name, as different tenants (the raw-name providers: `a%2Fb`, `x%3Ay`, `%C4%B0stanbul`,
+        `%C4%B0`): skipped in place, unmarked, untouched. The line names both readings and both recoveries — put an empty
+        `.mockifyr-tenant` back if it is this release's tenant, or rename it to the earlier tenant's name as this release
+        writes it (`a%252Fb`) and mark it if it is the earlier one's;
+      - only this release's rule reads it (the resources provider, whose earlier writer escaped everything outside
+        `[A-Za-z0-9._-]`: `Acme Corp`, `a!b`, `%C4%B0stanbul`): skipped as before, and the line now says it is this
+        release's name for that tenant and that a marker put back reads it;
+      - both rules read it as the SAME tenant (every plain name, `Acme Corp` in `mappings/`): read in place and marked
+        again, as before.
+
+      Skipping is chosen over keeping the earlier reading because a rename cannot be undone by the next load and is wrong
+      for whichever writer did not name the directory; a skipped directory is served to nobody until the operator acts
+      on its line, and loses nothing. The cost is an earlier release's tenant whose raw name is also a name this release
+      writes (it contains a `%XX` escape this release would produce): it is no longer migrated by itself. A tenant shown
+      in a line is quoted and printed by an allow-list — letters, marks, numbers, punctuation, symbols and a plain space;
+      anything else, and the quote and backslash, as `\uXXXX` — so a name decoded from `%0A` or carrying a bidirectional
+      override cannot forge or reorder a log line.
     - The `SafeName` reading accepts a name only when it reads as printable ASCII, no escape other than `%20` is followed
       by a digit or `A`–`F`, and writing that value with the old escape gives the same name back. The old escape used at
       least two hex digits, so a code unit above `0xFF` took three or four, and its output is ambiguous wherever an escape
@@ -442,6 +467,15 @@ the same seam.
   same marker text. Round 2's equivalent survivor (the old writer's `"."` case) is killed now, since an unmarked `%2E`
   is read by the earlier rule. With the decision order and the escape rule put back as they were, 8 facts are red
   (`ı`… rows, the ambiguous-name rows, the marked-ghost reload, the raw `%C4%B0` fact and the two line facts).
+  **#485** (run 2026-11-28, same scope, `--mutate **/TenantPathSegment.cs`): first 97.64 %, which found the edges of the
+  categories a line prints as they are (enclosing mark, other number, connector punctuation) unexercised, and that
+  nothing asserted a renamed directory is read again on the next load — which matters more now, because unmarked it
+  would be skipped as ambiguous; then **99.53 %** (206 killed, 5 timeouts, 1 survivor, the same equivalent early return
+  as above). `RootDirTenantRestartTests` drives a real host for the class: a directory this release wrote for `a/b` and
+  `a*b` (mappings), `a/b` and `x:y` (environments), `Acme Corp` and `a!b` (resources) loses its marker, the next host
+  serves it to nobody and moves nothing, and the host after the marker is put back serves it to its tenant. With the
+  ambiguity check removed, the four raw-provider rows, every row of the two-readings theory in `TenantPathSegmentTests`
+  and the `%C4%B0` fact are red.
 - **Where it applies.** `DirectoryMappingsLoader` implements `IMultiTenantMappingsLoader`, so startup
   (`ApplyStartupMappings`) and git sync's reload after a pull both read the tenants. The second is also a fix: a
   pull reconciled only the default tenant from disk, so a non-default tenant held in memory was pruned on every

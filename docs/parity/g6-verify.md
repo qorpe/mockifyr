@@ -89,6 +89,10 @@ Verified WireMock verification behaviors against the oracle (`wiremock/wiremock:
   be shown it. The explanatory 404 is computed from the **journaled** request, so journal masking (#227)
   holds there too: a masked header a stub matches on is explained as `***`, never echoed. With the journal
   disabled there is no entry to link to, so the link and the request id are left out and the live request
-  is explained. Validated by `UnmatchedExplanationTests` (9 wire cases) and the Core unit cases.
+  is explained — after the same masking the journal applies, never raw (#482: before, a host with masking on
+  could not reach this path, because masking turned the disabled journal back on; once it could, the
+  fallback echoed the masked header). Whichever request is explained, it is masked again on the way in, so a
+  journal that does not mask cannot widen what the 404 shows. Validated by `UnmatchedExplanationTests`
+  (10 wire cases) and the Core unit cases.
 - **Still deferred:** the reference engine's verbose 404 diagnostic body. Serving one would change a
   response the differential suite pins, so it stays a documented difference rather than a divergence.

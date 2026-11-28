@@ -187,6 +187,81 @@ public sealed class RootDirTenantRestartTests
         }
     }
 
+    /// <summary>
+    /// #485: a directory THIS release wrote loses its marker (an operator, or a copy or image build that drops dotfiles).
+    /// Its name then reads by the earlier release's rule too, and for every tenant that is not a plain name that reading is
+    /// another tenant, or none. The directory is skipped and left exactly where it is, never re-homed under the other
+    /// reading, and putting the marker back is enough to read it as its tenant again — the recovery its line names.
+    /// </summary>
+    [Theory]
+    [InlineData("mappings", "a/b")]          // a%2Fb: the earlier raw rule reads tenant "a%2Fb"
+    [InlineData("mappings", "a*b")]          // a%2Ab: likewise "a%2Ab"
+    [InlineData("environments", "a/b")]
+    [InlineData("environments", "x:y")]      // x%3Ay
+    [InlineData("resources", "Acme Corp")]   // the earlier resource rule refuses a raw space: no reading but this release's
+    [InlineData("resources", "a!b")]         // and a raw '!'
+    // Non-ASCII tenants cannot travel in a header; TenantPathSegmentTests holds them, Istanbul with a dotted capital I among them.
+    public async Task A_directory_of_this_release_that_lost_its_marker_is_skipped_in_place_and_read_again_once_marked(
+        string area, string tenant)
+    {
+        var root = Directory.CreateTempSubdirectory("mockifyr-root-unmarked-");
+        try
+        {
+            await using (var first = await StartHostAsync(root.FullName))
+            {
+                using var client = Client(first);
+                using var created = await Write(client, area, tenant);
+                Assert.True(created.IsSuccessStatusCode, $"{created.StatusCode}: {await created.Content.ReadAsStringAsync()}");
+            }
+
+            var parent = Path.Combine(root.FullName, area);
+            var name = TenantPathSegment.Encode(new Mockifyr.Core.TenantId(tenant));
+            Assert.Equal(name, Path.GetFileName(Assert.Single(Directory.GetDirectories(parent))));
+            File.Delete(Path.Combine(parent, name, TenantPathSegment.MarkerFileName));
+
+            await using (var second = await StartHostAsync(root.FullName))
+            {
+                using var client = Client(second);
+                // Not served to its tenant (it is skipped), and not to the tenant the earlier rule reads either…
+                Assert.False(await IsServed(client, area, tenant));
+                if (TenantPathSegment.TryDecodeEarlierRawName(name, out var earlier) && earlier.Value != tenant)
+                {
+                    Assert.False(await IsServed(client, area, earlier.Value));
+                }
+            }
+
+            // …and nothing on disk moved: the same single directory, still unmarked, holding what it held.
+            Assert.Equal(name, Path.GetFileName(Assert.Single(Directory.GetDirectories(parent))));
+            Assert.False(File.Exists(Path.Combine(parent, name, TenantPathSegment.MarkerFileName)));
+
+            // The recovery the line names: put the marker back.
+            await File.WriteAllTextAsync(Path.Combine(parent, name, TenantPathSegment.MarkerFileName), "");
+            await using var third = await StartHostAsync(root.FullName);
+            using var recovered = Client(third);
+            Assert.True(await IsServed(recovered, area, tenant));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    private static Task<HttpResponseMessage> Write(HttpClient client, string area, string tenant) => area switch
+    {
+        "resources" => SendAsync(client, HttpMethod.Put, "/__admin/resources/orders/42", tenant, """{"n":42}"""),
+        "environments" => SendAsync(client, HttpMethod.Put, "/__admin/environments/apiHost", tenant,
+            """{"activeValue":"main","values":[{"name":"main","value":"https://kept.example"}]}"""),
+        _ => SendAsync(client, HttpMethod.Post, "/__admin/mappings", tenant, StubJson),
+    };
+
+    private static async Task<bool> IsServed(HttpClient client, string area, string tenant)
+    {
+        using var read = await SendAsync(client, HttpMethod.Get, ReadPath(area), tenant);
+        var body = await read.Content.ReadAsStringAsync();
+        return read.StatusCode == HttpStatusCode.OK
+            && body.Contains(area switch { "resources" => "42", "environments" => "kept.example", _ => "durable" }, StringComparison.Ordinal);
+    }
+
     private static string ReadPath(string area) => area switch
     {
         "resources" => "/__admin/resources/orders/42",

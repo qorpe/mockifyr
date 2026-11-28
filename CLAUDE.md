@@ -322,8 +322,9 @@ and integer division rounded the wrong way for negatives.
 The **deferred-edge register**, `docs/parity/deferred-edges.md`, is the single answer to "is anything
 open?", with a verdict per item (out of scope / tracked / accepted). The per-group parity files still
 hold the narrative, but they record deferrals as of the group that wrote them, so they are not a count.
-Its Tracked section currently holds **two** rows: OpenAPI `callbacks`/`webhooks` on import (#449 Part 2) and the
-website limitations page ADR 0017 owes (#462). The entry before them — startup reload of a non-default tenant's
+Its Tracked section currently holds **seven** rows: OpenAPI `callbacks`/`webhooks` on import (#449 Part 2), the
+website limitations page ADR 0017 owes (#462), four left by the client-credentials grant's first part (#450), and
+journal masking's reach into a request's parsed cookies (#487, found while fixing #482). The entry before them — startup reload of a non-default tenant's
 stubs on `--root-dir` (#467, a subdirectory the file provider wrote is read as its tenant) — is fixed; before it
 resource embedding (#378) shipped, and change-feed reload for environments and sandbox resources (#279) did in 1.5.0, where testing
 turned up a second defect the analysis had not predicted: a host reloaded on its own announcement and

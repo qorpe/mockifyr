@@ -34,6 +34,7 @@ Each of these was driven through the oracle. It rejects them, so building them w
 
 | Item | Issue | What is reachable today |
 |------|-------|-------------------------|
+| Journal masking does not reach a request's parsed cookies: `--mask-headers Cookie` masks the header while the cookie values stay stored, and a near miss on a cookie matcher reports the raw value as `actual` | [#487](https://github.com/qorpe/mockifyr/issues/487) | Mask nothing a stub matches on by cookie; `GET /__admin/requests/{id}` does not project cookies, but the explanatory 404 and the near-miss routes read them |
 | A per-tenant OAuth-only mode: static `mfk_` keys refused for a tenant configured for tokens | [#450](https://github.com/qorpe/mockifyr/issues/450) | With `--sandbox-oauth` a tenant's mocks accept both a token and the static key; the grant is host-wide (ADR 0016) |
 | `private_key_jwt` client authentication on the token endpoint | [#450](https://github.com/qorpe/mockifyr/issues/450) | `client_secret_basic` and `client_secret_post` only |
 | Access tokens on the partner surface `/__sandbox/*` | [#450](https://github.com/qorpe/mockifyr/issues/450) | The surface takes the static key; a token there is refused as an unknown key |
@@ -103,6 +104,12 @@ decision on [#462](https://github.com/qorpe/mockifyr/issues/462)). There is no W
 validation against its XSD. A SOAP service or an ISO 20022 message is mocked as XML: `matchesXPath` and `equalToXml`
 on the request, and a literal or templated envelope as the response. Both stay out until a deployment brings an
 XML-first partner channel. ISO 8583 is not an HTTP protocol, so it is out of scope outright.
+
+**Persistence upgrade (#485).** An unmarked tenant directory whose name an earlier release's rule and this release's
+read as two different tenants is skipped, never renamed, because nothing on disk says which release named it. So an
+earlier release's tenant whose raw name holds an escape this release would write (`%C4%B0`) is no longer migrated by
+itself, and a directory of this release that lost its `.mockifyr-tenant` is served to nobody until the marker is put
+back. The line names both readings and both recoveries (`g16-persistence.md`).
 
 **Deployment.** No HPA guidance in the chart — scaling this host is a decision about the workload in
 front of it, and a shipped default would be wrong more often than right. NetworkPolicy and

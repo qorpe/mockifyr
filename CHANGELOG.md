@@ -82,6 +82,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 - **The documentation no longer claims OpenAPI 3.1 import.** The pinned reader refuses a 3.1 document with
   a 422 naming its version, and always has. A test now pins that refusal (found by #448).
 
+- **A tenant directory that lost its `.mockifyr-tenant` marker is skipped where it is, not re-homed under another
+  tenant (#485).** The marker is what tells a `--root-dir` load that this release named a tenant's directory. Without it,
+  the name was read by the earlier release's rule and renamed for that reading, so `a/b` (written `mappings/a%2Fb/`) was
+  renamed to `a%252Fb` and served to tenant `a%2Fb`, irreversibly, in `mappings/`, `environments/` and `resources/`. A
+  name the two rules read as different tenants is now skipped and left untouched, and its line names both readings and
+  both recoveries. A name only this release's rule reads says so in its line. Every plain name reads the same either way
+  and is unaffected. **Upgrade note: a copy that drops dotfiles (a `.dockerignore` with `**/.*`, a sync excluding hidden
+  files) changes how a tenant directory is read.** Keep `.mockifyr-tenant` with each tenant directory; a directory that
+  lost it is served to nobody until the marker is put back. An earlier release's directory whose raw name holds an
+  escape this release would write (such as `%C4%B0`) is skipped too, rather than migrated by itself. Tenant names in
+  these lines are printed escaped, so a name cannot forge a log line.
 - **A `--root-dir` host now serves a non-default tenant's stubs after a restart (#467).** The file provider wrote
   them to `mappings/<tenant>/`, and startup read only the flat `mappings/*.json`, so a tenant's stub created over the
   admin API was persisted and never served again. A subdirectory of `mappings/` is now read as a tenant when every
@@ -141,6 +152,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Security
 
+- **Journal masking no longer switches a disabled journal back on, nor lifts its limit (#482).** With
+  `--mask-headers` or `--mask-body-fields` set, the masking decorator built a fresh default journal instead of
+  wrapping the one the other flags chose, so `--journal-disabled true` (and `--no-request-journal`) recorded
+  every request anyway and `--journal-limit` (and `--max-request-journal-entries`) was replaced by the default
+  1000. Masking now wraps the journal those flags chose, and disabled still wins over a limit. **Also fixed,
+  reachable once the first was:** with no journal entry to explain (the journal disabled, or the entry evicted),
+  the explanatory 404 (`--explain-unmatched`) explained the live request unmasked, so a masked header a stub
+  matches on came back raw in `actual`. It is now masked like the journal would be. **Not fixed here:** parsed
+  cookie values are not masked by `--mask-headers Cookie` (#487).
 - **`image-size`** in the demo deck generator (`demo/`) lifted from 1.2.1 to 2.0.4, past GHSA-5p2g-fcmc-qvqq and
   GHSA-w3rx-r6r6-pgpr (both high: parser denial of service). `pptxgenjs` 4.0.1, still the newest release, pins
   `^1.2.1`, so the demo's `package.json` carries an exact `pnpm.overrides` entry. pptxgenjs declares the package but
