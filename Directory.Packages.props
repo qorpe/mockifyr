@@ -48,7 +48,7 @@
          this line once MimeKit pulls 10.0.13 or later itself. -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- Real SMTP client for the G18b self-test (no oracle exists: WireMock has no SMTP). Tests only. -->
-    <PackageVersion Include="MailKit" Version="4.18.2" />
+    <PackageVersion Include="MailKit" Version="5.0.0" />
     <!-- Official Twilio SDK for the G18d self-test: the SDK must accept our provider-profile responses.
          Tests only — the shipped profile emulates the wire format without any Twilio dependency. -->
     <PackageVersion Include="Twilio" Version="8.2.0" />
