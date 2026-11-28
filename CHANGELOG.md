@@ -57,6 +57,17 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Fixed
 
+- **A tenant directory that lost its `.mockifyr-tenant` marker is skipped where it is, not re-homed under another
+  tenant (#485).** The marker is what tells a `--root-dir` load that this release named a tenant's directory. Without it,
+  the name was read by the earlier release's rule and renamed for that reading, so `a/b` (written `mappings/a%2Fb/`) was
+  renamed to `a%252Fb` and served to tenant `a%2Fb`, irreversibly, in `mappings/`, `environments/` and `resources/`. A
+  name the two rules read as different tenants is now skipped and left untouched, and its line names both readings and
+  both recoveries. A name only this release's rule reads says so in its line. Every plain name reads the same either way
+  and is unaffected. **Upgrade note: a copy that drops dotfiles (a `.dockerignore` with `**/.*`, a sync excluding hidden
+  files) changes how a tenant directory is read.** Keep `.mockifyr-tenant` with each tenant directory; a directory that
+  lost it is served to nobody until the marker is put back. An earlier release's directory whose raw name holds an
+  escape this release would write (such as `%C4%B0`) is skipped too, rather than migrated by itself. Tenant names in
+  these lines are printed escaped, so a name cannot forge a log line.
 - **A `--root-dir` host now serves a non-default tenant's stubs after a restart (#467).** The file provider wrote
   them to `mappings/<tenant>/`, and startup read only the flat `mappings/*.json`, so a tenant's stub created over the
   admin API was persisted and never served again. A subdirectory of `mappings/` is now read as a tenant when every

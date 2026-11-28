@@ -336,6 +336,13 @@ public sealed class TenantPathSegmentTests : IDisposable
             (notice, tenant.Value, path));
         Assert.False(Directory.Exists(Path.Combine(area, "a*b")));
 
+        // The renamed directory is marked, and must be: unmarked, a%2Ab would read as tenant "a%2Ab" by the earlier rule and
+        // as "a*b" by this one, and be skipped as ambiguous on the next load (#485).
+        Assert.True(File.Exists(Path.Combine(area, "a%2Ab", TenantPathSegment.MarkerFileName)));
+        Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a%2Ab"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
+            out notice, out tenant, out path));
+        Assert.Equal(("", "a*b", Path.Combine(area, "a%2Ab")), (notice, tenant.Value, path));
+
         // A raw name of an earlier release beside this release's directory for the same tenant: not merged.
         Directory.CreateDirectory(Path.Combine(area, "a*b"));
         Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "a*b"), "environments", TenantPathSegment.TryDecodeEarlierRawName,
@@ -409,9 +416,12 @@ public sealed class TenantPathSegmentTests : IDisposable
         Directory.CreateDirectory(Path.Combine(area, "%130stanbul"));
         Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(area, "%130stanbul"), "resources",
             TenantPathSegment.TryDecodeEarlierResourceName, out var notice, out var tenant, out _));
-        Assert.Equal("resources/%130stanbul: it has no .mockifyr-tenant, so an earlier release wrote it, and its name does not name exactly "
-            + "one tenant by that release's rule — skipped, not guessed; to keep it, rename it to its tenant's name as this release "
-            + "writes it (docs/parity/g16-persistence.md) and put an empty .mockifyr-tenant in it.", notice);
+        // The earlier resource rule refuses it; this release's reads it as U+0013 "0stanbul", and the line says so (#485), with
+        // the control character escaped rather than printed.
+        Assert.Equal("resources/%130stanbul: it has no .mockifyr-tenant, and its name is not one the release before #467 wrote, but it "
+            + "is this release's name for tenant '\\u00130stanbul', whose directory loses its marker in a copy that drops dotfiles — "
+            + "skipped, not guessed; if it is that tenant's, put an empty .mockifyr-tenant back in it (docs/parity/g16-persistence.md).",
+            notice);
         Assert.Equal(default, tenant);
         Assert.True(Directory.Exists(Path.Combine(area, "%130stanbul")));
 
@@ -431,11 +441,13 @@ public sealed class TenantPathSegmentTests : IDisposable
     }
 
     /// <summary>
-    /// The same class on the raw-name providers: an earlier tenant literally named <c>%C4%B0</c> is that tenant, renamed to
-    /// this release's <c>%25C4%25B0</c> — not this release's <c>İ</c>, which it would have been read as before the marker.
+    /// The same class on the raw-name providers. An unmarked <c>%C4%B0</c> is either an earlier tenant literally named so
+    /// or this release's <c>İ</c> whose directory lost its marker, and nothing on disk says which (#485). It was once read
+    /// as the earlier tenant and renamed to <c>%25C4%25B0</c>, which re-homed a marker-less <c>İ</c> for good. It is now
+    /// skipped in place, never read as either one silently; a marker put back makes it <c>İ</c>.
     /// </summary>
     [Fact]
-    public void An_earlier_raw_tenant_spelled_like_an_escape_is_read_as_itself_in_environments_and_mappings()
+    public void An_unmarked_name_spelled_like_an_escape_is_skipped_in_place_in_environments_and_mappings_never_read_as_either_tenant()
     {
         var environments = Path.Combine(_root, "environments");
         var persistence = new FileSystemEnvironmentPersistence(environments);
@@ -443,11 +455,12 @@ public sealed class TenantPathSegmentTests : IDisposable
         Directory.Move(Path.Combine(environments, "seed"), Path.Combine(environments, "%C4%B0"));
         File.Delete(Path.Combine(environments, "%C4%B0", TenantPathSegment.MarkerFileName));
 
-        var loaded = new FileSystemEnvironmentsLoader(environments).LoadAll();
+        Assert.Empty(new FileSystemEnvironmentsLoader(environments).LoadAll());
+        Assert.Equal(["%C4%B0"], Directory.GetDirectories(environments).Select(Path.GetFileName));
+        Assert.False(File.Exists(Path.Combine(environments, "%C4%B0", TenantPathSegment.MarkerFileName)));
 
-        Assert.Equal("%C4%B0", Assert.Single(loaded).Key.Value);
-        Assert.True(File.Exists(Path.Combine(environments, "%25C4%25B0", TenantPathSegment.MarkerFileName)));
-        Assert.Equal("%C4%B0", Assert.Single(new FileSystemEnvironmentsLoader(environments).LoadAll()).Key.Value);
+        File.WriteAllText(Path.Combine(environments, "%C4%B0", TenantPathSegment.MarkerFileName), "");
+        Assert.Equal("\u0130", Assert.Single(new FileSystemEnvironmentsLoader(environments).LoadAll()).Key.Value);
 
         var mappings = Path.Combine(_root, "mappings");
         var id = Guid.NewGuid();
@@ -456,10 +469,105 @@ public sealed class TenantPathSegmentTests : IDisposable
         File.WriteAllText(Path.Combine(mappings, "%C4%B0", $"{id:D}.json"), stubJson.Insert(1, $"\"id\":\"{id:D}\","));
 
         var loader = new DirectoryMappingsLoader(mappings);
-        Assert.Equal(("%C4%B0", id), Assert.Single(loader.LoadAllTenants()) is var stub ? (stub.TenantId.Value, stub.Id) : default);
-        Assert.Empty(loader.SkippedDirectories);
-        Assert.True(Directory.Exists(Path.Combine(mappings, "%25C4%25B0")));
+        Assert.Empty(loader.LoadAllTenants());
+        Assert.Single(loader.SkippedDirectories);
+        Assert.Equal(["%C4%B0"], Directory.GetDirectories(mappings).Select(Path.GetFileName));
     }
+
+    /// <summary>
+    /// #485, the class: an unmarked directory whose name this release's rule and the earlier raw rule read as DIFFERENT
+    /// tenants. Every row is a name this release writes for a tenant that is not a plain name; each is skipped where it is,
+    /// unmarked, and its line names both readings, escaped, and both recoveries.
+    /// </summary>
+    [Theory]
+    [InlineData("environments", "a/b")]
+    [InlineData("environments", "\u0130stanbul")]
+    [InlineData("environments", "\u0130")]
+    [InlineData("environments", "x:y")]
+    [InlineData("environments", "a%b")]
+    [InlineData("environments", "trailing.")]
+    [InlineData("environments", "line\nbreak")]       // decoded from %0A: escaped in the line, never printed raw
+    [InlineData("environments", "rtl\u202Eoverride")] // a bidirectional override: escaped too
+    [InlineData("environments", "it's/x")]             // the quote itself, in both readings: escaped so the line's quoting holds
+    [InlineData("mappings", "a/b")]
+    [InlineData("mappings", "\U0001F600")]
+    // The edges of the kept categories: '_' (connector punctuation), '½' (other number) and U+20DD (enclosing mark) print as they are.
+    [InlineData("mappings", "x_\u00BD\u20DD/y")]
+    public void An_unmarked_name_two_rules_read_as_different_tenants_is_skipped_in_place_naming_both(string area, string tenantValue)
+    {
+        var parent = Path.Combine(_root, area);
+        var name = TenantPathSegment.Encode(new TenantId(tenantValue));
+        Directory.CreateDirectory(Path.Combine(parent, name));
+        Assert.True(TenantPathSegment.TryDecodeEarlierRawName(name, out var earlier));
+        Assert.NotEqual(tenantValue, earlier.Value); // the precondition: the two readings disagree
+
+        Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(parent, name), area, TenantPathSegment.TryDecodeEarlierRawName,
+            out var notice, out var tenant, out var path));
+
+        Assert.Equal(default, tenant);
+        Assert.Equal(Path.Combine(parent, name), path);
+        Assert.Equal([name], Directory.GetDirectories(parent).Select(Path.GetFileName));
+        Assert.False(File.Exists(Path.Combine(parent, name, TenantPathSegment.MarkerFileName)));
+        Assert.Equal(
+            $"{area}/{name}: it has no .mockifyr-tenant, and its name reads as two different tenants — {Shown(name)} by the rule of the "
+            + $"release before #467, and {Shown(tenantValue)} by this release's, whose directory loses its marker in a copy that drops "
+            + $"dotfiles — skipped, not guessed and not renamed; if it is {Shown(tenantValue)}'s, put an empty .mockifyr-tenant back "
+            + $"in it; if it is {Shown(name)}'s, rename it to {area}/{TenantPathSegment.Encode(earlier)} and put an empty .mockifyr-tenant in "
+            + "it (docs/parity/g16-persistence.md).",
+            notice);
+        Assert.DoesNotContain('\n', notice);
+        Assert.DoesNotContain('\u202E', notice);
+    }
+
+    /// <summary>
+    /// #485 on the resources provider: the earlier resource writer escaped everything but <c>[A-Za-z0-9._-]</c>, so a name
+    /// this release writes with a raw space or punctuation, or with a UTF-8 escape, has no earlier reading at all. Skipped in
+    /// place as before, but the line now says it is this release's name for its tenant and that a marker put back reads it.
+    /// </summary>
+    [Theory]
+    [InlineData("Acme Corp")]
+    [InlineData("a!b")]
+    [InlineData("\u0130stanbul")]
+    public void An_unmarked_resource_name_only_this_release_writes_is_skipped_and_its_line_names_that_tenant(string tenantValue)
+    {
+        var parent = Path.Combine(_root, "resources");
+        var name = TenantPathSegment.Encode(new TenantId(tenantValue));
+        Directory.CreateDirectory(Path.Combine(parent, name));
+        Assert.False(TenantPathSegment.TryDecodeEarlierResourceName(name, out _)); // the precondition: no earlier reading
+
+        Assert.False(TenantPathSegment.TryResolveDirectory(Path.Combine(parent, name), "resources",
+            TenantPathSegment.TryDecodeEarlierResourceName, out var notice, out var tenant, out _));
+
+        Assert.Equal(default, tenant);
+        Assert.Equal($"resources/{name}: it has no .mockifyr-tenant, and its name is not one the release before #467 wrote, but it is "
+            + $"this release's name for tenant '{tenantValue}', whose directory loses its marker in a copy that drops dotfiles — "
+            + "skipped, not guessed; if it is that tenant's, put an empty .mockifyr-tenant back in it (docs/parity/g16-persistence.md).",
+            notice);
+        Assert.Equal([name], Directory.GetDirectories(parent).Select(Path.GetFileName));
+    }
+
+    /// <summary>A plain name reads the same by both rules: not ambiguous, read in place and marked again, as before #485.</summary>
+    [Theory]
+    [InlineData("plain")]
+    [InlineData("Acme Corp")]
+    [InlineData("a.b-c_d")]
+    public void An_unmarked_name_both_rules_read_as_the_same_tenant_is_read_and_marked_again(string tenantValue)
+    {
+        var parent = Path.Combine(_root, "environments");
+        Directory.CreateDirectory(Path.Combine(parent, tenantValue));
+        Assert.True(TenantPathSegment.TryResolveDirectory(Path.Combine(parent, tenantValue), "environments",
+            TenantPathSegment.TryDecodeEarlierRawName, out var notice, out var tenant, out _));
+        Assert.Equal(("", tenantValue), (notice, tenant.Value));
+        Assert.True(File.Exists(Path.Combine(parent, tenantValue, TenantPathSegment.MarkerFileName)));
+    }
+
+    // The expected display of a tenant in a notice, written out independently of the code: the rows' only characters that
+    // are not kept are a newline, a bidirectional override, the quote and the backslash.
+    private static string Shown(string value) => "'" + value
+        .Replace("\\", "\\u005C", StringComparison.Ordinal)
+        .Replace("'", "\\u0027", StringComparison.Ordinal)
+        .Replace("\n", "\\u000A", StringComparison.Ordinal)
+        .Replace("\u202E", "\\u202E", StringComparison.Ordinal) + "'";
 
     /// <summary>Many first saves for one new tenant, at once: none fails over the marker, and the directory is marked.</summary>
     [Fact]
