@@ -191,6 +191,36 @@ public sealed class UnmatchedExplanationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task With_no_journal_entry_the_404_explains_the_masked_request_never_the_raw_one()
+    {
+        // #482: with the journal disabled there is no stored (masked) entry to explain, so the
+        // explanation falls back to the live request — which must be masked like the journal would be.
+        var (host, client) = await StartAsync(
+            "--journal-disabled", "true", "--mask-headers", "X-Card-Number", "--explain-unmatched", "default");
+        try
+        {
+            await CreateFor(client, "default",
+                """{"request":{"method":"GET","urlPath":"/api/cards","headers":{"X-Card-Number":{"equalTo":"5500000000000004"}}},"response":{"status":200}}""");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/cards");
+            request.Headers.Add("x-card-number", "4111111111111111");
+            using var response = await client.SendAsync(request);
+
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            using var document = JsonDocument.Parse(body);
+            Assert.False(document.RootElement.TryGetProperty("requestId", out _));
+            Assert.DoesNotContain("4111111111111111", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("5500000000000004", body, StringComparison.Ordinal);
+            Assert.Contains("\"actual\":\"***\"", body, StringComparison.Ordinal);
+        }
+        finally
+        {
+            client.Dispose();
+            await host.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task A_request_near_nothing_says_so()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/nothing/here");

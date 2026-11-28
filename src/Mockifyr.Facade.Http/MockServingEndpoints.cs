@@ -48,7 +48,13 @@ public static class MockServingEndpoints
         HttpContext context, StubEngine engine, TenantId tenant, CanonicalRequest request, Guid serveEventId)
     {
         var journaled = engine.GetServeEvents(tenant, new ServeEventQuery { Id = serveEventId }).FirstOrDefault();
-        var nearMisses = ConsumerNearMiss.From(engine.FindNearMisses(tenant, journaled?.Request ?? request, detailed: true));
+        // Masked whichever request is explained (#482). With no journal entry (the journal disabled, or the
+        // entry evicted before this lookup) the subject is the LIVE request, which no journal has masked;
+        // a journaled one is masked again, which is a no-op for the built-in journal and a guard for one
+        // that does not mask. The explanation never shows more than the journal would keep.
+        var masking = context.RequestServices.GetService<JournalMaskingOptions>() ?? JournalMaskingOptions.None;
+        var subject = JournalMasker.Mask(journaled?.Request ?? request, masking);
+        var nearMisses = ConsumerNearMiss.From(engine.FindNearMisses(tenant, subject, detailed: true));
         context.Response.ContentType = "application/problem+json";
         await System.Text.Json.JsonSerializer.SerializeAsync(context.Response.Body, new UnmatchedProblem(
             Title: "No stub matched this request",
