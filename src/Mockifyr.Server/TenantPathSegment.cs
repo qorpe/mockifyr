@@ -274,15 +274,36 @@ public static class TenantPathSegment
         {
             notice = marked
                 ? $"{area}/{name}: it carries {MarkerFileName}, but its name is not one this provider writes for a tenant — skipped, not read as a tenant."
-                : $"{area}/{name}: it has no {MarkerFileName}, so an earlier release wrote it, and its name does not name exactly one tenant by "
-                    + $"that release's rule — skipped, not guessed; to keep it, rename it to its tenant's name as this release writes it "
-                    + $"(docs/parity/g16-persistence.md) and put an empty {MarkerFileName} in it.";
+                : TryDecode(name, out var only)
+                    // No earlier reading, but this release's: most likely this release's directory that lost its marker (#485).
+                    ? $"{area}/{name}: it has no {MarkerFileName}, and its name is not one the release before #467 wrote, but it is this "
+                        + $"release's name for tenant {Display(only)}, whose directory loses its marker in a copy that drops dotfiles — skipped, "
+                        + $"not guessed; if it is that tenant's, put an empty {MarkerFileName} back in it (docs/parity/g16-persistence.md)."
+                    : $"{area}/{name}: it has no {MarkerFileName}, so an earlier release wrote it, and its name does not name exactly one tenant by "
+                        + $"that release's rule — skipped, not guessed; to keep it, rename it to its tenant's name as this release writes it "
+                        + $"(docs/parity/g16-persistence.md) and put an empty {MarkerFileName} in it.";
             return false;
         }
 
         if (marked)
         {
             return true;
+        }
+
+        // Unmarked, the name is read by the earlier rule. When this release's rule reads it as ANOTHER tenant, nothing on disk
+        // says which writer named it: an earlier release's tenant, or this release's directory that lost its marker (an
+        // operator, or a copy or image build that drops dotfiles). Renaming it for either reading is irreversible and wrong
+        // half the time, so it is skipped where it is, and the line names both readings and both recoveries (#485). A name
+        // both rules read as the SAME tenant (every plain name) is not ambiguous and goes on as before.
+        if (TryDecode(name, out var current) && !string.Equals(current.Value, tenant.Value, StringComparison.Ordinal))
+        {
+            notice = $"{area}/{name}: it has no {MarkerFileName}, and its name reads as two different tenants — {Display(tenant)} by the "
+                + $"rule of the release before #467, and {Display(current)} by this release's, whose directory loses its marker in a copy "
+                + $"that drops dotfiles — skipped, not guessed and not renamed; if it is {Display(current)}'s, put an empty "
+                + $"{MarkerFileName} back in it; if it is {Display(tenant)}'s, rename it to {area}/{Encode(tenant)} and put an empty "
+                + $"{MarkerFileName} in it (docs/parity/g16-persistence.md).";
+            tenant = default;
+            return false;
         }
 
         var segment = Encode(tenant);
@@ -297,7 +318,7 @@ public static class TenantPathSegment
         var target = Path.Combine(Path.GetDirectoryName(directory)!, segment);
         if (Directory.Exists(target))
         {
-            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', which also has {area}/{segment} — "
+            notice = $"{area}/{name}: written by an earlier release for tenant {Display(tenant)}, which also has {area}/{segment} — "
                 + "skipped, not merged; move what it holds into the second directory to keep it.";
             tenant = default;
             return false;
@@ -309,14 +330,14 @@ public static class TenantPathSegment
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}', and renaming it to {area}/{segment} failed "
+            notice = $"{area}/{name}: written by an earlier release for tenant {Display(tenant)}, and renaming it to {area}/{segment} failed "
                 + $"({exception.GetType().Name}) — skipped; rename it by hand to keep it.";
             tenant = default;
             return false;
         }
 
         TryMark(target);
-        notice = $"{area}/{name}: written by an earlier release for tenant '{tenant.Value}' — renamed to {area}/{segment}.";
+        notice = $"{area}/{name}: written by an earlier release for tenant {Display(tenant)} — renamed to {area}/{segment}.";
         path = target;
         return true;
     }
@@ -342,6 +363,41 @@ public static class TenantPathSegment
 
         var safe = builder.ToString();
         return safe is "." or ".." ? safe.Replace(".", "%2E", StringComparison.Ordinal) : safe;
+    }
+
+    /// <summary>
+    /// A tenant as a notice prints it (#485): quoted, and fail-closed by an allow-list — a letter, mark, number,
+    /// punctuation or symbol, or a plain space, is kept; every other scalar (a control character such as a newline decoded
+    /// from <c>%0A</c>, a line or paragraph separator, a format character such as a bidirectional override, an unassigned
+    /// or private-use one, an ill-formed surrogate) and the quote and backslash themselves are written as <c>\uXXXX</c>.
+    /// A directory name cannot forge a second log line, reorder the one it is in, or close its own quotes.
+    /// </summary>
+    internal static string Display(TenantId tenant)
+    {
+        var value = tenant.Value;
+        var builder = new StringBuilder(value.Length + 2).Append('\'');
+        for (var i = 0; i < value.Length;)
+        {
+            var whole = Rune.DecodeFromUtf16(value.AsSpan(i), out var rune, out var consumed) == System.Buffers.OperationStatus.Done;
+            if (whole && rune.Value is not ('\'' or '\\') && (rune.Value == ' ' || Rune.GetUnicodeCategory(rune) is
+                    >= UnicodeCategory.UppercaseLetter and <= UnicodeCategory.EnclosingMark
+                    or >= UnicodeCategory.DecimalDigitNumber and <= UnicodeCategory.OtherNumber
+                    or >= UnicodeCategory.ConnectorPunctuation and <= UnicodeCategory.OtherSymbol))
+            {
+                builder.Append(value, i, consumed);
+            }
+            else
+            {
+                for (var unit = i; unit < i + consumed; unit++)
+                {
+                    builder.Append("\\u").Append(((int)value[unit]).ToString("X4", CultureInfo.InvariantCulture));
+                }
+            }
+
+            i += consumed;
+        }
+
+        return builder.Append('\'').ToString();
     }
 
     private static void TryMark(string directory)

@@ -100,6 +100,12 @@ validation against its XSD. A SOAP service or an ISO 20022 message is mocked as 
 on the request, and a literal or templated envelope as the response. Both stay out until a deployment brings an
 XML-first partner channel. ISO 8583 is not an HTTP protocol, so it is out of scope outright.
 
+**Persistence upgrade (#485).** An unmarked tenant directory whose name an earlier release's rule and this release's
+read as two different tenants is skipped, never renamed, because nothing on disk says which release named it. So an
+earlier release's tenant whose raw name holds an escape this release would write (`%C4%B0`) is no longer migrated by
+itself, and a directory of this release that lost its `.mockifyr-tenant` is served to nobody until the marker is put
+back. The line names both readings and both recoveries (`g16-persistence.md`).
+
 **Deployment.** No HPA guidance in the chart — scaling this host is a decision about the workload in
 front of it, and a shipped default would be wrong more often than right. NetworkPolicy and
 PodDisruptionBudget *left* this section in [#397](https://github.com/qorpe/mockifyr/issues/397): the
