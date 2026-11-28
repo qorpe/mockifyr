@@ -116,6 +116,15 @@ semantic versioning as described in [VERSIONING.md](VERSIONING.md).
 
 ### Security
 
+- **Journal masking no longer switches a disabled journal back on, nor lifts its limit (#482).** With
+  `--mask-headers` or `--mask-body-fields` set, the masking decorator built a fresh default journal instead of
+  wrapping the one the other flags chose, so `--journal-disabled true` (and `--no-request-journal`) recorded
+  every request anyway and `--journal-limit` (and `--max-request-journal-entries`) was replaced by the default
+  1000. Masking now wraps the journal those flags chose, and disabled still wins over a limit. **Also fixed,
+  reachable once the first was:** with no journal entry to explain (the journal disabled, or the entry evicted),
+  the explanatory 404 (`--explain-unmatched`) explained the live request unmasked, so a masked header a stub
+  matches on came back raw in `actual`. It is now masked like the journal would be. **Not fixed here:** parsed
+  cookie values are not masked by `--mask-headers Cookie` (#487).
 - **`image-size`** in the demo deck generator (`demo/`) lifted from 1.2.1 to 2.0.4, past GHSA-5p2g-fcmc-qvqq and
   GHSA-w3rx-r6r6-pgpr (both high: parser denial of service). `pptxgenjs` 4.0.1, still the newest release, pins
   `^1.2.1`, so the demo's `package.json` carries an exact `pnpm.overrides` entry. pptxgenjs declares the package but

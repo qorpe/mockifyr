@@ -368,17 +368,25 @@ public static class MockifyrHost
         // name for the same thing and is honored as an alias. A value <= 0 means unbounded.
         // --journal-disabled (alias --no-request-journal) records nothing at all — for load tests
         // where the journal is pure overhead.
+        //
+        // The choice is made ONCE, here, and every decorator below wraps this instance rather than
+        // building a journal of its own: a decorator that constructed a fresh default journal is how
+        // masking used to switch a disabled journal back on and lift its bound (#482).
+        IRequestJournal journal;
         if (builder.Configuration.GetValue<bool>("journal-disabled") ||
             builder.Configuration.GetValue<bool>("no-request-journal"))
         {
-            builder.Services.AddSingleton<IRequestJournal, NullRequestJournal>();
+            journal = new NullRequestJournal();
         }
         else if (int.TryParse(
             builder.Configuration["journal-limit"] ?? builder.Configuration["max-request-journal-entries"],
             out var journalLimit))
         {
-            builder.Services.AddSingleton<IRequestJournal>(
-                new InMemoryRequestJournal(journalLimit > 0 ? journalLimit : null));
+            journal = new InMemoryRequestJournal(journalLimit > 0 ? journalLimit : null);
+        }
+        else
+        {
+            journal = new InMemoryRequestJournal();
         }
 
         // Admin audit trail (#247): opt-in with --audit, bounded per tenant by --audit-limit (default
@@ -550,13 +558,13 @@ public static class MockifyrHost
         // back through the admin API or the dashboard). Opt-in on purpose: a masked value is also
         // invisible to verify/near-miss, which read the same stored request. Decorates whatever
         // journal was registered above, so the bound and the disabled switch still apply.
+        // The options are registered too, so a surface that answers from the LIVE request when no
+        // journal entry exists (the explanatory 404) masks it the same way (#482).
         var masking = JournalMaskingOptions.Parse(
             builder.Configuration["mask-headers"], builder.Configuration["mask-body-fields"]);
-        if (!masking.IsEmpty)
-        {
-            builder.Services.AddSingleton<IRequestJournal>(sp => new MaskingRequestJournal(
-                ActivatorUtilities.CreateInstance<InMemoryRequestJournal>(sp), masking));
-        }
+        builder.Services.AddSingleton(masking);
+        builder.Services.AddSingleton<IRequestJournal>(
+            masking.IsEmpty ? journal : new MaskingRequestJournal(journal, masking));
 
         // Message behaviors (G18e): a bounded inbox override (--message-limit) and the capture
         // webhook decorating the sink. Registered after AddMockifyr so they win the resolution.

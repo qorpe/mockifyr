@@ -111,6 +111,22 @@ are analyzed equivalents, both fast-path guards: removing the `IsEmpty` early re
 flipping `fields.Count == 0 || body.Length == 0` to `&&`, both fall through to code that computes
 the same result with empty inputs — a performance difference with no observable behavior change.
 
+**Masking decorates the journal the other switches chose (#482).** `--journal-disabled` (and its alias
+`--no-request-journal`), `--journal-limit` (and `--max-request-journal-entries`, a value `<= 0` being
+unbounded) pick the journal once, in `MockifyrHost`, and `MaskingRequestJournal` wraps that instance.
+Until #482 the decorator built a fresh default journal of its own, so turning masking on silently
+re-enabled a disabled journal and put the 1000-entry default back in place of any limit — a
+data-retention switch that read as on and was off. Disabled still wins over a limit, with masking on or
+off. The masking options are registered as a service too, because one surface answers from the live
+request when no journal entry exists: the explanatory 404 (`g6-verify.md`) masks it the same way.
+Validated by `JournalMaskingCompositionWireTests` (every spelling of every journal switch, with masking
+on) and `UnmatchedExplanationTests`.
+
+**Not masked, and not changed by #482:** a parsed cookie. `--mask-headers Cookie` masks the `Cookie`
+header, but the request's cookie values are kept separately, and a stub matching on a cookie reports the
+raw value as `actual` in a near miss (checked by a probe on 2026-11-28). Tracked in the deferred-edge
+register as [#487](https://github.com/qorpe/mockifyr/issues/487).
+
 
 ## Unauthenticated admin surface (#225, post-G hardening)
 
